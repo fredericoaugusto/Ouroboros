@@ -1,25 +1,34 @@
 'use client';
 
 import React from 'react';
-import { FaPlus } from 'react-icons/fa';
+import { Plus, Compass } from 'lucide-react';
 
 interface WelcomeScreenProps {
-  onOpenModal: () => void;
+  onOpenModal?: () => void;
 }
 
 const WelcomeScreen: React.FC<WelcomeScreenProps> = ({ onOpenModal }) => {
   return (
-    <div className="flex flex-col items-center justify-center h-full bg-gray-50 dark:bg-gray-900 p-8">
-      <div className="text-center">
-        <h2 className="text-4xl font-bold text-gray-800 dark:text-gray-100 mb-4">Bem-vindo ao seu Planejador de Estudos!</h2>
-        <p className="text-lg text-gray-600 dark:text-gray-300 mb-8">Pronto para organizar sua rotina e alcançar seus objetivos? Crie um novo ciclo de estudos para começar.</p>
-        <button 
-          onClick={onOpenModal} 
-          className="bg-teal-500 text-white font-bold py-3 px-8 rounded-lg hover:bg-teal-600 transition-all duration-300 transform hover:scale-105 shadow-lg dark:bg-teal-600 dark:hover:bg-teal-700"
-        >
-          <FaPlus className="inline-block mr-3" />
-          Criar Novo Ciclo de Estudos
-        </button>
+    <div className="flex flex-col items-center justify-center min-h-[65vh] p-8">
+      <div className="max-w-md text-center bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200 dark:border-[#1f304a] p-8 shadow-sm">
+        <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-4">
+          <Compass className="w-7 h-7" />
+        </div>
+        <h2 className="text-2xl font-bold text-slate-900 dark:text-white mb-2">
+          Comece seu Planejamento
+        </h2>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
+          Organize sua rotina de estudos em ciclos inteligentes ou quadro semanal com sugestões automáticas de tópicos.
+        </p>
+        {onOpenModal && (
+          <button
+            onClick={onOpenModal}
+            className="inline-flex items-center gap-2 bg-emerald-500 hover:bg-emerald-600 text-white font-semibold py-2.5 px-6 rounded-xl transition-all shadow-lg shadow-emerald-500/20 text-sm"
+          >
+            <Plus className="w-4 h-4" />
+            Criar Planejamento de Estudos
+          </button>
+        )}
       </div>
     </div>
   );

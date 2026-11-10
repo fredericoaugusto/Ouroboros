@@ -7,27 +7,23 @@ import { Chart, TooltipItem } from 'chart.js';
 const centerTextPlugin = {
   id: 'centerText',
   beforeDraw(chart: Chart) {
-    if (chart.config.options.elements && chart.config.options.elements.center) {
-      // Get context and parameters
+    if (chart.config.options?.elements && (chart.config.options.elements as any).center) {
       const ctx = chart.ctx;
-      const centerConfig = chart.config.options.elements.center;
-      const fontStyle = centerConfig.fontStyle || 'Arial';
+      const centerConfig = (chart.config.options.elements as any).center;
+      const fontStyle = centerConfig.fontStyle || 'Plus Jakarta Sans, Inter, sans-serif';
       const txt = centerConfig.text;
-      const color = centerConfig.color || '#000';
+      const color = centerConfig.color || '#10b981';
 
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       const centerX = (chart.chartArea.left + chart.chartArea.right) / 2;
       const centerY = (chart.chartArea.top + chart.chartArea.bottom) / 2;
 
-      // Set font settings to draw it in the center
-      ctx.font = `bold ${centerConfig.fontSize}px ${fontStyle}`;
+      ctx.font = `800 ${centerConfig.fontSize}px ${fontStyle}`;
       ctx.fillStyle = color;
-
-      // Draw text in center
       ctx.fillText(txt, centerX, centerY);
     }
-  }
+  },
 };
 
 interface ChartComponentsProps {
@@ -47,24 +43,28 @@ const ChartComponents: React.FC<ChartComponentsProps> = ({ stats }) => {
     setChartJsLoaded(true);
   }, []);
 
-  // Dados para o Doughnut Chart (Desempenho Geral)
+  const wrongQuestions = Math.max(0, stats.totalQuestions - stats.totalCorrectQuestions);
+  const hasQuestions = stats.totalQuestions > 0;
+
   const doughnutData = {
     labels: ['Acertos', 'Erros'],
     datasets: [
       {
-        data: [stats.totalCorrectQuestions, stats.totalQuestions - stats.totalCorrectQuestions],
-                backgroundColor: ['rgb(245, 158, 11)', 'rgb(255, 99, 132)'],
-        borderColor: [
-          'rgba(245, 158, 11, 1)',
-          'rgba(234, 179, 8, 1)',
-        ],
+        data: hasQuestions ? [stats.totalCorrectQuestions, wrongQuestions] : [1, 0],
+        backgroundColor: hasQuestions
+          ? ['#10b981', '#f43f5e']
+          : ['rgba(148, 163, 184, 0.2)', 'rgba(148, 163, 184, 0.05)'],
+        borderWidth: 0,
+        cutout: '74%',
       },
     ],
   };
 
-  const correctPercentage = stats.totalQuestions > 0 ? ((stats.totalCorrectQuestions / stats.totalQuestions) * 100).toFixed(1) : '0.0';
+  const correctPercentage = hasQuestions
+    ? ((stats.totalCorrectQuestions / stats.totalQuestions) * 100).toFixed(1)
+    : '0.0';
 
-  const doughnutOptions = {
+  const doughnutOptions: any = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
@@ -72,38 +72,30 @@ const ChartComponents: React.FC<ChartComponentsProps> = ({ stats }) => {
         display: false,
       },
       tooltip: {
+        enabled: hasQuestions,
         callbacks: {
-          label: function(context: TooltipItem<'doughnut'>) {
-            let label = context.label || '';
-            if (label) {
-              label += ': ';
-            }
-            if (context.parsed !== null) {
-              label += context.parsed;
-            }
-            return label;
-          }
+          label: function (context: TooltipItem<'doughnut'>) {
+            return `${context.label || ''}: ${context.parsed ?? 0}`;
+          },
         },
-        titleColor: '#4B5563',
-        bodyColor: '#4B5563',
-      }
+      },
     },
     elements: {
       center: {
         text: `${correctPercentage}%`,
-        color: '#f59e0b', // amber-500
-        fontStyle: 'Arial',
-        fontSize: 24,
-      }
-    }
+        color: '#10b981',
+        fontStyle: 'Plus Jakarta Sans, Inter, sans-serif',
+        fontSize: 28,
+      },
+    },
   };
 
   if (!chartJsLoaded) {
-    return <div className="min-h-screen bg-gray-100 flex items-center justify-center"><p>Carregando gráficos...</p></div>;
+    return <div className="h-48 flex items-center justify-center text-xs text-slate-400">Carregando...</div>;
   }
 
   return (
-    <div className="w-full h-full flex-grow flex items-center justify-center">
+    <div className="w-full h-56 flex items-center justify-center relative">
       <Doughnut data={doughnutData} options={doughnutOptions} plugins={[centerTextPlugin]} />
     </div>
   );

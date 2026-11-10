@@ -1,39 +1,55 @@
 'use client';
 
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useData, StudyRecord } from '../../context/DataContext';
-import { BsPlusCircleFill, BsFunnel, BsPencilSquare, BsTrash } from 'react-icons/bs';
+import {
+  FiPlus,
+  FiFilter,
+  FiEdit2,
+  FiTrash2,
+  FiClock,
+  FiCheckCircle,
+  FiCalendar,
+  FiSearch,
+  FiX,
+  FiBookOpen,
+} from 'react-icons/fi';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
 import FilterModal from '../../components/FilterModal';
-import PlanSelector from '../../components/PlanSelector';
-import ConfirmationModal from '../../components/ConfirmationModal'; // Importando o novo modal
+import ConfirmationModal from '../../components/ConfirmationModal';
 
-interface StudySession {
-  id: string;
-  subject: string;
-  duration: number;
-  color: string;
-}
-
-// Helper para formatar o tempo de milissegundos para HH:MM:SS
 const formatTime = (ms: number) => {
-  const totalSeconds = Math.floor(ms / 1000);
-  const hours = Math.floor(totalSeconds / 3600);
-  const minutes = Math.floor((totalSeconds % 3600) / 60);
-  const seconds = totalSeconds % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  const totalMinutes = Math.round((ms || 0) / 60000);
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) return `${hours}h ${String(minutes).padStart(2, '0')}m`;
+  return `${minutes}min`;
 };
 
-// Mapa para exibir nomes de categorias mais amigáveis
-const categoryDisplayMap: { [key: string]: string } = {
-  teoria: 'Teoria',
-  revisao: 'Revisão',
-  questoes: 'Questões',
-  leitura_lei: 'Leitura de Lei',
-  jurisprudencia: 'Jurisprudência',
+const categoryDisplayMap: { [key: string]: { label: string; badgeClass: string } } = {
+  teoria: {
+    label: 'Teoria',
+    badgeClass: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-500/20',
+  },
+  revisao: {
+    label: 'Revisão',
+    badgeClass: 'bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border-cyan-500/20',
+  },
+  questoes: {
+    label: 'Questões',
+    badgeClass: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20',
+  },
+  leitura_lei: {
+    label: 'Leitura de Lei',
+    badgeClass: 'bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-500/20',
+  },
+  jurisprudencia: {
+    label: 'Jurisprudência',
+    badgeClass: 'bg-purple-500/10 text-purple-600 dark:text-purple-400 border-purple-500/20',
+  },
 };
 
-interface Filters {
+export interface Filters {
   subject: string;
   category: string;
   startDate: string;
@@ -41,27 +57,22 @@ interface Filters {
 }
 
 const HistoricoPage = () => {
-  // Acessando dados e funções do context
   const {
     studyRecords,
     addStudyRecord,
     updateStudyRecord,
     deleteStudyRecord,
-    availablePlans,
-    selectedDataFile,
-    setSelectedDataFile,
-    studyPlans, // Adicionado para acessar as cores
+    studyPlans,
     stats,
   } = useData();
 
-  // Estado para controle dos modais
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<StudyRecord | null>(null);
-  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false); // Estado para o modal de confirmação
-  const [recordToDelete, setRecordToDelete] = useState<string | null>(null); // Estado para o ID do registro a ser excluído
+  const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
+  const [recordToDelete, setRecordToDelete] = useState<string | null>(null);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  // Estado para os filtros
   const [filters, setFilters] = useState<Filters>({
     subject: '',
     category: '',
@@ -69,30 +80,22 @@ const HistoricoPage = () => {
     endDate: '',
   });
 
-  // Cria um mapa de matérias para cores para fácil acesso
   const subjectColorMap = useMemo(() => {
     const colorMap = new Map<string, string>();
     if (studyPlans) {
       studyPlans.forEach(plan => {
-        if (plan.subjects) {
-          plan.subjects.forEach(subject => {
-            if (!colorMap.has(subject.subject)) {
-              colorMap.set(subject.subject, subject.color || '#94A3B8'); // Cor padrão
-            }
-          });
-        }
+        plan.subjects?.forEach(subject => {
+          if (!colorMap.has(subject.subject)) {
+            colorMap.set(subject.subject, subject.color || '#10b981');
+          }
+        });
       });
     }
     return colorMap;
   }, [studyPlans]);
 
-  const allStudyRecords = useMemo(() => {
-    return studyRecords;
-  }, [studyRecords]);
-
-  // Aplica os filtros aos registros de estudo
   const filteredRecords = useMemo(() => {
-    return allStudyRecords.filter(record => {
+    return studyRecords.filter(record => {
       const recordDate = new Date(record.date);
       const startDate = filters.startDate ? new Date(filters.startDate) : null;
       const endDate = filters.endDate ? new Date(filters.endDate) : null;
@@ -102,11 +105,37 @@ const HistoricoPage = () => {
       if (filters.subject && record.subject !== filters.subject) return false;
       if (filters.category && record.category !== filters.category) return false;
 
+      if (searchTerm.trim()) {
+        const q = searchTerm.toLowerCase();
+        const matchSubject = record.subject?.toLowerCase().includes(q);
+        const matchTopic = record.topic?.toLowerCase().includes(q);
+        const matchComments = record.comments?.toLowerCase().includes(q);
+        if (!matchSubject && !matchTopic && !matchComments) return false;
+      }
+
       return true;
     });
-  }, [studyRecords, filters]);
+  }, [studyRecords, filters, searchTerm]);
 
-  // Agrupa os registros filtrados por data
+  const summaryKpis = useMemo(() => {
+    let totalMs = 0;
+    let totalQ = 0;
+    let totalC = 0;
+    filteredRecords.forEach(r => {
+      totalMs += r.studyTime || 0;
+      totalQ += r.questions?.total || 0;
+      totalC += r.questions?.correct || 0;
+    });
+    const acc = totalQ > 0 ? Math.round((totalC / totalQ) * 100) : 0;
+    return {
+      count: filteredRecords.length,
+      totalMs,
+      totalQ,
+      totalC,
+      acc,
+    };
+  }, [filteredRecords]);
+
   const groupedRecords = useMemo(() => {
     return filteredRecords.reduce((acc, record) => {
       const date = new Date(record.date).toLocaleDateString('pt-BR', { timeZone: 'UTC' });
@@ -118,13 +147,16 @@ const HistoricoPage = () => {
     }, {} as Record<string, StudyRecord[]>);
   }, [filteredRecords]);
 
-  const sortedDates = useMemo(() => 
-    Object.keys(groupedRecords).sort((a, b) => 
-      new Date(b.split('/').reverse().join('-')).getTime() - 
-      new Date(a.split('/').reverse().join('-')).getTime()
-    ), [groupedRecords]);
+  const sortedDates = useMemo(
+    () =>
+      Object.keys(groupedRecords).sort(
+        (a, b) =>
+          new Date(b.split('/').reverse().join('-')).getTime() -
+          new Date(a.split('/').reverse().join('-')).getTime()
+      ),
+    [groupedRecords]
+  );
 
-  // Handlers para abrir modais
   const handleAddClick = () => {
     setEditingRecord(null);
     setIsRegisterModalOpen(true);
@@ -135,18 +167,16 @@ const HistoricoPage = () => {
     setIsRegisterModalOpen(true);
   };
 
-  // Abre o modal de confirmação
   const handleDeleteClick = (id: string) => {
     setRecordToDelete(id);
     setIsConfirmModalOpen(true);
   };
 
-  // Confirma e executa a exclusão
   const handleConfirmDelete = () => {
     if (recordToDelete) {
       deleteStudyRecord(recordToDelete);
       setRecordToDelete(null);
-      setIsConfirmModalOpen(false); // Fecha o modal após a exclusão
+      setIsConfirmModalOpen(false);
     }
   };
 
@@ -159,11 +189,31 @@ const HistoricoPage = () => {
     setIsRegisterModalOpen(false);
   };
 
-  const handleApplyFilters = (newFilters: Filters) => {
-    setFilters(newFilters);
+  const handleApplyFilters = (newFilters: any) => {
+    if (newFilters && typeof newFilters === 'object') {
+      setFilters({
+        subject: newFilters.subject || (newFilters.subjects?.[0] ?? ''),
+        category: newFilters.category || (newFilters.categories?.[0] ?? ''),
+        startDate:
+          newFilters.startDate instanceof Date
+            ? newFilters.startDate.toISOString().split('T')[0]
+            : newFilters.startDate || '',
+        endDate:
+          newFilters.endDate instanceof Date
+            ? newFilters.endDate.toISOString().split('T')[0]
+            : newFilters.endDate || '',
+      });
+    }
     setIsFilterModalOpen(false);
   };
-  
+
+  const hasActiveFilters = Object.values(filters).some(v => v !== '') || searchTerm.trim() !== '';
+
+  const clearAllFilters = () => {
+    setFilters({ subject: '', category: '', startDate: '', endDate: '' });
+    setSearchTerm('');
+  };
+
   const availableSubjects = useMemo(() => {
     if (stats && stats.editalData) {
       return stats.editalData.map(s => s.subject);
@@ -171,101 +221,258 @@ const HistoricoPage = () => {
     return [];
   }, [stats]);
 
-
   return (
-    <>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 pt-12">
-        {/* Cabeçalho */}
-        <div className="mb-6">
-        <header className="flex justify-between items-center pt-4">
-          <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Histórico de Estudos</h1>
-          <div className="flex items-center space-x-4">
-            <button
-              onClick={handleAddClick}
-              className="flex items-center px-4 py-2 bg-amber-500 text-white rounded-full shadow-lg hover:bg-amber-600 transition-all duration-300 text-base font-semibold"
-            >
-              <BsPlusCircleFill className="mr-2 text-lg" />
-              Adicionar Estudo
-            </button>
-            
+    <div className="min-h-screen text-slate-900 dark:text-slate-100 pb-16">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <header className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+              Histórico de Estudos
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Registro cronológico completo de todas as suas sessões de estudo
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={() => setIsFilterModalOpen(true)}
-              className="flex items-center px-4 py-2 bg-amber-500 text-white rounded-full shadow-lg hover:bg-amber-600 transition-all duration-300 text-base font-semibold"
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-xs border transition-all ${
+                Object.values(filters).some(v => v !== '')
+                  ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400'
+                  : 'bg-white dark:bg-[#131f33] border-slate-200 dark:border-[#1f304a] text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-[#192841]'
+              }`}
             >
-              <BsFunnel className="mr-2" />
+              <FiFilter className="w-3.5 h-3.5" />
               Filtros
+            </button>
+            <button
+              onClick={handleAddClick}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-semibold text-xs shadow-sm transition-all"
+            >
+              <FiPlus className="w-4 h-4 stroke-[2.5]" />
+              Registrar Estudo
             </button>
           </div>
         </header>
-        <hr className="mt-2 mb-6 border-gray-300 dark:border-gray-700" />
-      </div>
 
-        {/* Conteúdo Principal */}
-        <main>
-          {sortedDates.length === 0 ? (
-            <div className="text-center py-10">
-              <p className="text-gray-500 dark:text-gray-400">
-                {Object.values(filters).some(v => v !== '') 
-                  ? "Nenhum registro corresponde aos filtros aplicados."
-                  : "Nenhum registro de estudo encontrado. Comece adicionando seu primeiro estudo!"}
-              </p>
+        {/* KPI Summary Strip + Search */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-6">
+          <div className="lg:col-span-8 grid grid-cols-3 gap-3">
+            <div className="bg-white dark:bg-[#131f33] rounded-2xl p-4 border border-slate-200 dark:border-[#1f304a] shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                Sessões Filtradas
+              </span>
+              <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-1 block">
+                {summaryKpis.count}
+              </span>
             </div>
-          ) : (
-            sortedDates.map(date => (
-              <section key={date} className="mb-8">
-                <h2 className="text-xl font-semibold text-gray-700 dark:text-gray-300 mb-4">{date}</h2>
-                <div className="overflow-x-auto bg-white dark:bg-gray-800 rounded-lg shadow">
-                  <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                    <thead className="bg-gray-100 dark:bg-gray-700">
-                      <tr>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Matéria / Tópico</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Tempo</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Questões</th>
-                        <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Categoria</th>
-                        <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">Ações</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                      {groupedRecords[date].map((record, index) => (
-                        <tr key={`${record.id}-${index}`}>
-                          <td 
-                            className="px-6 py-4"
-                            style={{ borderLeft: `5px solid ${subjectColorMap.get(record.subject) || '#94A3B8'}` }}
-                          >
-                            <div className="text-sm font-medium text-gray-900 dark:text-gray-100 max-w-xs truncate">{record.subject}</div>
-                            <div className="text-sm text-gray-500 dark:text-gray-400 max-w-xs whitespace-normal">{record.topic}</div>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800 dark:text-gray-300">{formatTime(record.studyTime)}</td>
-                          <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-800 dark:text-gray-300">
-                            <span className="text-green-600 font-semibold">{record.questions?.correct || 0}</span> / <span className="text-red-600 font-semibold">{(record.questions?.total || 0) - (record.questions?.correct || 0)}</span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap">
-                             <span className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${record.category === 'teoria' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' : record.category === 'revisao' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200' : 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'}`}>
-                              {categoryDisplayMap[record.category] || record.category}
-                            </span>
-                          </td>
-                          <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                            <div className="flex justify-end items-center space-x-4">
-                              <button onClick={() => handleEditClick(record)} className="text-indigo-600 hover:text-indigo-900 dark:text-indigo-400 dark:hover:text-indigo-300" title="Editar">
-                                <BsPencilSquare size={18} />
+            <div className="bg-white dark:bg-[#131f33] rounded-2xl p-4 border border-slate-200 dark:border-[#1f304a] shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                Tempo Acumulado
+              </span>
+              <span className="text-xl sm:text-2xl font-bold text-emerald-600 dark:text-emerald-400 mt-1 block">
+                {formatTime(summaryKpis.totalMs)}
+              </span>
+            </div>
+            <div className="bg-white dark:bg-[#131f33] rounded-2xl p-4 border border-slate-200 dark:border-[#1f304a] shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                Desempenho
+              </span>
+              <span className="text-xl sm:text-2xl font-bold text-slate-900 dark:text-white mt-1 block">
+                {summaryKpis.acc}%{' '}
+                <span className="text-xs font-normal text-slate-400">
+                  ({summaryKpis.totalC}/{summaryKpis.totalQ})
+                </span>
+              </span>
+            </div>
+          </div>
+
+          <div className="lg:col-span-4 flex items-center gap-2">
+            <div className="relative flex-1">
+              <FiSearch className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar matéria, tópico ou nota..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-9 py-3 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                >
+                  <FiX className="w-4 h-4" />
+                </button>
+              )}
+            </div>
+            {hasActiveFilters && (
+              <button
+                onClick={clearAllFilters}
+                className="px-3.5 py-3 rounded-2xl bg-slate-100 dark:bg-[#1a2942] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-200 transition-colors shrink-0"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Main Records List */}
+        {sortedDates.length === 0 ? (
+          <div className="bg-white dark:bg-[#131f33] rounded-2xl p-12 border border-slate-200 dark:border-[#1f304a] text-center shadow-sm">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto mb-3">
+              <FiBookOpen className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800 dark:text-white mb-1">
+              {hasActiveFilters
+                ? 'Nenhum registro corresponde aos filtros'
+                : 'Nenhum estudo registrado ainda'}
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
+              {hasActiveFilters
+                ? 'Tente limpar os filtros para visualizar todo o seu histórico.'
+                : 'Inicie o cronômetro ou adicione seu primeiro estudo manualmente.'}
+            </p>
+            {hasActiveFilters ? (
+              <button
+                onClick={clearAllFilters}
+                className="px-4 py-2 rounded-xl bg-slate-100 dark:bg-[#1a2942] text-xs font-semibold text-slate-700 dark:text-slate-200"
+              >
+                Limpar Filtros
+              </button>
+            ) : (
+              <button
+                onClick={handleAddClick}
+                className="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-sm transition-all"
+              >
+                + Registrar Primeiro Estudo
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {sortedDates.map(date => {
+              const dayRecords = groupedRecords[date];
+              const dayMs = dayRecords.reduce((acc, r) => acc + (r.studyTime || 0), 0);
+
+              return (
+                <section
+                  key={date}
+                  className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm overflow-hidden"
+                >
+                  <div className="px-5 py-3.5 bg-slate-50/70 dark:bg-[#0f1929]/60 border-b border-slate-100 dark:border-[#1f304a] flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <FiCalendar className="w-4 h-4 text-emerald-500" />
+                      <h2 className="text-sm font-bold text-slate-800 dark:text-white">{date}</h2>
+                      <span className="text-[11px] font-medium text-slate-400">
+                        • {dayRecords.length} {dayRecords.length === 1 ? 'sessão' : 'sessões'}
+                      </span>
+                    </div>
+                    <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 flex items-center gap-1">
+                      <FiClock className="w-3.5 h-3.5" />
+                      {formatTime(dayMs)}
+                    </span>
+                  </div>
+
+                  <div className="divide-y divide-slate-100 dark:divide-[#1f304a]/60">
+                    {dayRecords.map((record, index) => {
+                      const catInfo = categoryDisplayMap[record.category] || {
+                        label: record.category || 'Estudo',
+                        badgeClass:
+                          'bg-slate-500/10 text-slate-600 dark:text-slate-300 border-slate-500/20',
+                      };
+                      const qTotal = record.questions?.total || 0;
+                      const qCorrect = record.questions?.correct || 0;
+                      const qPct = qTotal > 0 ? Math.round((qCorrect / qTotal) * 100) : null;
+
+                      return (
+                        <div
+                          key={`${record.id}-${index}`}
+                          className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50/60 dark:hover:bg-[#17263f]/50 transition-colors"
+                        >
+                          <div className="flex items-start gap-3.5 min-w-0">
+                            <span
+                              className="w-1.5 h-10 rounded-full shrink-0 mt-0.5"
+                              style={{
+                                backgroundColor:
+                                  subjectColorMap.get(record.subject) || '#10b981',
+                              }}
+                            />
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                  {record.subject}
+                                </span>
+                                <span
+                                  className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${catInfo.badgeClass}`}
+                                >
+                                  {catInfo.label}
+                                </span>
+                              </div>
+                              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
+                                {record.topic || 'Tópico geral'}
+                              </p>
+                              {record.comments && (
+                                <p className="text-[11px] text-slate-400 dark:text-slate-500 mt-1 italic line-clamp-1">
+                                  “{record.comments}”
+                                </p>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between sm:justify-end gap-4 shrink-0 pl-5 sm:pl-0">
+                            <div className="flex items-center gap-4 text-xs">
+                              <div className="text-right">
+                                <span className="text-[10px] uppercase tracking-wider text-slate-400 block">
+                                  Duração
+                                </span>
+                                <span className="font-bold text-slate-800 dark:text-slate-200">
+                                  {formatTime(record.studyTime)}
+                                </span>
+                              </div>
+
+                              {qTotal > 0 && (
+                                <div className="text-right">
+                                  <span className="text-[10px] uppercase tracking-wider text-slate-400 block">
+                                    Questões
+                                  </span>
+                                  <span className="font-bold text-slate-800 dark:text-slate-200">
+                                    <span className="text-emerald-500">{qCorrect}</span>/{qTotal}{' '}
+                                    <span className="text-[11px] text-slate-400">({qPct}%)</span>
+                                  </span>
+                                </div>
+                              )}
+                            </div>
+
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                onClick={() => handleEditClick(record)}
+                                className="p-2 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-slate-100 dark:hover:bg-[#1f304a] transition-colors"
+                                title="Editar registro"
+                              >
+                                <FiEdit2 className="w-4 h-4" />
                               </button>
-                              <button onClick={() => handleDeleteClick(record.id)} className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300" title="Excluir">
-                                <BsTrash size={18} />
+                              <button
+                                onClick={() => handleDeleteClick(record.id)}
+                                className="p-2 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                                title="Excluir registro"
+                              >
+                                <FiTrash2 className="w-4 h-4" />
                               </button>
                             </div>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </section>
-            ))
-          )}
-        </main>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        )}
       </div>
 
-      {/* Modais */}
       <StudyRegisterModal
         isOpen={isRegisterModalOpen}
         onClose={() => setIsRegisterModalOpen(false)}
@@ -273,26 +480,29 @@ const HistoricoPage = () => {
         initialRecord={editingRecord}
         showDeleteButton={!!editingRecord?.id}
       />
+
       <FilterModal
         isOpen={isFilterModalOpen}
         onClose={() => setIsFilterModalOpen(false)}
+        onApply={handleApplyFilters}
         onApplyFilters={handleApplyFilters}
         availableSubjects={availableSubjects}
-        availableCategories={Object.values(categoryDisplayMap)}
+        availableCategories={Object.keys(categoryDisplayMap)}
         initialFilters={filters}
-        sessions={allStudyRecords}
-        availableEditalData={stats.editalData}
+        sessions={studyRecords as any}
+        availableEditalData={stats?.editalData || []}
       />
+
       <ConfirmationModal
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
         onConfirm={handleConfirmDelete}
         title="Confirmar Exclusão"
-        message="Tem certeza que deseja excluir este registro? Esta ação não poderá ser desfeita."
+        message="Tem certeza que deseja excluir este registro de estudo? Esta ação não poderá ser desfeita."
         confirmText="Excluir"
         cancelText="Cancelar"
       />
-    </>
+    </div>
   );
 };
 

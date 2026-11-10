@@ -2,10 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useData } from '../context/DataContext';
-import { FaTrash } from 'react-icons/fa';
+import { FolderKanban, ChevronUp, Check } from 'lucide-react';
 
 export default function PlanSelector() {
-  const { selectedDataFile, setSelectedDataFile, availablePlans, deletePlan } = useData();
+  const { selectedDataFile, setSelectedDataFile, availablePlans } = useData();
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
@@ -21,21 +21,12 @@ export default function PlanSelector() {
     };
   }, []);
 
-  const handleDeleteClick = (e: React.MouseEvent, planToDelete: string) => {
-    e.stopPropagation();
-    if (window.confirm(`Tem certeza que deseja excluir o plano "${planToDelete.replace('.json', '')}"? Esta ação não pode ser desfeita.`)) {
-      deletePlan(planToDelete);
-    }
-  };
-
-  const handleDeselectClick = () => {
-    setIsDeselectConfirmModalOpen(true);
-  };
-
-  const handleConfirmDeselect = () => {
-    setSelectedDataFile(null); // Deseleciona o plano
-    setIsDeselectConfirmModalOpen(false);
-    setIsDropdownOpen(false); // Fecha o dropdown após deselecionar
+  const formatPlanLabel = (fileName: string) => {
+    return fileName
+      .replace('.json', '')
+      .split('-')
+      .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+      .join(' ');
   };
 
   return (
@@ -43,36 +34,59 @@ export default function PlanSelector() {
       <button
         type="button"
         onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                className="bg-white dark:bg-gray-800 border border-gold-500 dark:border-gold-600 rounded-full py-2 px-4 text-gold-500 dark:text-gold-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors shadow-md text-base font-medium appearance-none pr-8 w-full flex justify-between items-center"
+        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-slate-100 dark:bg-[#152238] border border-slate-200 dark:border-[#243552] hover:border-emerald-500/50 text-slate-800 dark:text-slate-100 transition-all text-xs font-semibold shadow-sm"
       >
-        <span className="block truncate">
-          {selectedDataFile ? selectedDataFile.replace('.json', '').toUpperCase() : 'Selecione o Plano'}
-        </span>
-        <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-          <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-            <path fillRule="evenodd" d="M10 3a.75.75 0 01.53.22l3.5 3.5a.75.75 0 01-1.06 1.06L10 4.81 6.53 8.28a.75.75 0 01-1.06-1.06l3.5-3.5A.75.75 0 0110 3zm-3.72 9.53a.75.75 0 011.06 0L10 15.19l2.67-2.66a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 010-1.06z" clipRule="evenodd" />
-          </svg>
-        </span>
-      </button>
-      {isDropdownOpen && (
-        <div className="absolute z-20 bottom-full mb-2 w-full bg-white dark:bg-gray-800 shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-          {availablePlans.map((plan) => (
-            <div
-              key={plan}
-              onClick={() => {
-                setSelectedDataFile(plan);
-                setIsDropdownOpen(false);
-              }}
-              className="text-gray-900 dark:text-gray-100 cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gold-100 dark:hover:bg-gray-700 flex items-center justify-between"
-            >
-              <span className="block whitespace-normal">
-                {plan.replace('.json', '').toUpperCase()}
-                {plan === selectedDataFile && <span className="ml-2 text-gold-500 dark:text-gold-400 font-semibold">(Ativo)</span>}
-              </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <div className="w-6 h-6 rounded-lg bg-emerald-500/15 border border-emerald-500/30 flex items-center justify-center text-emerald-500 shrink-0">
+            <FolderKanban className="w-3.5 h-3.5" />
+          </div>
+          <div className="text-left truncate">
+            <div className="text-[10px] font-medium text-slate-400 leading-none mb-0.5">
+              Plano Ativo
             </div>
-          ))}
+            <div className="truncate text-xs font-bold text-slate-800 dark:text-white">
+              {selectedDataFile ? formatPlanLabel(selectedDataFile) : 'Selecione um Plano'}
+            </div>
+          </div>
+        </div>
+        <ChevronUp
+          className={`w-4 h-4 text-slate-400 transition-transform shrink-0 ${
+            isDropdownOpen ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {isDropdownOpen && (
+        <div className="absolute z-50 bottom-full mb-2 w-full bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] shadow-xl max-h-60 rounded-xl py-1.5 text-xs overflow-auto">
+          {availablePlans.length === 0 ? (
+            <div className="px-3 py-2.5 text-slate-400 text-center">
+              Nenhum plano criado ainda
+            </div>
+          ) : (
+            availablePlans.map((plan) => {
+              const isSelected = plan === selectedDataFile;
+              return (
+                <button
+                  key={plan}
+                  type="button"
+                  onClick={() => {
+                    setSelectedDataFile(plan);
+                    setIsDropdownOpen(false);
+                  }}
+                  className={`w-full text-left px-3 py-2 flex items-center justify-between gap-2 transition-colors ${
+                    isSelected
+                      ? 'bg-emerald-500/10 text-emerald-500 font-semibold'
+                      : 'text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800/60'
+                  }`}
+                >
+                  <span className="truncate">{formatPlanLabel(plan)}</span>
+                  {isSelected && <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+                </button>
+              );
+            })
+          )}
         </div>
       )}
-      </div>
+    </div>
   );
 }

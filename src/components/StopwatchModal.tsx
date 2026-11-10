@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { FaHandSparkles } from 'react-icons/fa';
+import { Play, Pause, RotateCcw, CheckCircle2, Sparkles, X, Timer } from 'lucide-react';
 
 interface StopwatchModalProps {
   isOpen: boolean;
@@ -10,22 +10,38 @@ interface StopwatchModalProps {
   onSaveAndClose: (time: number, subject?: string, topic?: string) => void;
   targetDuration?: number; // in minutes
   subject?: string;
+  initialTopic?: string;
 }
 
-const StopwatchModal: React.FC<StopwatchModalProps> = ({ isOpen, onClose, onSaveAndClose, targetDuration = 0, subject: initialSubject }) => {
-  const { studyPlans, selectedDataFile, availablePlans, getRecommendedSession, studyCycle, sessionProgressMap } = useData();
-  const [mode, setMode] = useState('cronometro'); // 'cronometro' or 'timer'
-  const [time, setTime] = useState(0); // time in milliseconds
+const StopwatchModal: React.FC<StopwatchModalProps> = ({
+  isOpen,
+  onClose,
+  onSaveAndClose,
+  targetDuration = 0,
+  subject: initialSubject,
+  initialTopic,
+}) => {
+  const {
+    studyPlans,
+    selectedDataFile,
+    availablePlans,
+    getRecommendedSession,
+    studyCycle,
+    sessionProgressMap,
+  } = useData();
+
+  const [mode, setMode] = useState<'cronometro' | 'timer'>(
+    targetDuration > 0 ? 'timer' : 'cronometro'
+  );
+  const [time, setTime] = useState(0); // ms
   const [isRunning, setIsRunning] = useState(false);
-  const [displayTimeInput, setDisplayTimeInput] = useState('');
-  const [initialTimerTime, setInitialTimerTime] = useState(0); // Stores the initial time for timer mode
-  const [sessionStartTime, setSessionStartTime] = useState(0); // Stores the elapsed time when the session starts
-  const [selectedSubject, setSelectedSubject] = useState<string | undefined>(initialSubject);
-  const [selectedTopic, setSelectedTopic] = useState<string | undefined>();
+  const [initialTimerTime, setInitialTimerTime] = useState(0);
+  const [selectedSubject, setSelectedSubject] = useState<string>(initialSubject || '');
+  const [selectedTopic, setSelectedTopic] = useState<string>(initialTopic || '');
 
   const currentPlan = useMemo(() => {
     const planIndex = availablePlans.indexOf(selectedDataFile);
-    return studyPlans[planIndex];
+    return planIndex >= 0 ? studyPlans[planIndex] : studyPlans?.[0];
   }, [studyPlans, selectedDataFile, availablePlans]);
 
   const subjects = useMemo(() => {
@@ -36,343 +52,292 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({ isOpen, onClose, onSave
   const topics = useMemo(() => {
     if (!selectedSubject || !currentPlan || !currentPlan.subjects) return [];
     const subjectData = currentPlan.subjects.find((s: any) => s.subject === selectedSubject);
-    return subjectData ? subjectData.topics : [];
+    return subjectData ? subjectData.topics || [] : [];
   }, [selectedSubject, currentPlan]);
 
   useEffect(() => {
-    if (initialSubject) {
-      setSelectedSubject(initialSubject);
-    }
-  }, [initialSubject]);
-
-  const parseTimeInputToMs = (input: string): number => {
-    const parts = input.split(':');
-    let ms = 0;
-    if (parts.length === 3) {
-      ms += parseInt(parts[0]) * 3600 * 1000; // hours
-      ms += parseInt(parts[1]) * 60 * 1000;  // minutes
-      ms += parseInt(parts[2]) * 1000;     // seconds
-    } else if (parts.length === 2) {
-      ms += parseInt(parts[0]) * 60 * 1000;  // minutes
-      ms += parseInt(parts[1]) * 1000;     // seconds
-    } else if (parts.length === 1) {
-      ms += parseInt(parts[0]) * 1000;     // seconds
-    }
-    return ms;
-  };
-
-  // --- NOVA LÓGICA DE TIMER COM IPC ---
-  useEffect(() => {
-    // Define a interface para a API do Electron no objeto window
-    interface ElectronAPI {
-      sendTimerCommand: (command: string) => void;
-      onTimerTick: (callback: (time: number) => void) => void;
-      removeTimerTickListeners: () => void;
-    }
-    
-    const electronAPI = (window as any).electronAPI as ElectronAPI;
-
-    if (isOpen && electronAPI) {
-      // Remove ouvintes antigos para evitar duplicatas
-      electronAPI.removeTimerTickListeners();
-
-      // Ouve os ticks do processo principal
-      const handleTick = (currentElapsedTime: number) => {
-        if (mode === 'timer') {
-          const remainingTime = initialTimerTime - currentElapsedTime;
-          if (remainingTime <= 0) {
-            setTime(0);
-            (window as any).electronAPI?.sendTimerCommand('pause');
-            setIsRunning(false);
-          } else {
-            setTime(remainingTime);
-          }
-        } else { // modo 'cronometro'
-          setTime(currentElapsedTime);
-        }
-      };
-
-      electronAPI.onTimerTick(handleTick);
-
-
-      // Pede o estado atual ao abrir o modal
-      electronAPI.sendTimerCommand('get-state');
-      
-      // Guarda o tempo atual como o início da sessão para o cálculo do delta
-      setTime(prevTime => {
-        setSessionStartTime(prevTime);
-        return prevTime;
-      });
-
-    } else if (!isOpen && electronAPI) {
-      // Limpa os ouvintes quando o modal fecha
-      electronAPI.removeTimerTickListeners();
-    }
-
-    // Limpeza ao desmontar o componente
-    return () => {
-      if (electronAPI) {
-        electronAPI.removeTimerTickListeners();
+    if (isOpen) {
+      if (initialSubject) setSelectedSubject(initialSubject);
+      if (initialTopic) setSelectedTopic(initialTopic);
+      if (targetDuration > 0) {
+        setMode('timer');
+        const ms = targetDuration * 60 * 1000;
+        setTime(ms);
+        setInitialTimerTime(ms);
+      } else {
+        setMode('cronometro');
+        setTime(0);
+        setInitialTimerTime(0);
       }
-    };
-  }, [isOpen, mode, initialTimerTime]);
-
-  const handlePlay = () => {
-    (window as any).electronAPI?.sendTimerCommand('start');
-    setIsRunning(true);
-  };
-
-  const handlePause = () => {
-    (window as any).electronAPI?.sendTimerCommand('pause');
-    setIsRunning(false);
-  };
-
-  const handleReset = () => {
-    (window as any).electronAPI?.sendTimerCommand('reset');
-    setIsRunning(false);
-    setSessionStartTime(0);
-  };
-
-  const handleSaveAndClose = () => {
-    (window as any).electronAPI?.sendTimerCommand('pause');
-    setIsRunning(false);
-    
-    let elapsedTime = 0;
-    if (mode === 'timer') {
-      // Em modo timer, o tempo decorrido é o tempo inicial menos o tempo restante.
-      elapsedTime = initialTimerTime - time;
-    } else { // modo 'cronometro'
-      // Em modo cronômetro, o estado 'time' já representa o tempo decorrido.
-      elapsedTime = time;
+      setIsRunning(false);
     }
-    
-    onSaveAndClose(Math.max(0, elapsedTime), selectedSubject, selectedTopic);
-    
-    // Opcional: Resetar o timer global após salvar
-    // (window as any).electronAPI?.sendTimerCommand('reset');
-  };
-  // --- FIM DA NOVA LÓGICA ---
+  }, [isOpen, initialSubject, initialTopic, targetDuration]);
 
+  // Browser & Electron compatible interval
   useEffect(() => {
-    // Pausa e reseta o timer do backend toda vez que o modo é trocado
-    (window as any).electronAPI?.sendTimerCommand('reset');
-    setIsRunning(false);
-    
-    if (mode === 'timer') {
-      // Se nenhuma duração for fornecida, usa 25 minutos como padrão (Pomodoro)
-      const initialMs = targetDuration > 0 ? targetDuration * 60 * 1000 : 25 * 60 * 1000;
-      setTime(initialMs);
-      setInitialTimerTime(initialMs);
-      setDisplayTimeInput(formatTime(initialMs));
-    } else {
-      // Reseta o estado para o modo cronômetro, começando do zero
-      setTime(0);
-      setInitialTimerTime(0);
-      setSessionStartTime(0);
-    }
-  }, [mode, targetDuration]);
+    if (!isOpen || !isRunning) return;
+
+    const interval = setInterval(() => {
+      setTime((prev) => {
+        if (mode === 'timer') {
+          if (prev <= 1000) {
+            setIsRunning(false);
+            return 0;
+          }
+          return prev - 1000;
+        } else {
+          return prev + 1000;
+        }
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [isOpen, isRunning, mode]);
 
   const formatTime = (ms: number) => {
-    const totalSeconds = Math.floor(ms / 1000);
+    const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
-    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(
+      seconds
+    ).padStart(2, '0')}`;
   };
 
-  const handleGetRecommendation = () => {
-    if (!studyCycle) {
-      console.log("Ciclo de estudo não disponível.");
-      return;
-    }
+  const handleSave = () => {
+    setIsRunning(false);
+    const elapsedMs =
+      mode === 'timer' ? Math.max(60000, initialTimerTime - time) : Math.max(60000, time);
+    onSaveAndClose(elapsedMs, selectedSubject, selectedTopic);
+  };
 
-    const nextSession = studyCycle.find(session => {
+  const handleSuggestNext = () => {
+    if (!studyCycle) return;
+    const nextSession = studyCycle.find((session) => {
       const progress = sessionProgressMap[session.id as string] || 0;
       return progress < session.duration;
     });
-
     if (nextSession) {
-      const { recommendedTopic } = getRecommendedSession({ forceSubject: nextSession.subject });
-      
+      const { recommendedTopic } = getRecommendedSession({
+        forceSubject: nextSession.subject,
+      });
+      setSelectedSubject(nextSession.subject);
       if (recommendedTopic) {
-        setMode('timer');
-        setSelectedSubject(nextSession.subject);
         setSelectedTopic(recommendedTopic.topic);
-
-        const timeInMs = nextSession.duration * 60 * 1000;
-        setTime(timeInMs);
-        setInitialTimerTime(timeInMs);
-        setDisplayTimeInput(formatTime(timeInMs));
-      } else {
-        console.log(`Nenhum tópico recomendado encontrado para a matéria: ${nextSession.subject}`);
       }
-    } else {
-      console.log("Todas as sessões do ciclo foram concluídas.");
-      // Opcional: Adicionar uma notificação para o usuário aqui.
+      setMode('timer');
+      const ms = nextSession.duration * 60 * 1000;
+      setTime(ms);
+      setInitialTimerTime(ms);
     }
   };
 
-  const formatProgressText = (currentTimeMs: number, initialTargetTimeMs: number) => {
-    const currentMinutes = Math.floor(currentTimeMs / (1000 * 60));
-    const currentHours = Math.floor(currentMinutes / 60);
-    const remainingMinutes = currentMinutes % 60;
-
-    const targetMinutes = Math.floor(initialTargetTimeMs / (1000 * 60));
-    const targetHours = Math.floor(targetMinutes / 60);
-    const targetMins = targetMinutes % 60;
-
-    return `${String(currentHours).padStart(2, '0')}h${String(remainingMinutes).padStart(2, '0')} / ${String(targetHours).padStart(2, '0')}h${String(targetMins).padStart(2, '0')}`;
+  const flattenTopics = (list: any[], prefix = ''): string[] => {
+    let res: string[] = [];
+    for (const t of list || []) {
+      const label = prefix ? `${prefix} › ${t.topic_text}` : t.topic_text;
+      res.push(t.topic_text);
+      if (t.sub_topics && t.sub_topics.length > 0) {
+        res = res.concat(flattenTopics(t.sub_topics, label));
+      }
+    }
+    return res;
   };
 
-  const timerProgress = initialTimerTime > 0 ? ((initialTimerTime - time) / initialTimerTime) * 100 : 0;
-  const hasStarted = mode === 'cronometro' ? time > 0 || isRunning : time < initialTimerTime || isRunning;
-
-  const renderTopicOptions = (topics: any[], level = 0): JSX.Element[] => {
-    return topics.flatMap(topic => {
-      const prefix = '\u00A0\u00A0'.repeat(level);
-      const isParent = topic.sub_topics && topic.sub_topics.length > 0;
-      const displayName = topic.topic_text;
-      
-      if (!displayName) {
-          return [];
-      }
-      
-      const option = (
-        <option key={displayName} value={displayName} disabled={isParent} title={displayName}>
-          {prefix}{displayName.length > (25 - level*2) ? `${displayName.substring(0, (22 - level*2))}...` : displayName}
-        </option>
-      );
-
-      if (isParent) {
-        return [option, ...renderTopicOptions(topic.sub_topics, level + 1)];
-      }
-      
-      return [option];
-    });
-  };
+  const flatTopicOptions = useMemo(() => flattenTopics(topics), [topics]);
 
   if (!isOpen) return null;
 
-  const barberPoleStyle = `
-    @keyframes barberpole {
-      from { background-position: 0 0; }
-      to { background-position: 40px 0; }
-    }
-  `;
+  const timerProgress =
+    mode === 'timer' && initialTimerTime > 0
+      ? Math.min(100, ((initialTimerTime - time) / initialTimerTime) * 100)
+      : 100;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex justify-center items-center z-50 p-4">
-      <style>{barberPoleStyle}</style>
-      <div className="w-full max-w-4xl p-8 rounded-2xl text-gray-900 dark:text-white flex flex-col bg-white dark:bg-gray-800">
-        <div className="flex justify-between items-center mb-6 gap-4">
-          <h2 className="text-2xl font-bold text-gray-900 dark:text-gray-100 truncate">{initialSubject || 'Sessão de Estudo'}</h2>
-          <div className="flex items-center space-x-4 flex-shrink-0">
-            <div className="w-48">
+    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-fadeIn">
+      <div className="w-full max-w-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
+              <Timer className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                Cronômetro de Estudo
+              </h2>
+              <p className="text-xs text-slate-400">
+                Ao finalizar, o tópico sugerido já virá preenchido no registro
+              </p>
+            </div>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="p-6 space-y-6">
+          {/* Mode Switcher */}
+          <div className="flex items-center justify-between gap-2">
+            <div className="inline-flex rounded-xl bg-slate-100 dark:bg-[#0b1320] p-1">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRunning(false);
+                  setMode('cronometro');
+                  setTime(0);
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  mode === 'cronometro'
+                    ? 'bg-emerald-500 text-white'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                Cronômetro Livre
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRunning(false);
+                  setMode('timer');
+                  const ms = (targetDuration > 0 ? targetDuration : 45) * 60 * 1000;
+                  setTime(ms);
+                  setInitialTimerTime(ms);
+                }}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                  mode === 'timer'
+                    ? 'bg-emerald-500 text-white'
+                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                }`}
+              >
+                Timer Regressivo
+              </button>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSuggestNext}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20"
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              Sugerir do Ciclo
+            </button>
+          </div>
+
+          {/* Subject & Topic Selectors */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Disciplina
+              </label>
               <select
                 value={selectedSubject}
-                onChange={(e) => setSelectedSubject(e.target.value)}
-                className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                onChange={(e) => {
+                  setSelectedSubject(e.target.value);
+                  setSelectedTopic('');
+                }}
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-semibold text-slate-900 dark:text-white"
               >
-                <option value="">Selecione a Matéria</option>
+                <option value="">Selecione a disciplina...</option>
                 {subjects.map((s: string) => (
-                  <option key={s} value={s} title={s}>
-                    {s.length > 25 ? `${s.substring(0, 22)}...` : s}
+                  <option key={s} value={s}>
+                    {s}
                   </option>
                 ))}
               </select>
             </div>
-            <div className="w-48">
+
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                Tópico / Assunto
+              </label>
               <select
                 value={selectedTopic}
                 onChange={(e) => setSelectedTopic(e.target.value)}
                 disabled={!selectedSubject}
-                className="w-full rounded-md border border-gray-300 bg-gray-50 px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-amber-500 disabled:opacity-50 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-semibold text-slate-900 dark:text-white disabled:opacity-50"
               >
-                <option value="">Selecione o Tópico</option>
-                {renderTopicOptions(topics)}
+                <option value="">Selecione o tópico...</option>
+                {flatTopicOptions.map((t, i) => (
+                  <option key={`${t}-${i}`} value={t}>
+                    {t}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
-        </div>
 
-        <p className="text-sm text-gray-400 dark:text-gray-300 text-right mb-2">
-          {mode === 'timer' ? formatProgressText(initialTimerTime - time, initialTimerTime) : ''}
-        </p>
-        <div className="w-full bg-gray-800/50 rounded-full h-8 mb-4 shadow-inner overflow-hidden dark:bg-gray-700/50">
-          {mode === 'timer' ? (
-            <div 
-              className="bg-gradient-to-r from-amber-400 to-amber-500 h-8 rounded-full transition-all duration-500 ease-out shadow-lg shadow-amber-500/30"
-              style={{ width: `${timerProgress}%` }}
-            ></div>
-          ) : (
-            <div
-              className="h-8 rounded-full"
-              style={{
-                width: '100%',
-                backgroundImage: 'linear-gradient(45deg, rgba(255,255,255,0.15) 25%, transparent 25%, transparent 50%, rgba(255,255,255,0.15) 50%, rgba(255,255,255,0.15) 75%, transparent 75%, transparent)',
-                backgroundSize: '40px 40px',
-                animation: isRunning ? 'barberpole 1s linear infinite' : 'none',
-                backgroundColor: '#F59E0B' // amber-500
-              }}
-            ></div>
-          )}
-        </div>
-
-        <div className="flex items-center justify-center mb-8">
-          {(!isRunning && mode === 'timer') ? (
-            <input
-              type="text"
-              value={displayTimeInput}
-              onChange={(e) => setDisplayTimeInput(e.target.value)}
-              onBlur={() => {
-                const newTimeMs = parseTimeInputToMs(displayTimeInput);
-                setTime(newTimeMs);
-                setInitialTimerTime(newTimeMs);
-              }}
-              className="text-8xl font-mono font-bold text-center tracking-wider bg-transparent border-none focus:outline-none focus:ring-0 w-full text-amber-500 dark:text-amber-300"
-            />
-          ) : (
-            <div className="text-8xl font-mono font-bold text-center tracking-wider text-amber-500 dark:text-amber-300 w-full">
+          {/* Giant Clock Display */}
+          <div className="py-8 rounded-2xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/80 dark:border-[#1f304a] text-center relative overflow-hidden">
+            <div className="text-6xl sm:text-7xl font-mono font-extrabold tracking-wider text-emerald-500">
               {formatTime(time)}
             </div>
-          )}
-          <div className="flex items-center ml-4">
-            <div className="flex flex-col">
-              <button onClick={() => setMode('cronometro')} className={`px-3 py-1 text-sm font-semibold rounded-full ${mode === 'cronometro' ? 'bg-amber-600 text-gray-900 dark:text-white dark:bg-amber-700' : 'text-gray-400 dark:text-gray-500'}`}>CRONÔMETRO</button>
-              <button onClick={() => setMode('timer')} className={`mt-2 px-3 py-1 text-sm font-semibold rounded-full ${mode === 'timer' ? 'bg-amber-600 text-gray-900 dark:text-white dark:bg-amber-700' : 'text-gray-400 dark:text-gray-500'}`}>TIMER</button>
-            </div>
-            <button 
-              onClick={handleGetRecommendation}
-              title="Sugerir Próximo Estudo"
-              className="ml-4 p-3 bg-amber-500 hover:bg-amber-600 text-white rounded-full shadow-lg shadow-amber-500/50 transition-colors"
+            {selectedTopic && (
+              <p className="text-xs text-slate-400 mt-2 px-4 truncate">
+                Estudando: <strong className="text-slate-700 dark:text-slate-200">{selectedTopic}</strong>
+              </p>
+            )}
+            {mode === 'timer' && (
+              <div className="w-full h-1.5 bg-slate-200 dark:bg-[#1a2942] absolute bottom-0 left-0">
+                <div
+                  className="h-full bg-emerald-500 transition-all duration-500"
+                  style={{ width: `${timerProgress}%` }}
+                />
+              </div>
+            )}
+          </div>
+
+          {/* Controls */}
+          <div className="flex items-center justify-center gap-4">
+            <button
+              type="button"
+              onClick={() => setIsRunning(!isRunning)}
+              className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white shadow-lg transition-all ${
+                isRunning
+                  ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
+                  : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
+              }`}
             >
-              <FaHandSparkles className="h-5 w-5" />
+              {isRunning ? (
+                <>
+                  <Pause className="w-4 h-4 fill-current" />
+                  Pausar
+                </>
+              ) : (
+                <>
+                  <Play className="w-4 h-4 fill-current" />
+                  Iniciar
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsRunning(false);
+                setTime(mode === 'timer' ? initialTimerTime : 0);
+              }}
+              className="p-3 rounded-xl bg-slate-100 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
+              title="Reiniciar"
+            >
+              <RotateCcw className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSave}
+              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all"
+            >
+              <CheckCircle2 className="w-4 h-4" />
+              Finalizar e Registrar
             </button>
           </div>
         </div>
-
-        <div className="flex justify-center space-x-6">
-          {!isRunning ? (
-            <button onClick={handlePlay} className="w-20 h-20 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /></svg>
-            </button>
-          ) : (
-            <button onClick={handlePause} className="w-20 h-20 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 9v6m4-6v6" /></svg>
-            </button>
-          )}
-
-          {hasStarted && (
-            <button onClick={handleReset} className="w-20 h-20 bg-amber-500 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700">
-              <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h5M20 20v-5h-5" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 9a9 9 0 0 1 14.23-5.77M20 15a9 9 0 0 1-14.23 5.77" /></svg>
-            </button>
-          )}
-
-          <button onClick={handleSaveAndClose} className="w-20 h-20 bg-gray-600 rounded-full flex items-center justify-center text-white shadow-lg hover:bg-gray-700 transition-colors dark:bg-gray-700 dark:hover:bg-gray-600">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-          </button>
-        </div>
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white text-3xl dark:text-gray-400 dark:hover:text-gray-100">&times;</button>
       </div>
     </div>
   );

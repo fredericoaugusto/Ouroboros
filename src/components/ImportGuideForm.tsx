@@ -3,18 +3,18 @@
 import React, { useState } from 'react';
 import { useNotification } from '../context/NotificationContext';
 import { useData } from '../context/DataContext';
+import { Globe, Loader2, Download } from 'lucide-react';
 
 const ImportGuideForm = () => {
   const { refreshPlans } = useData();
   const [guideUrl, setGuideUrl] = useState('');
-  
   const [isLoading, setIsLoading] = useState(false);
   const { showNotification } = useNotification();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!guideUrl) {
-      showNotification('Por favor, insira uma URL válida.', 'error');
+      showNotification('Por favor, insira uma URL válida do TEC Concursos.', 'error');
       return;
     }
 
@@ -37,10 +37,10 @@ const ImportGuideForm = () => {
 
       showNotification(result.message || 'Guia importado com sucesso!', 'success');
       setGuideUrl('');
-      await refreshPlans(); // Recarrega os planos
-
+      await refreshPlans();
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Falha na comunicação com o servidor.';
+      const errorMessage =
+        error instanceof Error ? error.message : 'Falha na comunicação com o servidor.';
       showNotification(`Erro ao importar: ${errorMessage}`, 'error');
     } finally {
       setIsLoading(false);
@@ -48,38 +48,50 @@ const ImportGuideForm = () => {
   };
 
   return (
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-md mb-8">
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-4">Importar Guia de Estudo do Tec</h2>
-      <form onSubmit={handleSubmit}>
-        <div className="flex flex-col sm:flex-row gap-4">
+    <div className="bg-white dark:bg-[#131f33] p-5 rounded-2xl border border-slate-200/80 dark:border-[#1f304a] shadow-sm">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400 shrink-0">
+            <Globe className="w-5 h-5" />
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+              Importar Guia Público do TEC Concursos
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Cole o link de um guia de estudos do TEC para extrair matérias e tópicos automaticamente
+            </p>
+          </div>
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex flex-1 max-w-xl gap-2.5">
           <input
             type="url"
             value={guideUrl}
             onChange={(e) => setGuideUrl(e.target.value)}
-            placeholder="Cole a URL do guia do Tec Concursos aqui"
-            className="flex-grow px-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:dark:border-gray-600 dark:focus:ring-amber-400"
+            placeholder="https://www.tecconcursos.com.br/guias/..."
+            className="flex-1 px-3.5 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-sm text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             disabled={isLoading}
           />
-          
           <button
             type="submit"
-            className="px-6 py-2 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center justify-center"
             disabled={isLoading}
+            className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition-colors disabled:opacity-50 flex items-center gap-2 shrink-0"
           >
             {isLoading ? (
               <>
-                <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                </svg>
+                <Loader2 className="w-4 h-4 animate-spin" />
                 Importando...
               </>
             ) : (
-              'Importar Guia'
+              <>
+                <Download className="w-4 h-4" />
+                Importar Guia
+              </>
             )}
           </button>
-        </div>
-      </form>
+        </form>
+      </div>
     </div>
   );
 };

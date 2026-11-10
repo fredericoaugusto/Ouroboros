@@ -1,106 +1,146 @@
 'use client';
 
-import React from 'react';
+import React, { useState } from 'react';
 import { useSidebar } from '../context/SidebarContext';
-import { FaHome, FaClipboardList, FaBook, FaFileAlt, FaDatabase, FaRedoAlt, FaHistory, FaChartBar, FaCalendarAlt, FaGraduationCap, FaHeart } from 'react-icons/fa';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BsList } from 'react-icons/bs';
 import ThemeToggleButton from './ThemeToggleButton';
 import PlanSelector from './PlanSelector';
+import ImportEditalModal from './ImportEditalModal';
 import { useTheme } from '../context/ThemeContext';
 import { useSession, signOut } from 'next-auth/react';
-import { FaSignOutAlt } from 'react-icons/fa';
-import { useDonationModal } from '../context/DonationModalContext';
+import { 
+  Home, 
+  Layers, 
+  BookOpen, 
+  FileText, 
+  Calendar, 
+  History, 
+  RotateCcw, 
+  BarChart3, 
+  Trophy, 
+  Database, 
+  LogOut, 
+  Menu, 
+  Sparkles, 
+  X,
+  Compass
+} from 'lucide-react';
 
 const Sidebar = () => {
   const { isSidebarExpanded, toggleSidebar } = useSidebar();
   const pathname = usePathname();
   const { theme } = useTheme();
-  const { data: session, status } = useSession();
-  const { openModal } = useDonationModal();
+  const { data: session } = useSession();
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
-  const logoSrc = theme === 'dark' ? '/logo-modo-escuro.svg' : '/logo.svg';
+  if (['/login', '/register'].includes(pathname)) {
+    return null;
+  }
+
+  const navItems = [
+    { label: 'Home', href: '/dashboard', icon: Home },
+    { label: 'Planos', href: '/planos', icon: Layers },
+    { label: 'Disciplinas', href: '/materias', icon: BookOpen },
+    { label: 'Edital Verticalizado', href: '/edital', icon: FileText },
+    { label: 'Planejamento', href: '/planejamento', icon: Calendar },
+    { label: 'Histórico', href: '/historico', icon: History },
+    { label: 'Revisões', href: '/revisoes', icon: RotateCcw },
+    { label: 'Estatísticas', href: '/estatisticas', icon: BarChart3 },
+    { label: 'Simulados', href: '/simulados', icon: Trophy },
+    { label: 'Backup', href: '/backup', icon: Database },
+  ];
 
   return (
-    <div
-      className={`fixed inset-y-0 left-0 transform ${isSidebarExpanded ? 'translate-x-0' : '-translate-x-full'}
-      bg-amber-500 text-white w-72 p-4 transition-transform duration-300 ease-in-out z-50 flex flex-col dark:bg-gray-800 dark:text-gray-100`}>
-      
-      <div className="flex-grow">
-        {/* Sidebar Header */}
-        <div className="flex items-center">
-          <button onClick={toggleSidebar} className="text-white p-2 rounded-md hover:bg-amber-600 focus:outline-none focus:ring-2 focus:ring-white dark:hover:bg-gray-700 dark:focus:ring-gray-500">
-            <BsList size={24} />
+    <>
+      <aside
+        className={`fixed inset-y-0 left-0 transform ${
+          isSidebarExpanded ? 'translate-x-0' : '-translate-x-full'
+        } bg-white dark:bg-[#0c1421] text-slate-700 dark:text-slate-200 w-64 border-r border-slate-200 dark:border-[#1a293e] transition-transform duration-300 ease-in-out z-50 flex flex-col shadow-xl`}
+      >
+        {/* Cabeçalho da Sidebar */}
+        <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-[#1a293e]">
+          <Link href="/dashboard" className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 font-black text-base">
+              O
+            </div>
+            <div>
+              <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white block leading-tight">
+                Ouroboros
+              </span>
+              <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 tracking-wider uppercase">
+                Estudos 2.0
+              </span>
+            </div>
+          </Link>
+          <button
+            onClick={toggleSidebar}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#131f33] transition-colors"
+          >
+            <X size={18} />
           </button>
-          <div className="flex-grow flex justify-center">
-            <img src={logoSrc} alt="Estudei Logo" className="h-20 w-auto" />
-          </div>
         </div>
 
-        {/* Navigation */}
-        <nav className="mt-8">
-          <ul>
-            <li className="mb-2">
-              <Link href="/dashboard" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/dashboard' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaHome className="mr-2" />Home</Link>
-            </li>
-            <li className="mb-2">
-              <Link href="/planos" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/planos' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaClipboardList className="mr-2" />Planos</Link>
-            </li>
-            <li className="mb-2">
-              <Link href="/materias" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/materias' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaBook className="mr-2" />Matérias</Link>
-            </li>
-            
-            <li className="mb-2">
-              <Link href="/edital" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/edital' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaFileAlt className="mr-2" />Edital</Link>
-            </li>
-            
-            <li className="mb-2">
-              <Link href="/planejamento" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/planejamento' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaCalendarAlt className="mr-2" />Planejamento</Link>
-            </li>
-            <li className="mb-2">
-              <Link href="/historico" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/historico' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaHistory className="mr-2" />Histórico</Link>
-            </li>
-            <li className="mb-2">
-              <Link href="/revisoes" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/revisoes' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaRedoAlt className="mr-2" />Revisões</Link>
-            </li>
-            <li className="mb-2">
-              <Link href="/estatisticas" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/estatisticas' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaChartBar className="mr-2" />Estatísticas</Link>
-            </li>
-            <li className="mb-2">
-              <Link href="/simulados" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/simulados' ? 'bg-amber-600' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaGraduationCap className="mr-2" />Simulados</Link>
-            </li>
-            <li className="mb-2">
-              <button onClick={openModal} className={`w-full flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}>
-                <FaHeart className="mr-2 text-gold-400 animate-bright-pulse" />Apoie o Projeto
-              </button>
-            </li>
-            <li className="mb-2">
-              <Link href="/backup" className={`flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 ${pathname === '/backup' ? 'bg-amber-600 dark:bg-gray-700' : ''} dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100`}><FaDatabase className="mr-2" />Backup</Link>
-            </li>
-            {session && (
-              <li className="mb-2">
-                <button
-                  onClick={() => signOut({ callbackUrl: '/login' })}
-                  className="flex items-center p-2 rounded-md hover:bg-amber-600 transition-colors duration-200 w-full text-left dark:hover:bg-gray-700 dark:focus:ring-gray-500 dark:text-gray-100"
-                >
-                  <FaSignOutAlt className="mr-2" />Sair ({session.user?.name})
-                </button>
-              </li>
-            )}
-          </ul>
-        </nav>
-      </div>
-      <div className="p-4 border-t border-amber-400 dark:border-gray-700">
-        <div className="flex items-center justify-between space-x-2">
-          <ThemeToggleButton />
-          <div className="flex-grow">
-            <PlanSelector />
-          </div>
+        {/* Botão de Destaque: Importar Edital com IA */}
+        <div className="p-3">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500/15 via-teal-500/15 to-indigo-500/15 hover:from-emerald-500/25 hover:to-indigo-500/25 border border-emerald-500/30 text-emerald-700 dark:text-emerald-400 text-xs font-bold transition-all shadow-sm group"
+          >
+            <Sparkles size={15} className="group-hover:rotate-12 transition-transform text-emerald-500" />
+            Importar Edital via IA
+          </button>
         </div>
-      </div>
-      
-    </div>
+
+        {/* Links de Navegação */}
+        <nav className="flex-grow px-3 py-1 space-y-1 overflow-y-auto">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = pathname === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                  isActive
+                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border-l-2 border-emerald-500 shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#131f33] hover:text-slate-900 dark:hover:text-slate-100'
+                }`}
+              >
+                <Icon size={17} className={isActive ? 'text-emerald-500' : 'text-slate-400 dark:text-slate-500'} />
+                {item.label}
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* Rodapé da Sidebar: Plano Atual, Tema e Logout */}
+        <div className="p-3 border-t border-slate-100 dark:border-[#1a293e] space-y-2 bg-slate-50/50 dark:bg-[#090e17]/40">
+          <div className="flex items-center justify-between gap-2">
+            <ThemeToggleButton />
+            <div className="flex-grow min-w-0">
+              <PlanSelector />
+            </div>
+          </div>
+
+          {session && (
+            <button
+              onClick={() => signOut({ callbackUrl: '/login' })}
+              className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+            >
+              <LogOut size={14} />
+              Sair ({session.user?.name || 'Usuário'})
+            </button>
+          )}
+        </div>
+      </aside>
+
+      {/* Modal de Importação com IA */}
+      <ImportEditalModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
+    </>
   );
 };
 

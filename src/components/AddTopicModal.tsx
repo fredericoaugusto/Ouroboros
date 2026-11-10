@@ -2,69 +2,58 @@
 
 import React, { useState } from 'react';
 import { useNotification } from '../context/NotificationContext';
-
-import { Topic } from '../app/planos/[fileName]/page'; // Importar a interface Topic
+import { Topic, parseTopicsFromString } from './AddSubjectModal';
+import Breadcrumbs from './Breadcrumbs';
+import { ListPlus, ArrowLeft, Check } from 'lucide-react';
 
 interface AddTopicModalProps {
   isOpen: boolean;
   onClose: () => void;
   onAdd: (topics: Topic[], shouldContinue: boolean) => void;
   existingTopics: Topic[];
-  isViewMode?: boolean; // Nova propriedade para modo de visualização
+  isViewMode?: boolean;
 }
 
-const AddTopicModal: React.FC<AddTopicModalProps> = ({ isOpen, onClose, onAdd, existingTopics, isViewMode }) => {
+const AddTopicModal: React.FC<AddTopicModalProps> = ({
+  isOpen,
+  onClose,
+  onAdd,
+  existingTopics,
+  isViewMode,
+}) => {
   const { showNotification } = useNotification();
   const [content, setContent] = useState('');
   const [shouldContinue, setShouldContinue] = useState(false);
 
   if (!isOpen) return null;
 
-// Componente auxiliar para renderizar tópicos em árvore
-const TopicTreeItem: React.FC<{ topic: Topic; level: number }> = ({ topic, level }) => {
-  return (
-    <li>
-      <span style={{ paddingLeft: `${level * 15}px` }}>{topic.topic_text}</span>
-      {topic.sub_topics && topic.sub_topics.length > 0 && (
-        <ul className="list-disc list-inside ml-4">
-          {topic.sub_topics.map((subTopic, index) => (
-            <TopicTreeItem key={index} topic={subTopic} level={level + 1} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-};
+  const TopicTreeItem: React.FC<{ topic: Topic; level: number }> = ({ topic, level }) => {
+    return (
+      <li className="py-1 text-xs text-slate-700 dark:text-slate-300">
+        <div style={{ paddingLeft: `${level * 14}px` }} className="flex items-center gap-1.5">
+          {topic.topic_number && (
+            <span className="font-mono text-[10px] text-emerald-500 font-semibold">
+              {topic.topic_number}
+            </span>
+          )}
+          <span>{topic.topic_text}</span>
+        </div>
+        {topic.sub_topics && topic.sub_topics.length > 0 && (
+          <ul className="mt-0.5">
+            {topic.sub_topics.map((subTopic, index) => (
+              <TopicTreeItem key={index} topic={subTopic} level={level + 1} />
+            ))}
+          </ul>
+        )}
+      </li>
+    );
+  };
 
   const handleAdd = () => {
-    const lines = content.split('\n').map(line => line.trimEnd()); // Preserve leading spaces for indentation
-    const newTopics: Topic[] = [];
-    const stack: { level: number; topic: Topic }[] = [];
-
-    lines.forEach(line => {
-      if (!line.trim()) return; // Skip empty lines
-
-      const leadingSpaces = line.match(/^\s*/)?.[0].length || 0;
-      const topicText = line.trim();
-
-      const newTopic: Topic = { topic_text: topicText, sub_topics: [] };
-
-      while (stack.length > 0 && leadingSpaces <= stack[stack.length - 1].level) {
-        stack.pop(); // Pop topics with higher or equal indentation
-      }
-
-      if (stack.length === 0) {
-        newTopics.push(newTopic); // Top-level topic
-      } else {
-        stack[stack.length - 1].topic.sub_topics?.push(newTopic); // Add as sub-topic
-      }
-
-      stack.push({ level: leadingSpaces, topic: newTopic });
-    });
-
+    const newTopics = parseTopicsFromString(content);
     if (newTopics.length > 0) {
-      onAdd(newTopics, shouldContinue); // Pass the hierarchical structure
-      setContent(''); // Clear the field
+      onAdd(newTopics, shouldContinue);
+      setContent('');
       if (!shouldContinue) {
         onClose();
       }
@@ -74,76 +63,105 @@ const TopicTreeItem: React.FC<{ topic: Topic; level: number }> = ({ topic, level
   };
 
   return (
-    <div className="fixed inset-0 bg-[rgba(0,0,0,0.4)] flex justify-center items-center z-50">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-2xl p-8 w-full max-w-2xl">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6 text-center">{isViewMode ? 'Tópicos da Disciplina' : 'Tópico'}</h2>
-        
-        <div className="flex flex-col md:flex-row gap-4 mb-4">
-          <div className="w-full md:w-1/2">
-            <label className="block text-sm font-bold text-teal-800 dark:text-teal-300 mb-2">
-              TÓPICOS EXISTENTES
-            </label>
-            <div className="bg-gray-100 border border-gray-300 rounded-md p-2 h-48 overflow-y-auto dark:bg-gray-700 dark:border-gray-600">
-              {existingTopics.length > 0 ? (
-                <ul className="list-disc list-inside">
-                  {existingTopics.map((topic, index) => (
-                    <TopicTreeItem key={index} topic={topic} level={0} />
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-gray-500 italic dark:text-gray-400">Nenhum tópico adicionado ainda.</p>
-              )}
-            </div>
-          </div>
-
-          {!isViewMode && (
-            <div className="w-full md:w-1/2">
-              <label htmlFor="topicContent" className="block text-sm font-bold text-teal-800 dark:text-teal-300 mb-2">
-                CONTEÚDO
-              </label>
-              <textarea
-                id="topicContent"
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                placeholder="Dica: Você pode fazer quebra de linha com Enter para adicionar mais de um tópico."
-                rows={10}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-teal-500 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-teal-400"
-                autoFocus
-              />
-            </div>
-          )}
-        </div>
-
-        {!isViewMode && (
-          <div className="flex items-center mb-6">
-            <input
-              type="checkbox"
-              id="saveAndContinue"
-              checked={shouldContinue}
-              onChange={(e) => setShouldContinue(e.target.checked)}
-              className="h-4 w-4 text-teal-600 border-gray-300 rounded focus:ring-teal-500 dark:bg-gray-700 dark:border-gray-600"
-            />
-            <label htmlFor="saveAndContinue" className="ml-2 text-sm text-gray-700 dark:text-gray-100">
-              SALVAR E CONTINUAR
-            </label>
-          </div>
-        )}
-
-        <div className="flex justify-end gap-4">
+    <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-4">
+          <Breadcrumbs
+            items={[
+              { label: 'Disciplinas', onClick: onClose },
+              { label: isViewMode ? 'Tópicos da Disciplina' : 'Adicionar Tópicos e Subtópicos' },
+            ]}
+            className="mb-0"
+          />
           <button
             onClick={onClose}
-            className="px-6 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942] transition-colors"
           >
-            {isViewMode ? 'Fechar' : 'Cancelar'}
+            <ArrowLeft className="w-4 h-4" />
+            Voltar
           </button>
+        </div>
+
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl shadow-sm border border-slate-200 dark:border-[#1f304a] w-full overflow-hidden flex flex-col">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
+                <ListPlus className="w-5 h-5" />
+              </div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                {isViewMode ? 'Tópicos da Disciplina' : 'Adicionar Tópicos e Subtópicos'}
+              </h2>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                Tópicos Existentes
+              </label>
+              <div className="bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] rounded-xl p-3 h-60 overflow-y-auto">
+                {existingTopics.length > 0 ? (
+                  <ul>
+                    {existingTopics.map((topic, index) => (
+                      <TopicTreeItem key={index} topic={topic} level={0} />
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="text-xs text-slate-400 italic">Nenhum tópico adicionado ainda.</p>
+                )}
+              </div>
+            </div>
+
+            {!isViewMode && (
+              <div>
+                <label className="block text-xs font-semibold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1.5">
+                  Novos Tópicos (2 espaços = subtópico)
+                </label>
+                <textarea
+                  value={content}
+                  onChange={(e) => setContent(e.target.value)}
+                  placeholder={`Tópico Principal\n  Subtópico 1\n    Sub-subtópico 1.1\n  Subtópico 2`}
+                  rows={10}
+                  className="w-full h-60 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-mono text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  autoFocus
+                />
+              </div>
+            )}
+          </div>
+
           {!isViewMode && (
-            <button
-              onClick={handleAdd}
-              className="px-6 py-2 bg-green-500 text-white font-semibold rounded-lg hover:bg-green-600 transition-colors dark:bg-green-600 dark:hover:bg-green-700"
-            >
-              Adicionar
-            </button>
+            <label className="inline-flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={shouldContinue}
+                onChange={(e) => setShouldContinue(e.target.checked)}
+                className="w-4 h-4 rounded text-emerald-500 focus:ring-emerald-500 bg-slate-100 dark:bg-[#0b1320] border-slate-300 dark:border-[#243552]"
+              />
+              <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                Salvar e continuar adicionando
+              </span>
+            </label>
           )}
+
+          <div className="flex justify-end gap-3 pt-3 border-t border-slate-200 dark:border-[#1f304a]">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl text-sm font-medium bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700 transition-colors"
+            >
+              {isViewMode ? 'Fechar' : 'Cancelar'}
+            </button>
+            {!isViewMode && (
+              <button
+                onClick={handleAdd}
+                className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-sm transition-all"
+              >
+                <Check className="w-4 h-4" />
+                Adicionar
+              </button>
+            )}
+          </div>
+          </div>
         </div>
       </div>
     </div>

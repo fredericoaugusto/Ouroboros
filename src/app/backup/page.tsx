@@ -1,7 +1,15 @@
 'use client';
 
 import React, { useState, useRef } from 'react';
-import { FaDownload, FaUpload, FaExclamationTriangle, FaSpinner } from 'react-icons/fa';
+import {
+  FiDownload,
+  FiUpload,
+  FiAlertTriangle,
+  FiLoader,
+  FiDatabase,
+  FiShield,
+  FiTrash2,
+} from 'react-icons/fi';
 import { useData } from '../../context/DataContext';
 import DeleteAllDataModal from '../../components/DeleteAllDataModal';
 import ImportConfirmationModal from '../../components/ImportConfirmationModal';
@@ -18,14 +26,14 @@ const BackupPage = () => {
 
   const handleExport = async () => {
     try {
-      const data = await exportAllData(); // Changed to await
+      const data = await exportAllData();
       const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(
         JSON.stringify(data, null, 2)
       )}`;
-      const link = document.createElement("a");
+      const link = document.createElement('a');
       link.href = jsonString;
       const date = new Date().toISOString().split('T')[0];
-      link.download = `backup-ouroboros-completo-${date}.json`; // Updated filename
+      link.download = `backup-ouroboros-${date}.json`;
       link.click();
       setSuccess('Backup completo exportado com sucesso!');
       setError(null);
@@ -57,32 +65,35 @@ const BackupPage = () => {
     setSuccess(null);
 
     const reader = new FileReader();
-    reader.onload = async (e) => {
+    reader.onload = async e => {
       try {
         const text = e.target?.result;
         if (typeof text !== 'string') {
           throw new Error('Formato de arquivo inválido.');
         }
         const data = JSON.parse(text);
-        
         await importAllData(data);
 
-        setSuccess('Dados importados com sucesso! A página será recarregada para refletir as mudanças.');
+        setSuccess(
+          'Dados importados com sucesso! A página será recarregada em instantes...'
+        );
         setTimeout(() => {
           window.location.reload();
-        }, 2000);
-
+        }, 1800);
       } catch (err: any) {
         console.error(err);
-        setError(err.message || 'Ocorreu um erro ao importar o arquivo. Verifique se o arquivo é um backup válido.');
+        setError(
+          err.message ||
+            'Ocorreu um erro ao importar o arquivo. Verifique se é um JSON válido.'
+        );
         setSuccess(null);
       } finally {
         setIsLoading(false);
       }
     };
     reader.readAsText(selectedFile);
-    
-    if(fileInputRef.current) {
+
+    if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
   };
@@ -94,10 +105,10 @@ const BackupPage = () => {
     setSuccess(null);
     try {
       await clearAllData();
-      setSuccess('Todos os dados foram apagados com sucesso! A página será recarregada.');
+      setSuccess('Todos os dados foram apagados com sucesso! Recarregando...');
       setTimeout(() => {
         window.location.reload();
-      }, 2000);
+      }, 1800);
     } catch (err: any) {
       console.error(err);
       setError(err.message || 'Ocorreu um erro ao apagar os dados.');
@@ -108,45 +119,71 @@ const BackupPage = () => {
   };
 
   return (
-    <>
-      <div className="container mx-auto p-4 md:p-8">
-        <h1 className="text-3xl font-bold mb-6 text-gray-800 dark:text-slate-200">Backup e Restauração</h1>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          
-          {/* Painel de Exportação */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md border dark:border-slate-700">
-            <h2 className="text-2xl font-semibold mb-4 flex items-center text-amber-600 dark:text-amber-400">
-              <FaDownload className="mr-3" />
-              Exportar Dados
-            </h2>
-            <p className="mb-4 text-gray-600 dark:text-slate-300">
-              Crie um backup de todos os seus dados, incluindo planos de estudo, matérias, histórico e simulados. Salve este arquivo em um local seguro.
-            </p>
+    <div className="min-h-screen text-slate-900 dark:text-slate-100 pb-16">
+      <div className="max-w-5xl mx-auto">
+        <header className="mb-6">
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+            Backup e Restauração
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Seus dados pertencem 100% a você. Exporte, restaure ou gerencie o armazenamento local.
+          </p>
+        </header>
+
+        {error && (
+          <div className="mb-6 p-4 bg-rose-500/10 text-rose-500 border border-rose-500/20 rounded-2xl text-xs font-semibold">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="mb-6 p-4 bg-emerald-500/10 text-emerald-500 border border-emerald-500/20 rounded-2xl text-xs font-semibold">
+            {success}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          {/* Export Card */}
+          <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mb-4">
+                <FiDownload className="w-5 h-5" />
+              </div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white mb-2">
+                Exportar Backup Completo
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-6">
+                Gera um arquivo <code className="text-emerald-500 font-mono">.json</code> contendo todos os seus planos de estudo, editais verticalizados, anotações do cockpit, scores, histórico e simulados.
+              </p>
+            </div>
             <button
               onClick={handleExport}
-              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex items-center justify-center"
+              className="w-full py-2.5 px-4 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm"
             >
-              <FaDownload className="mr-2" />
-              Exportar para Arquivo
+              <FiDownload className="w-4 h-4" />
+              Baixar Arquivo de Backup
             </button>
           </div>
 
-          {/* Painel de Importação */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md border dark:border-slate-700">
-            <h2 className="text-2xl font-semibold mb-4 flex items-center text-amber-600 dark:text-amber-400">
-              <FaUpload className="mr-3" />
-              Importar Dados
-            </h2>
-            <div className="bg-orange-100 dark:bg-orange-500/20 border-l-4 border-orange-500 dark:border-orange-400 text-orange-700 dark:text-orange-300 p-4 rounded-md mb-4" role="alert">
-              <div className="flex">
-                <FaExclamationTriangle className="h-5 w-5 mr-3 mt-1" />
-                <div>
-                  <p className="font-bold">Atenção!</p>
-                  <p>A importação de um arquivo substituirá permanentemente todos os dados atuais. Use com cuidado.</p>
-                </div>
+          {/* Import Card */}
+          <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="w-10 h-10 rounded-xl bg-indigo-500/10 text-indigo-500 flex items-center justify-center mb-4">
+                <FiUpload className="w-5 h-5" />
+              </div>
+              <h2 className="text-base font-bold text-slate-900 dark:text-white mb-2">
+                Restaurar a partir de Arquivo
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed mb-4">
+                Restaure seus estudos a partir de um backup salvo anteriormente. Ideal para migrar de computador ou recuperar dados.
+              </p>
+              <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 text-[11px] text-amber-600 dark:text-amber-400 mb-4 flex items-start gap-2">
+                <FiAlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  A restauração substituirá os dados atuais pelos dados do arquivo selecionado.
+                </span>
               </div>
             </div>
+
             <input
               type="file"
               accept=".json"
@@ -157,58 +194,43 @@ const BackupPage = () => {
             <button
               onClick={handleImportClick}
               disabled={isLoading}
-              className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex items-center justify-center disabled:bg-gray-400 mt-4"
+              className="w-full py-2.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold text-xs transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
             >
               {isLoading ? (
-                <FaSpinner className="animate-spin mr-2" />
+                <FiLoader className="w-4 h-4 animate-spin" />
               ) : (
-                <FaUpload className="mr-2" />
+                <FiUpload className="w-4 h-4" />
               )}
-              {isLoading ? 'Importando...' : 'Importar de Arquivo'}
+              {isLoading ? 'Importando...' : 'Selecionar Arquivo JSON'}
             </button>
           </div>
 
-          {/* Painel de Limpeza de Dados */}
-          <div className="bg-white dark:bg-slate-800 p-6 rounded-lg shadow-md border dark:border-slate-700 col-span-1 md:col-span-2">
-            <h2 className="text-2xl font-semibold mb-4 flex items-center text-red-600 dark:text-red-400">
-              <FaExclamationTriangle className="mr-3" />
-              Começar do Zero
-            </h2>
-            <div className="bg-red-100 dark:bg-red-500/20 border-l-4 border-red-500 dark:border-red-400 text-red-700 dark:text-red-300 p-4 rounded-md mb-4" role="alert">
-              <div className="flex">
-                <FaExclamationTriangle className="h-5 w-5 mr-3 mt-1" />
-                <div>
-                  <p className="font-bold">ATENÇÃO: Esta ação é irreversível!</p>
-                  <p>Ao clicar em "Começar do Zero", todos os seus dados de planos, estudos, revisões e simulados serão PERMANENTEMENTE apagados. Use com extrema cautela.</p>
-                </div>
+          {/* Danger Zone: Reset */}
+          <div className="md:col-span-2 bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-rose-500/20 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-500 flex items-center justify-center shrink-0">
+                <FiTrash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                  Zerar Plataforma (Começar do Zero)
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Remove permanentemente todos os planos, históricos, revisões e simulados da sua conta.
+                </p>
               </div>
             </div>
             <button
               onClick={() => setIsDeleteModalOpen(true)}
               disabled={isLoading}
-              className="w-full bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition-colors duration-300 flex items-center justify-center disabled:bg-gray-400 mt-4"
+              className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white border border-rose-500/20 font-bold text-xs transition-all shrink-0"
             >
-              {isLoading ? (
-                <FaSpinner className="animate-spin mr-2" />
-              ) : (
-                <FaExclamationTriangle className="mr-2" />
-              )}
-              {isLoading ? 'Apagando Dados...' : 'Começar do Zero'}
+              Apagar Todos os Dados
             </button>
           </div>
         </div>
-
-        {error && (
-          <div className="mt-6 p-4 bg-red-100 dark:bg-red-500/20 text-red-700 dark:text-red-300 border border-red-400 rounded-lg text-center">
-            {error}
-          </div>
-        )}
-        {success && (
-          <div className="mt-6 p-4 bg-green-100 dark:bg-green-500/20 text-green-700 dark:text-green-300 border border-green-400 rounded-lg text-center">
-            {success}
-          </div>
-        )}
       </div>
+
       <DeleteAllDataModal
         isOpen={isDeleteModalOpen}
         onClose={() => setIsDeleteModalOpen(false)}
@@ -219,7 +241,7 @@ const BackupPage = () => {
         onClose={() => setIsImportModalOpen(false)}
         onConfirm={handleConfirmImport}
       />
-    </>
+    </div>
   );
 };
 

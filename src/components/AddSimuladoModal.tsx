@@ -1,8 +1,19 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
-import { FaTimes, FaCalendarAlt, FaCheckCircle, FaTimesCircle, FaMinusCircle, FaPercentage, FaStar, FaTrash, FaPencilAlt } from 'react-icons/fa';
+import {
+  FiX,
+  FiCheckCircle,
+  FiXCircle,
+  FiMinusCircle,
+  FiPercent,
+  FiAward,
+  FiTrash2,
+  FiArrowLeft,
+} from 'react-icons/fi';
 import { useData } from '../context/DataContext';
+import { SimuladoRecord } from '../app/actions';
+import Breadcrumbs from './Breadcrumbs';
 
 interface Subject {
   name: string;
@@ -10,28 +21,34 @@ interface Subject {
   totalQuestions: number;
   correct: number;
   incorrect: number;
+  color?: string;
 }
 
 interface AddSimuladoModalProps {
   isOpen: boolean;
   onClose: () => void;
-  initialSimulado?: SimuladoRecord | null; // Adicionado para edição
+  initialSimulado?: SimuladoRecord | null;
 }
 
-export default function AddSimuladoModal({ isOpen, onClose, initialSimulado }: AddSimuladoModalProps) {
+export default function AddSimuladoModal({
+  isOpen,
+  onClose,
+  initialSimulado,
+}: AddSimuladoModalProps) {
   const { studyPlans, addSimuladoRecord, updateSimuladoRecord } = useData();
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState(
+    new Date().toISOString().split('T')[0]
+  );
   const [examStyle, setExamStyle] = useState('Múltipla Escolha');
   const [simuladoName, setSimuladoName] = useState('');
   const [banca, setBanca] = useState('');
-  const [timeSpent, setTimeSpent] = useState('00:00:00');
+  const [timeSpent, setTimeSpent] = useState('04:00:00');
   const [comments, setComments] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       if (initialSimulado) {
-        // Preencher o formulário com os dados do simulado para edição
         setSelectedDate(initialSimulado.date);
         setExamStyle(initialSimulado.style);
         setSimuladoName(initialSimulado.name);
@@ -40,14 +57,12 @@ export default function AddSimuladoModal({ isOpen, onClose, initialSimulado }: A
         setComments(initialSimulado.comments);
         setSubjects(initialSimulado.subjects);
       } else {
-        // Resetar o formulário para um novo simulado
         setSelectedDate(new Date().toISOString().split('T')[0]);
         setExamStyle('Múltipla Escolha');
         setSimuladoName('');
         setBanca('');
-        setTimeSpent('00:00:00');
+        setTimeSpent('04:00:00');
         setComments('');
-        // Recarregar subjects do plano de estudos para um novo simulado
         if (studyPlans) {
           const subjectsMap = new Map<string, Subject>();
           studyPlans.forEach(plan => {
@@ -59,7 +74,7 @@ export default function AddSimuladoModal({ isOpen, onClose, initialSimulado }: A
                   totalQuestions: 0,
                   correct: 0,
                   incorrect: 0,
-                  color: subject.color, // Adiciona a cor da matéria
+                  color: subject.color || '#10b981',
                 });
               }
             });
@@ -84,25 +99,34 @@ export default function AddSimuladoModal({ isOpen, onClose, initialSimulado }: A
   };
 
   const totals = useMemo(() => {
-    return subjects.reduce((acc, subject) => {
-      acc.totalQuestions += subject.totalQuestions;
-      acc.correct += subject.correct;
-      acc.incorrect += subject.incorrect;
-      const subjectPoints = examStyle === 'Certo/Errado' ? subject.correct - subject.incorrect : subject.correct * subject.weight;
-      acc.points += subjectPoints;
-      return acc;
-    }, { totalQuestions: 0, correct: 0, incorrect: 0, points: 0 });
+    return subjects.reduce(
+      (acc, subject) => {
+        acc.totalQuestions += subject.totalQuestions;
+        acc.correct += subject.correct;
+        acc.incorrect += subject.incorrect;
+        const subjectPoints =
+          examStyle === 'Certo/Errado'
+            ? subject.correct - subject.incorrect
+            : subject.correct * subject.weight;
+        acc.points += subjectPoints;
+        return acc;
+      },
+      { totalQuestions: 0, correct: 0, incorrect: 0, points: 0 }
+    );
   }, [subjects, examStyle]);
 
   const totalBlank = totals.totalQuestions - totals.correct - totals.incorrect;
-  const totalPercentage = totals.totalQuestions > 0 ? Math.round((totals.correct / totals.totalQuestions) * 100) : 0;
+  const totalPercentage =
+    totals.totalQuestions > 0
+      ? Math.round((totals.correct / totals.totalQuestions) * 100)
+      : 0;
 
   const handleSaveSimulado = async () => {
     const simuladoData = {
       date: selectedDate,
-      name: simuladoName,
+      name: simuladoName || 'Simulado Geral',
       style: examStyle,
-      banca: banca,
+      banca: banca || 'Geral',
       timeSpent: timeSpent,
       subjects: subjects.map(s => ({
         name: s.name,
@@ -110,7 +134,7 @@ export default function AddSimuladoModal({ isOpen, onClose, initialSimulado }: A
         totalQuestions: s.totalQuestions,
         correct: s.correct,
         incorrect: s.incorrect,
-        color: s.color || '#000000',
+        color: s.color || '#10b981',
       })),
       comments: comments,
     };
@@ -122,149 +146,293 @@ export default function AddSimuladoModal({ isOpen, onClose, initialSimulado }: A
         await addSimuladoRecord(simuladoData);
       }
       onClose();
-      // Reset form fields after successful save/update
-      setSimuladoName('');
-      setBanca('');
-      setTimeSpent('00:00:00');
-      setComments('');
-      setSubjects([]); // This will reset the table
-      setSelectedDate(new Date().toISOString().split('T')[0]); // Reset date
-      setExamStyle('Múltipla Escolha'); // Reset exam style
     } catch (error) {
-      console.error("Falha ao salvar/atualizar simulado do modal:", error);
-      // Notification is handled by DataContext
+      console.error('Falha ao salvar simulado:', error);
     }
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/80 flex justify-center items-center z-50 p-4 transition-opacity duration-300">
-      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-6xl max-h-[95vh] flex flex-col transform transition-all duration-300 scale-95 animate-in fade-in zoom-in-95">
-        {/* Cabeçalho */}
-        <header className="flex justify-between items-center p-5 border-b border-gold-200 dark:border-gold-700 bg-gold-50 dark:bg-gold-900">
-          <h2 className="text-2xl font-bold text-gold-800 dark:text-gold-200">Registrar Novo Simulado</h2>
-          <button onClick={onClose} className="text-gold-600 hover:text-gold-800 dark:text-gold-400 dark:hover:text-gold-200 transition-colors rounded-full p-2">
-            <FaTimes size={20} />
+    <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-4">
+          <Breadcrumbs
+            items={[
+              { label: 'Simulados', onClick: onClose },
+              { label: initialSimulado ? `Editar: ${initialSimulado.name}` : 'Registrar Novo Simulado' },
+            ]}
+            className="mb-0"
+          />
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942] transition-colors"
+          >
+            <FiArrowLeft className="w-4 h-4" />
+            Voltar
           </button>
-        </header>
+        </div>
 
-        {/* Corpo do Modal */}
-        <main className="p-6 space-y-6 overflow-y-auto dark:text-gray-100">
-          <fieldset className="grid grid-cols-1 md:grid-cols-5 gap-x-6 gap-y-4">
-            <legend className="sr-only">Informações Gerais do Simulado</legend>
-            
-            {/* Date Selection */}
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl shadow-sm border border-slate-200 dark:border-[#1f304a] w-full flex flex-col overflow-hidden">
+          {/* Header */}
+          <header className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-[#1f304a]">
             <div>
-              <label htmlFor="simulado-date" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Data</label>
-              <div className="relative">
-                <input 
-                  id="simulado-date" 
-                  type="date" 
-                  value={selectedDate} 
-                  onChange={(e) => setSelectedDate(e.target.value)}
-                  className="w-full p-2 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gold-500 dark:border-gold-700 rounded-lg shadow-sm focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition" 
-                />
-                <FaCalendarAlt className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-300 pointer-events-none" />
-              </div>
+              <h2 className="text-lg font-bold text-slate-900 dark:text-white">
+                {initialSimulado ? 'Editar Simulado' : 'Registrar Novo Simulado'}
+              </h2>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Preencha seu desempenho por disciplina para calcular a nota líquida
+              </p>
+            </div>
+          </header>
+
+          {/* Body */}
+          <main className="p-6 space-y-5 flex-1">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Data
+              </label>
+              <input
+                type="date"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
             </div>
 
-            {/* Other Fields */}
             <div>
-              <label htmlFor="simulado-name" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Nome do Simulado</label>
-              <input id="simulado-name" type="text" placeholder="Ex: Simulado Final SEFAZ" value={simuladoName} onChange={(e) => setSimuladoName(e.target.value)} className="w-full p-2 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gold-500 dark:border-gold-700 rounded-lg shadow-sm focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition" />
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Nome do Simulado
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: 1º Simulado Pós-Edital"
+                value={simuladoName}
+                onChange={e => setSimuladoName(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
             </div>
+
             <div>
-              <label htmlFor="simulado-style" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Estilo de Prova</label>
-              <select id="simulado-style" value={examStyle} onChange={(e) => setExamStyle(e.target.value)} className="w-full p-2 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gold-500 dark:border-gold-700 rounded-lg shadow-sm focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition">
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Estilo de Prova
+              </label>
+              <select
+                value={examStyle}
+                onChange={e => setExamStyle(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
                 <option>Múltipla Escolha</option>
                 <option>Certo/Errado</option>
               </select>
             </div>
-            <div>
-              <label htmlFor="simulado-banca" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Banca</label>
-              <input id="simulado-banca" type="text" placeholder="Ex: FGV" value={banca} onChange={(e) => setBanca(e.target.value)} className="w-full p-2 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gold-500 dark:border-gold-700 rounded-lg shadow-sm focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition" />
-            </div>
-            <div>
-              <label htmlFor="simulado-time" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Tempo Gasto</label>
-              <input id="simulado-time" type="text" value={timeSpent} onChange={(e) => setTimeSpent(e.target.value)} className="w-full p-2 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gold-500 dark:border-gold-700 rounded-lg shadow-sm text-center text-lg font-mono tracking-wider focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition" />
-            </div>
-          </fieldset>
 
-          {/* Tabela de Disciplinas */}
-          <div className="overflow-x-auto rounded-lg border border-gold-200 dark:border-gold-700 shadow-sm">
-            <table className="min-w-full bg-white dark:bg-gray-800">
-              <thead className="bg-gray-100 dark:bg-gray-900">
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Banca
+              </label>
+              <input
+                type="text"
+                placeholder="Ex: CEBRASPE, FGV"
+                value={banca}
+                onChange={e => setBanca(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+                Tempo Gasto
+              </label>
+              <input
+                type="text"
+                value={timeSpent}
+                onChange={e => setTimeSpent(e.target.value)}
+                className="w-full px-3 py-2 text-xs bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-xl text-center font-mono focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
+            </div>
+          </div>
+
+          {/* Subjects Table */}
+          <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-[#1f304a]">
+            <table className="min-w-full divide-y divide-slate-200 dark:divide-[#1f304a]">
+              <thead className="bg-slate-50 dark:bg-[#0f1929]">
                 <tr>
-                  <th className="py-3 px-4 text-left text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider">Disciplina</th>
-                  <th className="py-3 px-4 text-center text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider">Peso</th>
-                  <th className="py-2 px-4 border-b border-gold-200 dark:border-gold-700 text-center text-sm font-semibold text-gold-800 dark:text-gold-200"><FaPencilAlt className="inline-block mr-1" /></th>
-                  <th className="py-3 px-4 text-center text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider" title="Acertos"><FaCheckCircle className="text-green-500 mx-auto" /></th>
-                  <th className="py-3 px-4 text-center text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider" title="Erros"><FaTimesCircle className="text-red-500 mx-auto" /></th>
-                  <th className="py-3 px-4 text-center text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider" title="Em Branco"><FaMinusCircle className="text-gray-400 mx-auto" /></th>
-                  <th className="py-3 px-4 text-center text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider" title="Pontos"><FaStar className="text-yellow-500 mx-auto" /></th>
-                  <th className="py-3 px-4 text-center text-xs font-semibold text-gold-800 dark:text-gold-200 uppercase tracking-wider" title="Desempenho"><FaPercentage className="text-blue-500 mx-auto" /></th>
-                  <th className="py-3 px-2 text-center text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Ação</th>
+                  <th className="py-2.5 px-4 text-left text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Disciplina
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Peso
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
+                    Total Q.
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-emerald-500 uppercase tracking-wider">
+                    Acertos
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-rose-500 uppercase tracking-wider">
+                    Erros
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Brancos
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-indigo-500 uppercase tracking-wider">
+                    Pontos
+                  </th>
+                  <th className="py-2.5 px-3 text-center text-[11px] font-bold text-emerald-500 uppercase tracking-wider">
+                    %
+                  </th>
+                  <th className="py-2.5 px-2 text-center text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                    Ação
+                  </th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+              <tbody className="divide-y divide-slate-100 dark:divide-[#1f304a]/60 bg-white dark:bg-[#131f33]">
                 {subjects.map((subject, index) => {
-                  const blankQuestions = subject.totalQuestions - subject.correct - subject.incorrect;
-                  const subjectPoints = examStyle === 'Certo/Errado' ? subject.correct - subject.incorrect : subject.correct * subject.weight;
-                  const percentage = subject.totalQuestions > 0 ? Math.round((subject.correct / subject.totalQuestions) * 100) : 0;
-                  
+                  const blankQuestions =
+                    subject.totalQuestions - subject.correct - subject.incorrect;
+                  const subjectPoints =
+                    examStyle === 'Certo/Errado'
+                      ? subject.correct - subject.incorrect
+                      : subject.correct * subject.weight;
+                  const percentage =
+                    subject.totalQuestions > 0
+                      ? Math.round((subject.correct / subject.totalQuestions) * 100)
+                      : 0;
+
                   return (
-                    <tr key={subject.name} className="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors" style={{ borderLeft: `4px solid ${subject.color}` }}>
-                      <td className="py-3 px-4 font-medium text-gray-800 dark:text-gray-200">{subject.name}</td>
-                      <td className="p-2"><input type="number" value={subject.weight} onChange={(e) => handleSubjectChange(index, 'weight', e.target.value)} className="w-20 p-2 text-center bg-gray-50 dark:bg-gray-700 dark:text-gray-100 border-gold-500 dark:border-gold-700 border rounded-md focus:ring-2 focus:ring-gold-500 focus:border-gold-500" /></td>
-                      <td className="p-2"><input type="number" value={subject.totalQuestions} onChange={(e) => handleSubjectChange(index, 'totalQuestions', e.target.value)} className="w-20 p-2 text-center bg-gray-50 dark:bg-gray-700 dark:text-gray-100 border-gold-500 dark:border-gold-700 border rounded-md focus:ring-2 focus:ring-gold-500 focus:border-gold-500" /></td>
-                      <td className="p-2"><input type="number" value={subject.correct} onChange={(e) => handleSubjectChange(index, 'correct', e.target.value)} className="w-20 p-2 text-center bg-green-50 dark:bg-green-900/50 dark:text-gray-100 border-gold-500 dark:border-gold-700 border rounded-md focus:ring-2 focus:ring-green-500 focus:border-green-500" /></td>
-                      <td className="p-2"><input type="number" value={subject.incorrect} onChange={(e) => handleSubjectChange(index, 'incorrect', e.target.value)} className="w-20 p-2 text-center bg-red-50 dark:bg-red-900/50 dark:text-gray-100 border-gold-500 dark:border-gold-700 border rounded-md focus:ring-2 focus:ring-red-500 focus:border-red-500" /></td>
-                      <td className="py-3 px-4 text-center font-semibold text-gray-600 dark:text-gray-300">{blankQuestions < 0 ? 'N/A' : blankQuestions}</td>
-                      <td className="py-3 px-4 text-center font-bold text-lg text-yellow-600 dark:text-yellow-400">{subjectPoints}</td>
-                      <td className="py-3 px-4 text-center font-bold text-lg text-blue-600 dark:text-blue-400">{percentage}%</td>
-                      <td className="py-3 px-2 text-center">
-                        <button onClick={() => handleDeleteSubject(index)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-500 transition-colors p-2 rounded-full hover:bg-red-100 dark:hover:bg-red-900/50">
-                          <FaTrash />
+                    <tr
+                      key={subject.name}
+                      className="hover:bg-slate-50/70 dark:hover:bg-[#17263f]/40 transition-colors"
+                    >
+                      <td className="py-2.5 px-4 text-xs font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                        <span
+                          className="w-2 h-2 rounded-full shrink-0"
+                          style={{ backgroundColor: subject.color || '#10b981' }}
+                        />
+                        {subject.name}
+                      </td>
+                      <td className="p-1.5 text-center">
+                        <input
+                          type="number"
+                          value={subject.weight}
+                          onChange={e =>
+                            handleSubjectChange(index, 'weight', e.target.value)
+                          }
+                          className="w-16 px-2 py-1 text-xs text-center bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-lg"
+                        />
+                      </td>
+                      <td className="p-1.5 text-center">
+                        <input
+                          type="number"
+                          value={subject.totalQuestions}
+                          onChange={e =>
+                            handleSubjectChange(index, 'totalQuestions', e.target.value)
+                          }
+                          className="w-16 px-2 py-1 text-xs text-center bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-lg"
+                        />
+                      </td>
+                      <td className="p-1.5 text-center">
+                        <input
+                          type="number"
+                          value={subject.correct}
+                          onChange={e =>
+                            handleSubjectChange(index, 'correct', e.target.value)
+                          }
+                          className="w-16 px-2 py-1 text-xs text-center bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold border border-emerald-500/20 rounded-lg"
+                        />
+                      </td>
+                      <td className="p-1.5 text-center">
+                        <input
+                          type="number"
+                          value={subject.incorrect}
+                          onChange={e =>
+                            handleSubjectChange(index, 'incorrect', e.target.value)
+                          }
+                          className="w-16 px-2 py-1 text-xs text-center bg-rose-500/10 text-rose-600 dark:text-rose-400 font-bold border border-rose-500/20 rounded-lg"
+                        />
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs font-semibold text-slate-500">
+                        {blankQuestions < 0 ? '0' : blankQuestions}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs font-bold text-indigo-500">
+                        {subjectPoints}
+                      </td>
+                      <td className="py-2.5 px-3 text-center text-xs font-bold text-emerald-500">
+                        {percentage}%
+                      </td>
+                      <td className="py-2.5 px-2 text-center">
+                        <button
+                          onClick={() => handleDeleteSubject(index)}
+                          className="p-1.5 text-slate-400 hover:text-rose-500 rounded-lg hover:bg-rose-500/10 transition-colors"
+                        >
+                          <FiTrash2 className="w-3.5 h-3.5" />
                         </button>
                       </td>
                     </tr>
                   );
                 })}
               </tbody>
-              <tfoot className="bg-gray-200 dark:bg-gray-900 font-bold text-gray-700 dark:text-gray-200">
+              <tfoot className="bg-slate-50 dark:bg-[#0f1929] font-bold text-xs text-slate-800 dark:text-slate-200">
                 <tr>
-                    <td colSpan={2} className="py-3 px-4 text-right text-sm uppercase">Totais</td>
-                    <td className="py-3 px-4 text-center text-lg">{totals.totalQuestions}</td>
-                    <td className="py-3 px-4 text-center text-lg text-green-600 dark:text-green-400">{totals.correct}</td>
-                    <td className="py-3 px-4 text-center text-lg text-red-600 dark:text-red-400">{totals.incorrect}</td>
-                    <td className="py-3 px-4 text-center text-lg text-gray-600 dark:text-gray-300">{totalBlank < 0 ? 'N/A' : totalBlank}</td>
-                    <td className="py-3 px-4 text-center text-lg text-yellow-600 dark:text-yellow-400">{totals.points}</td>
-                    <td className="py-3 px-4 text-center text-lg text-blue-600 dark:text-blue-400">{totalPercentage}%</td>
-                    <td className="py-3 px-2"></td>
+                  <td colSpan={2} className="py-2.5 px-4 text-right uppercase">
+                    Totais
+                  </td>
+                  <td className="py-2.5 px-3 text-center">{totals.totalQuestions}</td>
+                  <td className="py-2.5 px-3 text-center text-emerald-500">
+                    {totals.correct}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-rose-500">
+                    {totals.incorrect}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-slate-400">
+                    {totalBlank < 0 ? '0' : totalBlank}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-indigo-500">
+                    {totals.points}
+                  </td>
+                  <td className="py-2.5 px-3 text-center text-emerald-500">
+                    {totalPercentage}%
+                  </td>
+                  <td />
                 </tr>
               </tfoot>
             </table>
           </div>
 
-          {/* Comentários */}
+          {/* Comments */}
           <div>
-            <label htmlFor="simulado-comments" className="block text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Comentários</label>
-            <textarea id="simulado-comments" placeholder="Adicione observações sobre o simulado, pontos a melhorar, etc." rows={3} value={comments} onChange={(e) => setComments(e.target.value)} className="w-full p-3 bg-white dark:bg-gray-700 dark:text-gray-100 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:ring-2 focus:ring-gold-500 focus:border-gold-500 transition"></textarea>
+            <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1">
+              Comentários e Diagnóstico Pós-Prova
+            </label>
+            <textarea
+              placeholder="Anote os pontos que precisam de reforço, gestão de tempo ou matérias críticas..."
+              rows={2}
+              value={comments}
+              onChange={e => setComments(e.target.value)}
+              className="w-full p-3 text-xs bg-slate-50 dark:bg-[#0f1929] text-slate-900 dark:text-white border border-slate-200 dark:border-[#1f304a] rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
           </div>
         </main>
 
-        {/* Rodapé */}
-        <footer className="flex justify-end items-center p-5 bg-gold-50 dark:bg-gold-900 border-t border-gold-200 dark:border-gold-700 rounded-b-xl">
-          <button onClick={onClose} className="px-6 py-2 font-semibold text-gray-700 bg-gray-300 rounded-lg mr-2 hover:bg-gray-400 transition-colors dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-gray-200">
+        {/* Footer */}
+        <footer className="flex justify-end items-center gap-3 px-6 py-4 bg-slate-50/60 dark:bg-[#0f1929]/60 border-t border-slate-100 dark:border-[#1f304a]">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-200/70 dark:bg-[#1a2942] rounded-xl hover:bg-slate-300/70 transition-colors"
+          >
             Cancelar
           </button>
-          <button onClick={handleSaveSimulado} className="px-8 py-2 font-semibold text-white bg-gold-600 rounded-lg shadow-md hover:bg-gold-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gold-500 transition-all transform hover:scale-105 dark:bg-gold-700 dark:hover:bg-gold-800">
+          <button
+            onClick={handleSaveSimulado}
+            className="px-5 py-2 text-xs font-bold text-slate-950 bg-emerald-500 hover:bg-emerald-400 rounded-xl shadow-sm transition-all"
+          >
             Salvar Simulado
           </button>
         </footer>
+        </div>
       </div>
     </div>
   );
 }
-

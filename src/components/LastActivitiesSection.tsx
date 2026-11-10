@@ -1,54 +1,71 @@
+'use client';
+
 import React from 'react';
 import { useData } from '../context/DataContext';
-import { FaBookOpen, FaQuestionCircle, FaCalendarAlt } from 'react-icons/fa';
 import Link from 'next/link';
+import { History, Clock, CheckCircle2, Calendar, ChevronRight } from 'lucide-react';
 
 const LastActivitiesSection = () => {
   const { studyRecords, formatMinutesToHoursMinutes } = useData();
 
-  const latestActivities = studyRecords
+  const latestActivities = [...studyRecords]
     .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    .slice(0, 2);
+    .slice(0, 3);
 
   return (
-    <div className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-6 h-full">
-      <h2 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-6">Últimas Atividades</h2>
-      {latestActivities.length === 0 ? (
-        <p className="text-gray-500 dark:text-gray-400 text-center mt-8">Nenhuma atividade registrada ainda.</p>
-      ) : (
-        <ul className="space-y-4">
-          {latestActivities.map((activity) => (
-            <li key={activity.id} className="bg-gray-50 dark:bg-gray-700 border-l-4 border-gold-500 rounded-r-lg p-4 shadow-sm hover:shadow-md transition-shadow duration-300">
-              <div className="flex items-center mb-1">
-                <FaBookOpen className="text-gold-600 dark:text-gold-400 mr-3 text-xl" />
-                <p className="font-semibold text-lg text-gray-800 dark:text-gray-100">{activity.subject}</p>
-              </div>
-              <p className="text-sm text-gray-600 dark:text-gray-400 ml-7 mb-2">{activity.topic}</p>
-              <div className="ml-7 space-y-1">
-                <p className="text-sm text-gray-700 dark:text-gray-300 flex items-center">
-                  <FaCalendarAlt className="text-gray-400 dark:text-gray-500 mr-2" />
-                  <span className="font-medium">Data:</span> {new Date(activity.date).toLocaleDateString('pt-BR')}
-                </p>
-                <p className="text-sm text-gray-700 dark:text-gray-300 flex items-center">
-                  <FaBookOpen className="text-gray-400 dark:text-gray-500 mr-2" />
-                  <span className="font-medium">Tempo de Estudo:</span> {formatMinutesToHoursMinutes(activity.studyTime / 60000)}
-                </p>
-                {activity.questions && activity.questions.total > 0 && (
-                  <p className="text-sm text-gray-700 dark:text-gray-300 flex items-center">
-                    <FaQuestionCircle className="text-gray-400 dark:text-gray-500 mr-2" />
-                    <span className="font-medium">Questões:</span> {activity.questions.total} ({activity.questions.correct} certas)
-                  </p>
-                )}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {studyRecords.length > 2 && (
-        <div className="text-center mt-6">
-          <Link href="/historico" className="text-gold-600 dark:text-gold-400 hover:text-gold-700 dark:hover:text-gold-300 font-medium text-sm">
-            Ver Mais ({studyRecords.length - 2} sessões restantes)
+    <div className="bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl p-5 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <History size={16} className="text-emerald-500" />
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Últimos Estudos Registrados
+          </h2>
+        </div>
+        {studyRecords.length > 0 && (
+          <Link
+            href="/historico"
+            className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline flex items-center gap-0.5"
+          >
+            Ver histórico <ChevronRight size={14} />
           </Link>
+        )}
+      </div>
+
+      {latestActivities.length === 0 ? (
+        <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-100 dark:border-[#1a293e] text-center">
+          <p className="text-xs text-slate-500 dark:text-slate-400">
+            Nenhuma sessão de estudo registrada ainda.
+          </p>
+        </div>
+      ) : (
+        <div className="divide-y divide-slate-100 dark:divide-[#1a293e]">
+          {latestActivities.map((activity) => (
+            <div key={activity.id} className="py-3 first:pt-0 last:pb-0 flex items-center justify-between gap-4">
+              <div className="min-w-0">
+                <p className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate">
+                  {activity.subject}
+                </p>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate mt-0.5">
+                  {activity.topic}
+                </p>
+              </div>
+              <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 flex-shrink-0">
+                <span className="flex items-center gap-1 font-medium text-slate-700 dark:text-slate-300">
+                  <Clock size={12} className="text-emerald-500" />
+                  {formatMinutesToHoursMinutes(activity.studyTime / 60000)}
+                </span>
+                {activity.questions && activity.questions.total > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-bold">
+                    {activity.questions.correct}/{activity.questions.total} q
+                  </span>
+                )}
+                <span className="text-[11px] hidden sm:inline flex items-center gap-1">
+                  <Calendar size={11} />
+                  {new Date(activity.date).toLocaleDateString('pt-BR')}
+                </span>
+              </div>
+            </div>
+          ))}
         </div>
       )}
     </div>

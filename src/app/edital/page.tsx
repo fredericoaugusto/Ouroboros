@@ -1,35 +1,68 @@
 'use client';
 
-import React, { useState, Fragment } from 'react';
-import { 
-  BsCheckLg, BsXLg, BsPencilFill, BsPlusCircleFill, 
-  BsChevronUp, BsChevronDown, BsFolder, BsPlus, BsPercent
-} from 'react-icons/bs';
-import { useData, StudyRecord, EditalSubject as Subject, EditalTopic as Topic } from '../../context/DataContext';
+import React, { useState, useMemo } from 'react';
+import {
+  Plus,
+  ChevronDown,
+  ChevronUp,
+  Search,
+  Sparkles,
+  ListChecks,
+  CheckCircle2,
+  BookOpen,
+} from 'lucide-react';
+import {
+  useData,
+  StudyRecord,
+  EditalTopic as Topic,
+} from '../../context/DataContext';
 import { useNotification } from '../../context/NotificationContext';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
+import TopicCockpitModal, { TopicMetadata } from '../../components/TopicCockpitModal';
+import ImportEditalModal from '../../components/ImportEditalModal';
 import TopicRow from '../../components/TopicRow';
+import { updateTopicDetailsAction } from '../actions';
 
-const SUBJECT_COLORS = ['bg-red-500', 'bg-blue-500', 'bg-green-500', 'bg-yellow-500', 'bg-purple-500', 'bg-pink-500'];
+const SUBJECT_PALETTE = [
+  '#10b981',
+  '#6366f1',
+  '#0ea5e9',
+  '#8b5cf6',
+  '#ec4899',
+  '#f43f5e',
+  '#14b8a6',
+  '#f97316',
+];
 
 const EditalPage = () => {
-  const { 
-    addStudyRecord, 
-    updateStudyRecord, 
-    studyRecords, 
+  const {
+    addStudyRecord,
+    updateStudyRecord,
+    studyRecords,
+    selectedDataFile,
     stats,
-    loading
+    loading,
+    refreshPlans,
   } = useData();
-  
-  const { showNotification } = useNotification();
-  const [expandedSubject, setExpandedSubject] = useState<number | null>(null);
-  const [allTopicsExpanded, setAllTopicsExpanded] = useState(true); // Novo estado para controlar a expansão/colapso de todos os tópicos
-  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-  const [selectedTopic, setSelectedTopic] = useState<{ subject: string; topic: Topic } | null>(null);
-  const [editingRecord, setEditingRecord] = useState<StudyRecord | null>(null);
 
-  const handleSubjectClick = (index: number) => {
-    setExpandedSubject(expandedSubject === index ? null : index);
+  const { showNotification } = useNotification();
+  const [expandedSubjects, setExpandedSubjects] = useState<Record<number, boolean>>({ 0: true });
+  const [allTopicsExpanded, setAllTopicsExpanded] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [selectedTopic, setSelectedTopic] = useState<{ subject: string; topic: Topic } | null>(
+    null
+  );
+  const [editingRecord, setEditingRecord] = useState<StudyRecord | null>(null);
+  const [cockpitTarget, setCockpitTarget] = useState<{
+    subject: string;
+    color: string;
+    topic: any;
+  } | null>(null);
+
+  const toggleSubject = (index: number) => {
+    setExpandedSubjects((prev) => ({ ...prev, [index]: !prev[index] }));
   };
 
   const openRegisterModalForTopic = (subject: string, topic: Topic) => {
@@ -61,11 +94,14 @@ const EditalPage = () => {
 
   const handleToggleCompletion = async (subjectText: string, topicText: string) => {
     const recordToUpdate = studyRecords.find(
-      record => record.subject === subjectText && record.topic === topicText
+      (record) => record.subject === subjectText && record.topic === topicText
     );
 
     if (recordToUpdate) {
-      const updatedRecord = { ...recordToUpdate, teoriaFinalizada: !recordToUpdate.teoriaFinalizada };
+      const updatedRecord = {
+        ...recordToUpdate,
+        teoriaFinalizada: !recordToUpdate.teoriaFinalizada,
+      };
       await updateStudyRecord(updatedRecord);
     } else {
       const newRecord: Omit<StudyRecord, 'id'> = {
@@ -85,34 +121,69 @@ const EditalPage = () => {
     }
   };
 
-  const { editalData, totalTopics, completedTopics, overallEditalProgress } = stats;
-
-  if (loading) {
-    return <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center"><p className="dark:text-gray-100">Carregando edital...</p></div>;
-  }
-
-  const getPerformancePillColor = (p: number) => {
-    if (p >= 80) return 'bg-green-100 text-green-700';
-    if (p >= 60) return 'bg-yellow-100 text-yellow-700';
-    return 'bg-red-100 text-red-700';
+  const handleSaveTopicCockpit = async (updatedTopic: TopicMetadata) => {
+    if (!selectedDataFile || !cockpitTarget) return;
+    setCockpitTarget((prev) =>
+      prev ? { ...prev, topic: { ...prev.topic, ...updatedTopic } } : null
+    );
+    const res = await updateTopicDetailsAction(
+      selectedDataFile,
+      cockpitTarget.subject,
+      updatedTopic.topic_text,
+      updatedTopic
+    );
+    if (res.success) {
+      await refreshPlans();
+    } else {
+      showNotification(`Erro ao atualizar tópico: ${res.error}`, 'error');
+    }
   };
 
-  // Helper recursivo para contar tópicos para a UI
-  const countTopicsRecursively = (topics: Topic[]): { total: number, completed: number, totalQuestions: number, correctQuestions: number } => {
+  const { editalData, totalTopics, completedTopics, overallEditalProgress } = stats;
+
+  const filteredEditalData = useMemo(() => {
+    if (!searchQuery.trim()) return editalData;
+    const q = searchQuery.toLowerCase();
+    return editalData.filter((subj) => {
+      if (subj.subject.toLowerCase().includes(q)) return true;
+      const hasMatchingTopic = (topics: Topic[]): boolean =>
+        topics.some(
+          (t) =>
+            t.topic_text.toLowerCase().includes(q) ||
+            (t.sub_topics && hasMatchingTopic(t.sub_topics))
+        );
+      return hasMatchingTopic(subj.topics || []);
+    });
+  }, [editalData, searchQuery]);
+
+  if (loading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  const countTopicsRecursively = (
+    topics: Topic[]
+  ): {
+    total: number;
+    completed: number;
+    totalQuestions: number;
+    correctQuestions: number;
+  } => {
     let total = 0;
     let completed = 0;
     let totalQuestions = 0;
     let correctQuestions = 0;
 
     for (const topic of topics) {
-      // Se o tópico não tem filhos, ele é uma "folha" e seus valores devem ser contados.
-      if (!topic.sub_topics || topic.sub_topics.length === 0) {
-        total++;
-        if (topic.is_completed) completed++;
-        totalQuestions += topic.total || 0;
-        correctQuestions += topic.completed || 0;
-      } else {
-        // Se o tópico tem filhos, ele é um agrupador. Devemos contar apenas os filhos.
+      total++;
+      if (topic.is_completed) completed++;
+      totalQuestions += (topic.completed || 0) + (topic.reviewed || 0);
+      correctQuestions += topic.completed || 0;
+
+      if (topic.sub_topics && topic.sub_topics.length > 0) {
         const subCounts = countTopicsRecursively(topic.sub_topics);
         total += subCounts.total;
         completed += subCounts.completed;
@@ -124,127 +195,292 @@ const EditalPage = () => {
   };
 
   return (
-    <>
-      <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4 pt-12">
-        <div className="mb-6">
-          <header className="flex justify-between items-center pt-4">
-            <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Edital Verticalizado</h1>
-            <div className="flex items-center space-x-4">
-              <button 
-                onClick={openRegisterModalForNew} 
-                className="relative flex items-center px-4 py-2 bg-amber-500 text-white rounded-full shadow-lg hover:bg-amber-600 transition-all duration-300 text-base font-semibold overflow-hidden group"
-              >
-                <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-amber-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out group-hover:left-[100%]"></span>
-                <span className="relative flex items-center">
-                  <BsPlusCircleFill className="mr-2 text-lg" />
-                  Adicionar Estudo
-                </span>
-              </button>
+    <div className="max-w-7xl mx-auto space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Edital Verticalizado
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Clique em qualquer tópico ou subtópico para abrir o Cockpit com Resumos, Caderno e Score
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-all"
+          >
+            <Sparkles className="w-4 h-4" />
+            Importar Edital via IA
+          </button>
+
+          <button
+            onClick={openRegisterModalForNew}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Adicionar Estudo
+          </button>
+        </div>
+      </div>
+
+      {/* Global Edital Progress Banner */}
+      <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm">
+        <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-3">
+          <div>
+            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+              <ListChecks className="w-4 h-4 text-emerald-500" />
+              Progresso Global no Edital
             </div>
-          </header>
-          <hr className="mt-2 mb-6 border-gray-300 dark:border-gray-700" />
-        </div>
-
-        <div className="mb-8 p-6 bg-white dark:bg-gray-800 shadow-lg rounded-lg">
-          <h2 className="text-sm font-semibold mb-2 text-gray-500 dark:text-gray-400 uppercase">PROGRESSO NO EDITAL</h2>
-          <div className="flex justify-between items-end mb-2">
-            <p className="text-gray-700 dark:text-gray-300 text-sm">{completedTopics} de {totalTopics} Tópicos concluídos</p>
-            <p className="text-gray-700 dark:text-gray-300 font-bold text-3xl">{overallEditalProgress.toFixed(0)}%</p>
+            <p className="text-sm font-medium text-slate-600 dark:text-slate-300 mt-1">
+              <strong className="text-slate-900 dark:text-white">{completedTopics}</strong> de{' '}
+              <strong className="text-slate-900 dark:text-white">{totalTopics}</strong> tópicos concluídos
+            </p>
           </div>
-          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-4">
-            <div className="bg-amber-500 h-4 rounded-full transition-all duration-300" style={{ width: `${overallEditalProgress}%` }}></div>
+          <div className="text-3xl font-extrabold text-emerald-500">
+            {overallEditalProgress.toFixed(0)}%
           </div>
         </div>
+        <div className="w-full h-3 rounded-full bg-slate-100 dark:bg-[#0b1320] overflow-hidden">
+          <div
+            className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-400 transition-all duration-500"
+            style={{ width: `${Math.min(100, overallEditalProgress)}%` }}
+          />
+        </div>
+      </div>
 
-        <ul className="space-y-4">
-          {editalData.map((subject, subjectIndex) => {
-            const subjectColor = SUBJECT_COLORS[subjectIndex % SUBJECT_COLORS.length];
-            const { total: totalSubjectTopics, completed: completedSubjectTopics, totalQuestions: totalSubjectQuestions, correctQuestions: totalSubjectCompleted } = countTopicsRecursively(subject.topics);
-            const reviewed = totalSubjectQuestions - totalSubjectCompleted;
-            const subjectCompletionPercentage = totalSubjectTopics > 0 ? Math.round((completedSubjectTopics / totalSubjectTopics) * 100) : 0;
-            const subjectPerformance = totalSubjectQuestions > 0 ? Math.round((totalSubjectCompleted / totalSubjectQuestions) * 100) : 0;
+      {/* Filter & Expand Controls */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md">
+          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Filtrar disciplina ou tópico..."
+            className="w-full pl-9 pr-4 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              const allOpen = Object.keys(expandedSubjects).length === filteredEditalData.length;
+              if (allOpen) {
+                setExpandedSubjects({});
+              } else {
+                const next: Record<number, boolean> = {};
+                filteredEditalData.forEach((_, i) => (next[i] = true));
+                setExpandedSubjects(next);
+              }
+            }}
+            className="px-3 py-2 rounded-xl text-xs font-semibold bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-300 hover:border-emerald-500/50 transition-colors"
+          >
+            Expandir / Recolher Disciplinas
+          </button>
+        </div>
+      </div>
+
+      {/* Subjects Accordion */}
+      {filteredEditalData.length === 0 ? (
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-12 text-center">
+          <BookOpen className="w-10 h-10 text-emerald-500 mx-auto mb-3 opacity-80" />
+          <h3 className="text-base font-bold text-slate-900 dark:text-white mb-1">
+            Nenhum tópico encontrado no Edital
+          </h3>
+          <p className="text-xs text-slate-400 mb-5">
+            Importe um edital completo via IA ou adicione disciplinas ao seu plano ativo.
+          </p>
+          <button
+            onClick={() => setIsImportModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold bg-emerald-500 text-white"
+          >
+            <Sparkles className="w-4 h-4" />
+            Importar Edital via IA
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {filteredEditalData.map((subject, subjectIndex) => {
+            const subjectColor =
+              (subject as any).color || SUBJECT_PALETTE[subjectIndex % SUBJECT_PALETTE.length];
+            const {
+              total: totalSubjectTopics,
+              completed: completedSubjectTopics,
+              totalQuestions: totalSubjectQuestions,
+              correctQuestions: totalSubjectCompleted,
+            } = countTopicsRecursively(subject.topics);
+            const reviewed = Math.max(0, totalSubjectQuestions - totalSubjectCompleted);
+            const subjectCompletionPercentage =
+              totalSubjectTopics > 0
+                ? Math.round((completedSubjectTopics / totalSubjectTopics) * 100)
+                : 0;
+            const subjectPerformance =
+              totalSubjectQuestions > 0
+                ? Math.round((totalSubjectCompleted / totalSubjectQuestions) * 100)
+                : 0;
+            const isExpanded = !!expandedSubjects[subjectIndex];
 
             return (
-              <li key={subjectIndex} className="bg-white dark:bg-gray-800 shadow-lg rounded-lg p-4 flex flex-col">
-                <div className="w-full flex items-center justify-between cursor-pointer" onClick={() => handleSubjectClick(subjectIndex)}>
-                  <div className="flex items-center">
-                    <div className={`w-2 h-6 rounded-l-lg ${subjectColor} mr-4`}></div>
-                    <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-100">{subject.subject}</h2>
+              <div
+                key={subjectIndex}
+                className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] overflow-hidden shadow-sm transition-all"
+              >
+                {/* Subject Header Row */}
+                <div
+                  onClick={() => toggleSubject(subjectIndex)}
+                  className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 cursor-pointer hover:bg-slate-50/60 dark:hover:bg-[#17263f]/40 transition-colors"
+                >
+                  <div className="flex items-center gap-3.5 min-w-0">
+                    <span
+                      className="w-2.5 h-8 rounded-full shrink-0"
+                      style={{ backgroundColor: subjectColor }}
+                    />
+                    <div className="min-w-0">
+                      <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                        {subject.subject}
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        {completedSubjectTopics} de {totalSubjectTopics} tópicos concluídos (
+                        {subjectCompletionPercentage}%)
+                      </p>
+                    </div>
                   </div>
-                  <div className="flex items-center space-x-4">
-                    {expandedSubject !== subjectIndex && (
-                      <>
-                        <div className="flex items-center text-sm font-semibold">
-                          <span className="bg-green-100 text-green-700 px-2 py-1 rounded-l-md" title="Acertos">{totalSubjectCompleted}</span>
-                          <span className="bg-red-100 text-red-700 px-2 py-1" title="Erros">{reviewed}</span>
-                          <span className="bg-gray-200 text-gray-800 dark:text-gray-100 px-2 py-1" title="Total de Questões">{totalSubjectQuestions}</span>
-                          <span className={`${getPerformancePillColor(subjectPerformance)} px-2 py-1 rounded-r-md`} title="Percentual de Acerto">{subjectPerformance}%</span>
-                        </div>
-                        <div className="w-24 bg-gray-200 dark:bg-gray-700 rounded-full h-2"><div className={`${subjectColor} h-2 rounded-full`} style={{ width: `${subjectCompletionPercentage}%` }}></div></div>
-                        <span className="text-sm text-gray-600">{subjectCompletionPercentage}%</span>
-                      </>
-                    )}
-                    <span className="text-xl">{expandedSubject === subjectIndex ? <BsChevronUp /> : <BsChevronDown />}</span>
+
+                  <div className="flex items-center gap-4 self-end sm:self-center">
+                    {/* Questions Pill */}
+                    <div className="hidden md:flex items-center gap-1.5 text-xs">
+                      <span className="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-500 font-bold">
+                        {totalSubjectCompleted} C
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-rose-500/10 text-rose-400 font-bold">
+                        {reviewed} E
+                      </span>
+                      <span className="px-2 py-0.5 rounded bg-slate-100 dark:bg-[#0b1320] text-slate-600 dark:text-slate-300 font-bold">
+                        {subjectPerformance}%
+                      </span>
+                    </div>
+
+                    {/* Progress bar */}
+                    <div className="w-28 hidden sm:block">
+                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-[#0b1320] overflow-hidden">
+                        <div
+                          className="h-full rounded-full transition-all duration-300"
+                          style={{
+                            width: `${subjectCompletionPercentage}%`,
+                            backgroundColor: subjectColor,
+                          }}
+                        />
+                      </div>
+                    </div>
+
+                    <span className="text-xs font-bold text-slate-600 dark:text-slate-300 w-9 text-right">
+                      {subjectCompletionPercentage}%
+                    </span>
+
+                    <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-[#0b1320] text-slate-400">
+                      {isExpanded ? (
+                        <ChevronUp className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                    </div>
                   </div>
                 </div>
 
-                {expandedSubject === subjectIndex && (
-                  <div className="mt-4 w-full">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse">
-                        <thead>
-                          <tr className="bg-gray-100 dark:bg-gray-900">
-                            <th className="p-2 text-gray-800 dark:text-gray-100">
-                              <button
-                                onClick={() => setAllTopicsExpanded(prev => !prev)}
-                                className="mr-2 text-gray-500 dark:text-gray-400 focus:outline-none"
-                                title={allTopicsExpanded ? 'Minimizar Todos' : 'Maximizar Todos'}
-                              >
-                                {allTopicsExpanded ? <BsChevronUp /> : <BsChevronDown />}
-                              </button>
-                              Tópico
-                            </th>
-                            <th className="p-2 w-16 text-teal-500 dark:text-teal-400" title="Questões Corretas"><div className="flex justify-center"><BsCheckLg /></div></th>
-                            <th className="p-2 w-16 text-red-500 dark:text-red-400" title="Questões Erradas"><div className="flex justify-center"><BsXLg /></div></th>
-                            <th className="p-2 w-16 dark:text-gray-100" title="Total de Questões"><div className="flex justify-center text-gray-800 dark:text-gray-100"><BsPencilFill /></div></th>
-                            <th className="p-2 w-20 dark:text-gray-100" title="Percentual de Acerto"><div className="flex justify-center text-gray-800 dark:text-gray-100"><BsPercent /></div></th>
-                            <th className="p-2 w-32 text-center text-gray-800 dark:text-gray-100">Último Estudo</th>
-                            <th className="p-2 w-16 text-center text-gray-800 dark:text-gray-100">Ações</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {subject.topics.map((topic, topicIndex) => (
-                            <TopicRow 
-                              key={topicIndex} 
-                              topic={topic} 
-                              subjectName={subject.subject} 
-                              level={0} 
-                              onToggleCompletion={handleToggleCompletion}
-                              onOpenRegisterModal={openRegisterModalForTopic}
-                              allTopicsExpanded={allTopicsExpanded}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
+                {/* Expanded Topic Tree Table */}
+                {isExpanded && (
+                  <div className="border-t border-slate-100 dark:border-[#1f304a] overflow-x-auto">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50/70 dark:bg-[#0b1320]/60 border-b border-slate-100 dark:border-[#1f304a] text-[10px] font-bold uppercase tracking-wider text-slate-400">
+                          <th className="py-2.5 px-4">
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setAllTopicsExpanded((prev) => !prev);
+                              }}
+                              className="inline-flex items-center gap-1.5 hover:text-emerald-500 transition-colors"
+                            >
+                              {allTopicsExpanded ? (
+                                <ChevronUp className="w-3.5 h-3.5" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5" />
+                              )}
+                              Tópico / Subtópico
+                            </button>
+                          </th>
+                          <th className="py-2.5 px-3 text-center">Questões (C / E)</th>
+                          <th className="py-2.5 px-3 text-center">Acerto %</th>
+                          <th className="py-2.5 px-3 text-center">Score Bússola</th>
+                          <th className="py-2.5 px-3 text-center">Último Estudo</th>
+                          <th className="py-2.5 px-4 text-right">Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {subject.topics.map((topic, topicIndex) => (
+                          <TopicRow
+                            key={`${topic.topic_text}-${topicIndex}`}
+                            topic={topic as any}
+                            subjectName={subject.subject}
+                            level={0}
+                            studyRecords={studyRecords}
+                            onToggleCompletion={handleToggleCompletion}
+                            onOpenRegisterModal={openRegisterModalForTopic}
+                            onOpenCockpit={(subjName, t) =>
+                              setCockpitTarget({
+                                subject: subjName,
+                                color: subjectColor,
+                                topic: t,
+                              })
+                            }
+                            allTopicsExpanded={allTopicsExpanded}
+                          />
+                        ))}
+                      </tbody>
+                    </table>
                   </div>
                 )}
-              </li>
+              </div>
             );
           })}
-        </ul>
+        </div>
+      )}
 
-        <StudyRegisterModal
-          isOpen={isRegisterModalOpen}
-          onClose={closeRegisterModal}
-          onSave={handleSaveStudy}
-          initialRecord={editingRecord}
-          topic={selectedTopic}
-          initialTime={0} // Simplified, as savedStudyTime is not defined here
-          showDeleteButton={!!editingRecord?.id}
+      {/* Study Register Modal */}
+      <StudyRegisterModal
+        isOpen={isRegisterModalOpen}
+        onClose={closeRegisterModal}
+        onSave={handleSaveStudy}
+        initialRecord={editingRecord}
+        topic={selectedTopic}
+        initialTime={0}
+        showDeleteButton={!!editingRecord?.id}
+      />
+
+      {/* AI Edital Importer Modal */}
+      <ImportEditalModal
+        isOpen={isImportModalOpen}
+        onClose={() => setIsImportModalOpen(false)}
+      />
+
+      {/* Topic Cockpit Full-Page Workspace */}
+      {cockpitTarget && (
+        <TopicCockpitModal
+          isOpen={!!cockpitTarget}
+          onClose={() => setCockpitTarget(null)}
+          subjectName={cockpitTarget.subject}
+          subjectColor={cockpitTarget.color}
+          topic={cockpitTarget.topic}
+          onSaveTopic={handleSaveTopicCockpit}
+          parentBreadcrumbLabel="Edital Verticalizado"
+          parentBreadcrumbHref="/edital"
         />
-      </div>
-    </>
+      )}
+    </div>
   );
 };
 

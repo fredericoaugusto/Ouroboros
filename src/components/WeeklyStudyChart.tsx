@@ -2,35 +2,22 @@
 
 import React, { useState } from 'react';
 import { Bar } from 'react-chartjs-2';
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Title,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+import { BarChart3 } from 'lucide-react';
 
-
-
-const WeeklyStudyChart = ({ dailyStudyHours, dailyQuestionStats }) => {
-  const [viewMode, setViewMode] = useState('time'); // 'time' or 'questions'
+const WeeklyStudyChart = ({ dailyStudyHours, dailyQuestionStats }: any) => {
+  const [viewMode, setViewMode] = useState<'time' | 'questions'>('time');
 
   if (!dailyStudyHours || !dailyQuestionStats) {
     return (
-      <div className="bg-white shadow-lg rounded-lg p-6 dark:bg-gray-800 transition-colors duration-300 flex items-center justify-center h-80">
-        <p className="text-gray-500">Carregando dados do gráfico...</p>
+      <div className="bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl p-5 flex items-center justify-center h-64">
+        <p className="text-xs text-slate-400">Carregando dados semanais...</p>
       </div>
     );
   }
 
-  const processChartData = (dailyData, dataKey) => {
-    const weekLabels = ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'];
+  const processChartData = (dailyData: any, dataKey: string) => {
     const today = new Date();
-    const dayOfWeek = today.getDay(); // Sunday = 0, Monday = 1, etc.
-
-    // Adjust to have Sunday as the first day of the week
+    const dayOfWeek = today.getDay();
     const firstDayOfWeek = new Date(today);
     firstDayOfWeek.setDate(today.getDate() - dayOfWeek);
     firstDayOfWeek.setHours(0, 0, 0, 0);
@@ -44,9 +31,9 @@ const WeeklyStudyChart = ({ dailyStudyHours, dailyQuestionStats }) => {
 
       if (dailyData && dailyData[dateString]) {
         if (dataKey === 'hours') {
-          weeklyData[i] = parseFloat((dailyData[dateString] || 0).toFixed(1)); // Directly use the value for hours
+          weeklyData[i] = parseFloat((dailyData[dateString] || 0).toFixed(1));
         } else if (dataKey === 'total') {
-          weeklyData[i] = dailyData[dateString].total || 0; // Use total for questions
+          weeklyData[i] = dailyData[dateString].total || 0;
         }
       }
     }
@@ -54,108 +41,106 @@ const WeeklyStudyChart = ({ dailyStudyHours, dailyQuestionStats }) => {
   };
 
   const timeData = {
-    labels: ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'],
+    labels: ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'],
     datasets: [
       {
         label: 'Horas de Estudo',
         data: processChartData(dailyStudyHours, 'hours'),
-        backgroundColor: '#fbbf24',
-        borderColor: '#f59e0b',
-        borderWidth: 1,
+        backgroundColor: '#10b981',
+        borderRadius: 6,
+        barThickness: 18,
       },
     ],
   };
 
   const questionsData = {
-    labels: ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SAB'],
+    labels: ['DOM', 'SEG', 'TER', 'QUA', 'QUI', 'SEX', 'SÁB'],
     datasets: [
       {
         label: 'Questões Resolvidas',
-        data: processChartData(dailyQuestionStats, 'total'), 
-        backgroundColor: '#fcd34d',
-        borderColor: '#eab308',
-        borderWidth: 1,
+        data: processChartData(dailyQuestionStats, 'total'),
+        backgroundColor: '#6366f1',
+        borderRadius: 6,
+        barThickness: 18,
       },
     ],
   };
 
-  const options = {
+  const options: any = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: {
-      legend: {
-        display: false,
-      },
-      title: {
-        display: false,
-      },
+      legend: { display: false },
+      title: { display: false },
       tooltip: {
+        backgroundColor: '#0f172a',
+        titleColor: '#f8fafc',
+        bodyColor: '#94a3b8',
+        borderColor: '#1e293b',
+        borderWidth: 1,
+        padding: 10,
         callbacks: {
-          label: function(context) {
-            let label = context.dataset.label || '';
-            if (label) {
-              label += ': ';
-            }
+          label: function (context: any) {
             if (context.parsed.y !== null) {
-              label += viewMode === 'time' ? `${context.parsed.y.toFixed(1)}h` : `${context.parsed.y} questões`;
+              return viewMode === 'time' ? `${context.parsed.y.toFixed(1)}h estudadas` : `${context.parsed.y} questões`;
             }
-            return label;
-          }
-        }
-      }
+            return '';
+          },
+        },
+      },
     },
     scales: {
       x: {
-        grid: {
-          display: false,
-        },
-        ticks: {
-          color: '#4b5563', // gray-700
-        },
+        grid: { display: false },
+        ticks: { color: '#64748b', font: { size: 11, weight: '600' } },
       },
       y: {
         beginAtZero: true,
         ticks: {
-          color: '#4b5563', // gray-700
-          callback: function(value) {
+          color: '#64748b',
+          font: { size: 11 },
+          callback: function (value: any) {
             return viewMode === 'time' ? `${value}h` : value;
-          }
+          },
         },
-        grid: {
-          color: '#e5e7eb', // gray-200
-        },
+        grid: { color: 'rgba(148, 163, 184, 0.1)' },
       },
     },
   };
 
   return (
-    <div className="bg-white shadow-lg rounded-lg p-6 dark:bg-gray-800 transition-colors duration-300">
+    <div className="bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl p-5 shadow-sm">
       <div className="flex justify-between items-center mb-4">
-        <h2 className="text-2xl font-bold text-gray-800 dark:text-white">ESTUDO SEMANAL</h2>
-        <div className="flex space-x-2">
+        <div className="flex items-center gap-2">
+          <BarChart3 size={16} className="text-emerald-500" />
+          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+            Rendimento na Semana
+          </h2>
+        </div>
+        <div className="flex bg-slate-100 dark:bg-[#0c1421] p-1 rounded-xl border border-slate-200 dark:border-[#1f304a]">
           <button
             onClick={() => setViewMode('time')}
-            className={`relative overflow-hidden group px-4 py-2 rounded-full text-sm font-semibold transition-colors duration-300 ${
+            className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
               viewMode === 'time'
-                ? 'bg-gold-500 text-white'
-                : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-            }`}>
-            <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-gold-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out group-hover:left-[100%]"></span>
-            <span className="relative">TEMPO</span>
+                ? 'bg-emerald-500 text-white shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            Tempo
           </button>
           <button
             onClick={() => setViewMode('questions')}
-            className={`relative overflow-hidden group px-4 py-2 rounded-full text-sm font-semibold transition-colors duration-300 ${
+            className={`px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${
               viewMode === 'questions'
-                ? 'bg-gold-500 text-white'
-                : 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-300'
-            }`}>
-            <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-gold-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out group-hover:left-[100%]"></span>
-            <span className="relative">QUESTÕES</span>
+                ? 'bg-indigo-500 text-white shadow-sm'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
+            }`}
+          >
+            Questões
           </button>
         </div>
       </div>
-      <div className="relative h-64"> {/* Altura fixa para o gráfico */}
+      <div className="relative h-52">
         <Bar data={viewMode === 'time' ? timeData : questionsData} options={options} />
       </div>
     </div>

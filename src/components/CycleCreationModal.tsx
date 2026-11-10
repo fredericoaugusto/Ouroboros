@@ -2,12 +2,27 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { PlanData, updateAllTopicWeightsAction, renameSubjectAction } from '../app/actions';
+import { updateAllTopicWeightsAction } from '../app/actions';
 import { useNotification } from '../context/NotificationContext';
-import { FaMagic, FaTools, FaSearch, FaTimes, FaStar, FaClock, FaCalendarAlt, FaHourglassHalf, FaQuestionCircle, FaCheckCircle, FaCopy, FaHandSparkles } from 'react-icons/fa';
+import {
+  Wand2,
+  Sliders,
+  Search,
+  X,
+  Clock,
+  Calendar,
+  HelpCircle,
+  Check,
+  Copy,
+  Sparkles,
+  ArrowRight,
+  ArrowLeft,
+  Wrench,
+  Trash2,
+} from 'lucide-react';
 import TopicWeightsModal from './TopicWeightsModal';
+import Breadcrumbs from './Breadcrumbs';
 
-// Interfaces
 interface Subject {
   id: string;
   subject: string;
@@ -25,6 +40,7 @@ interface Topic {
 interface SubjectSettings {
   [subjectId: string]: { importance: number; knowledge: number };
 }
+
 interface StudySession {
   id: any;
   subjectId: string;
@@ -48,32 +64,52 @@ interface CycleCreationModalProps {
   };
 }
 
-const CycleCreationModal: React.FC<CycleCreationModalProps> = ({ isOpen, onClose, isEditing = false, initialData }) => {
-  const { 
-    generateStudyCycle, 
-    selectedDataFile, 
-    setStudyCycle, 
-    setCurrentProgressMinutes, 
-    setCompletedCycles, 
-    setSessionProgressMap, 
-    studyHours: dataContextStudyHours, 
-    weeklyQuestionsGoal: dataContextWeeklyQuestionsGoal, 
-    setStudyHours: setContextStudyHours, 
-    setWeeklyQuestionsGoal: setContextWeeklyQuestionsGoal, 
+const KNOWLEDGE_LABELS = [
+  { value: 1, label: 'Não conheço' },
+  { value: 2, label: 'Conheço pouco' },
+  { value: 3, label: 'Mediano' },
+  { value: 4, label: 'Conheço bem' },
+  { value: 5, label: 'Domino' },
+];
+
+const IMPORTANCE_LABELS = [
+  { value: 1, label: 'Baixo' },
+  { value: 2, label: 'Médio-Baixo' },
+  { value: 3, label: 'Médio' },
+  { value: 4, label: 'Alto' },
+  { value: 5, label: 'Muito Alto' },
+];
+
+const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
+  isOpen,
+  onClose,
+  isEditing = false,
+  initialData,
+}) => {
+  const {
+    generateStudyCycle,
+    selectedDataFile,
+    setStudyCycle,
+    setCurrentProgressMinutes,
+    setCompletedCycles,
+    setSessionProgressMap,
+    studyHours: dataContextStudyHours,
+    weeklyQuestionsGoal: dataContextWeeklyQuestionsGoal,
+    setStudyHours: setContextStudyHours,
+    setWeeklyQuestionsGoal: setContextWeeklyQuestionsGoal,
     setStudyDays: setContextStudyDays,
     stats,
     studyPlans,
     availablePlans,
-    updateTopicWeight, // Usaremos a função do contexto para otimismo
-    refreshPlans
+    refreshPlans,
   } = useData();
-  
+
   const { showNotification } = useNotification();
   const [modalStep, setModalStep] = useState(0);
-  
-  // Remove o estado local de subjects e bancaTopicWeights
-  // Os dados agora vêm diretamente do DataContext
-  const subjects = useMemo(() => stats.editalData || [], [stats.editalData]);
+  const [wizardMode, setWizardMode] = useState<'simple' | 'detailed' | 'manual'>('detailed');
+  const [topicSuggestionMode, setTopicSuggestionMode] = useState<'auto' | 'manual'>('auto');
+
+  const subjects: Subject[] = useMemo(() => stats.editalData || [], [stats.editalData]);
   const currentPlan = useMemo(() => {
     const planIndex = availablePlans.indexOf(selectedDataFile);
     return planIndex !== -1 ? studyPlans[planIndex] : null;
@@ -82,55 +118,67 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({ isOpen, onClose
 
   const [selectedSubjectIds, setSelectedSubjectIds] = useState<string[]>([]);
   const [subjectSettings, setSubjectSettings] = useState<SubjectSettings>({});
-  const [studyHours, setStudyHours] = useState('40');
-  const [studyDays, setStudyDays] = useState<string[]>(['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']);
-  const [minSession, setMinSession] = useState('60');
-  const [maxSession, setMaxSession] = useState('120');
-  const [weeklyQuestionsGoal, setWeeklyQuestionsGoal] = useState('250');
+  const [studyHours, setStudyHours] = useState('25');
+  const [studyDays, setStudyDays] = useState<string[]>([
+    'Segunda',
+    'Terça',
+    'Quarta',
+    'Quinta',
+    'Sexta',
+  ]);
+  const [minSession, setMinSession] = useState('45');
+  const [maxSession, setMaxSession] = useState('90');
+  const [weeklyQuestionsGoal, setWeeklyQuestionsGoal] = useState('200');
   const [searchTerm, setSearchTerm] = useState('');
   const [manualStudySessions, setManualStudySessions] = useState<StudySession[]>([]);
   const [newManualSessionSubjectId, setNewManualSessionSubjectId] = useState('');
   const [newManualSessionDuration, setNewManualSessionDuration] = useState('60');
-  const [isManualSubjectDropdownOpen, setIsManualSubjectDropdownOpen] = useState(false);
-  const manualSubjectDropdownRef = React.useRef<HTMLDivElement>(null);
 
   const [isTopicWeightsModalOpen, setIsTopicWeightsModalOpen] = useState(false);
-  const [selectedSubjectForWeights, setSelectedSubjectForWeights] = useState<Subject | null>(null);
+  const [selectedSubjectForWeights, setSelectedSubjectForWeights] = useState<Subject | null>(
+    null
+  );
 
-  const subjectMap = useMemo(() => new Map(subjects.map(s => [s.id, s])), [subjects]);
+  const subjectMap = useMemo(() => new Map(subjects.map((s) => [s.id, s])), [subjects]);
 
   useEffect(() => {
     if (isOpen) {
       if (isEditing && initialData) {
-        setStudyHours(initialData.studyHours || dataContextStudyHours);
-        setWeeklyQuestionsGoal(initialData.weeklyQuestionsGoal || dataContextWeeklyQuestionsGoal);
-        setSelectedSubjectIds(initialData.selectedSubjects || []);
+        setStudyHours(initialData.studyHours || dataContextStudyHours || '25');
+        setWeeklyQuestionsGoal(
+          initialData.weeklyQuestionsGoal || dataContextWeeklyQuestionsGoal || '200'
+        );
+        setSelectedSubjectIds(
+          initialData.selectedSubjects?.length
+            ? initialData.selectedSubjects
+            : subjects.map((s) => s.id)
+        );
         setSubjectSettings(initialData.subjectSettings || {});
-        setMinSession(initialData.minSession || '60');
-        setMaxSession(initialData.maxSession || '120');
-        setStudyDays(initialData.studyDays || ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']);
-        setModalStep(1);
+        setMinSession(initialData.minSession || '45');
+        setMaxSession(initialData.maxSession || '90');
+        setStudyDays(
+          initialData.studyDays || ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']
+        );
+        setModalStep(0);
       } else {
-        setStudyHours(dataContextStudyHours || '40');
-        setWeeklyQuestionsGoal(dataContextWeeklyQuestionsGoal || '250');
-        setSelectedSubjectIds([]);
+        setStudyHours(dataContextStudyHours || '25');
+        setWeeklyQuestionsGoal(dataContextWeeklyQuestionsGoal || '200');
+        setSelectedSubjectIds(subjects.map((s) => s.id));
         setSubjectSettings({});
-        setMinSession('60');
-        setMaxSession('120');
+        setMinSession('45');
+        setMaxSession('90');
         setStudyDays(['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']);
         setModalStep(0);
       }
     }
-  }, [isOpen, isEditing, initialData, dataContextStudyHours, dataContextWeeklyQuestionsGoal]);
-
-  // Remove o useEffect que carregava os subjects localmente
+  }, [isOpen, isEditing, initialData, dataContextStudyHours, dataContextWeeklyQuestionsGoal, subjects]);
 
   useEffect(() => {
     if (isOpen && selectedSubjectIds.length > 0) {
-      setSubjectSettings(prevSettings => {
+      setSubjectSettings((prevSettings) => {
         const newSettings = { ...prevSettings };
         let changed = false;
-        selectedSubjectIds.forEach(subjectId => {
+        selectedSubjectIds.forEach((subjectId) => {
           if (!newSettings[subjectId]) {
             newSettings[subjectId] = { importance: 3, knowledge: 3 };
             changed = true;
@@ -141,46 +189,44 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({ isOpen, onClose
     }
   }, [selectedSubjectIds, isOpen]);
 
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (manualSubjectDropdownRef.current && !manualSubjectDropdownRef.current.contains(event.target as Node)) {
-        setIsManualSubjectDropdownOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-    };
-  }, []);
-
   const percentages = useMemo(() => {
     const weights: { [key: string]: number } = {};
     let totalWeight = 0;
-    Object.keys(subjectSettings).forEach(subjectId => {
-      const { importance, knowledge } = subjectSettings[subjectId];
-      const weight = importance / knowledge;
+    selectedSubjectIds.forEach((subjectId) => {
+      const setting = subjectSettings[subjectId] || { importance: 3, knowledge: 3 };
+      const weight = setting.importance / (setting.knowledge || 1);
       weights[subjectId] = weight;
       totalWeight += weight;
     });
     const newPercentages: { [key: string]: string } = {};
-    Object.keys(weights).forEach(subjectId => {
-      newPercentages[subjectId] = totalWeight > 0 ? ((weights[subjectId] / totalWeight) * 100).toFixed(2) : '0.00';
+    Object.keys(weights).forEach((subjectId) => {
+      newPercentages[subjectId] =
+        totalWeight > 0 ? ((weights[subjectId] / totalWeight) * 100).toFixed(1) : '0.0';
     });
     return newPercentages;
-  }, [subjectSettings]);
+  }, [subjectSettings, selectedSubjectIds]);
 
   const handleSubjectSelect = (subjectId: string) => {
-    setSelectedSubjectIds(prev =>
-      prev.includes(subjectId) ? prev.filter(id => id !== subjectId) : [...prev, subjectId]
+    setSelectedSubjectIds((prev) =>
+      prev.includes(subjectId) ? prev.filter((id) => id !== subjectId) : [...prev, subjectId]
     );
   };
 
-  const handleSettingChange = (subjectId: string, type: 'importance' | 'knowledge', value: number) => {
-    setSubjectSettings(prev => ({ ...prev, [subjectId]: { ...prev[subjectId], [type]: value } }));
+  const handleSettingChange = (
+    subjectId: string,
+    type: 'importance' | 'knowledge',
+    value: number
+  ) => {
+    setSubjectSettings((prev) => ({
+      ...prev,
+      [subjectId]: { ...(prev[subjectId] || { importance: 3, knowledge: 3 }), [type]: value },
+    }));
   };
 
   const handleDaySelect = (day: string) => {
-    setStudyDays(prev => prev.includes(day) ? prev.filter(d => d !== day) : [...prev, day]);
+    setStudyDays((prev) =>
+      prev.includes(day) ? prev.filter((d) => d !== day) : [...prev, day]
+    );
   };
 
   const validateNumericalInputs = () => {
@@ -190,23 +236,15 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({ isOpen, onClose
     const questionsGoal = parseInt(weeklyQuestionsGoal);
 
     if (isNaN(hours) || hours <= 0) {
-      showNotification('Por favor, insira um número válido e positivo para as horas de estudo semanais.', 'error');
+      showNotification('Insira um número válido para as horas semanais.', 'error');
       return false;
     }
     if (isNaN(questionsGoal) || questionsGoal < 0) {
-      showNotification('Por favor, insira um número válido e positivo para a meta de questões.', 'error');
+      showNotification('Insira um número válido para a meta de questões.', 'error');
       return false;
     }
-    if (isNaN(min) || min <= 0) {
-      showNotification('Por favor, insira um número válido e positivo para a duração mínima da sessão.', 'error');
-      return false;
-    }
-    if (isNaN(max) || max <= 0) {
-      showNotification('Por favor, insira um número válido e positivo para a duração máxima da sessão.', 'error');
-      return false;
-    }
-    if (min > max) {
-      showNotification('A duração mínima da sessão não pode ser maior que a duração máxima.', 'error');
+    if (isNaN(min) || min <= 0 || isNaN(max) || max <= 0 || min > max) {
+      showNotification('Verifique a duração mínima e máxima das sessões.', 'error');
       return false;
     }
     return true;
@@ -214,8 +252,11 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({ isOpen, onClose
 
   const handleGenerateCycle = () => {
     if (!validateNumericalInputs()) return;
-
-    const selectedSubjectsData = subjects.filter(s => selectedSubjectIds.includes(s.id));
+    const selectedSubjectsData = subjects.filter((s) => selectedSubjectIds.includes(s.id));
+    if (selectedSubjectsData.length === 0) {
+      showNotification('Selecione pelo menos uma disciplina.', 'error');
+      return;
+    }
 
     generateStudyCycle({
       studyHours: parseInt(studyHours),
@@ -223,702 +264,773 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({ isOpen, onClose
       maxSession: parseInt(maxSession),
       subjectSettings,
       subjects: selectedSubjectsData,
-      weeklyQuestionsGoal: weeklyQuestionsGoal,
+      weeklyQuestionsGoal,
     });
     setContextStudyDays(studyDays);
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('ouroboros_topic_suggestion_mode', topicSuggestionMode);
+    }
+    showNotification('Planejamento de estudos gerado com sucesso!', 'success');
     onClose();
-  };
-
-  const handleCreateEmptyCycle = () => {
-    setStudyCycle([]);
-    setCurrentProgressMinutes(0);
-    setCompletedCycles(0);
-    setContextStudyHours(studyHours);
-    setContextWeeklyQuestionsGoal(weeklyQuestionsGoal);
-    onClose();
-    showNotification('Ciclo de estudos em branco criado com sucesso! Você pode preenchê-lo manualmente.', 'success');
   };
 
   const handleAddManualSession = () => {
     if (!newManualSessionSubjectId || !newManualSessionDuration) {
-      showNotification('Por favor, selecione uma matéria e insira a duração da sessão.', 'error');
+      showNotification('Selecione uma disciplina e a duração.', 'error');
       return;
     }
     const duration = parseInt(newManualSessionDuration);
-    if (isNaN(duration) || duration <= 0) {
-      showNotification('A duração da sessão deve ser um número positivo.', 'error');
-      return;
-    }
+    if (isNaN(duration) || duration <= 0) return;
 
     const selectedSubjectData = subjectMap.get(newManualSessionSubjectId);
     if (!selectedSubjectData) return;
 
     const newSession: StudySession = {
-      id: Date.now(),
+      id: `${Date.now()}-${Math.random()}`,
       subjectId: selectedSubjectData.id,
       subject: selectedSubjectData.subject,
-      duration: duration,
-      color: selectedSubjectData.color || '#94A3B8',
+      duration,
+      color: selectedSubjectData.color || '#10b981',
     };
 
-    setManualStudySessions(prev => [...prev, newSession]);
-    setNewManualSessionSubjectId('');
-    setNewManualSessionDuration('60');
-    showNotification('Sessão adicionada com sucesso!', 'success');
-  };
-
-  const handleDuplicateManualSession = (sessionToDuplicate: StudySession) => {
-    const newSession: StudySession = {
-      ...sessionToDuplicate,
-      id: Date.now() + Math.random(),
-    };
-    setManualStudySessions(prev => [...prev, newSession]);
-    showNotification('Sessão duplicada com sucesso!', 'success');
-  };
-
-  const handleRemoveManualSession = (id: any) => {
-    setManualStudySessions(prev => prev.filter(session => session.id !== id));
-    showNotification('Sessão removida.', 'info');
+    setManualStudySessions((prev) => [...prev, newSession]);
   };
 
   const handleSaveManualCycle = () => {
     if (manualStudySessions.length === 0) {
-      showNotification('Adicione pelo menos uma sessão para salvar o ciclo.', 'error');
+      showNotification('Adicione pelo menos uma sessão ao ciclo.', 'error');
       return;
     }
-    const totalManualDurationMinutes = manualStudySessions.reduce((sum, session) => sum + session.duration, 0);
+    const totalManualDurationMinutes = manualStudySessions.reduce(
+      (sum, session) => sum + session.duration,
+      0
+    );
     setStudyCycle(manualStudySessions);
     setSessionProgressMap({});
     setCurrentProgressMinutes(0);
     setCompletedCycles(0);
-    setContextStudyHours((totalManualDurationMinutes / 60).toFixed(1));
+    setContextStudyHours(Math.max(1, Math.round(totalManualDurationMinutes / 60)).toString());
     setContextWeeklyQuestionsGoal(weeklyQuestionsGoal);
     setContextStudyDays(studyDays);
     onClose();
     showNotification('Ciclo de estudos manual salvo com sucesso!', 'success');
   };
 
-  const openTopicWeightsModal = (subjectId: string) => {
-    const subjectData = subjectMap.get(subjectId);
-    if (subjectData) {
-      setSelectedSubjectForWeights(subjectData);
-      setIsTopicWeightsModalOpen(true);
-    }
-  };
+  if (!isOpen) return null;
 
-  const handleCalculateWeights = async () => {
-    if (!bancaTopicWeights || Object.keys(bancaTopicWeights).length === 0) {
-      showNotification('Dados de questões por banca não encontrados. Importe o guia de estudos novamente.', 'error');
-      return;
-    }
+  const daysOfWeek = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+  const filteredSubjects = subjects.filter((s) =>
+    s.subject.toLowerCase().includes(searchTerm.toLowerCase())
+  );
 
-    showNotification('Calculando e atualizando pesos dos tópicos...', 'info');
+  return (
+    <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-4">
+          <Breadcrumbs
+            items={[
+              { label: 'Planejamento', onClick: onClose },
+              { label: 'Configurar Ciclo de Estudos' },
+            ]}
+            className="mb-0"
+          />
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942] transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Voltar ao Planejamento
+          </button>
+        </div>
 
-    try {
-      const topicsWithCounts = selectedSubjectIds.flatMap(subjectId => {
-        const subject = subjectMap.get(subjectId);
-        if (!subject) return [];
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm w-full overflow-hidden flex flex-col md:flex-row min-h-[560px]">
+          {/* Left Sidebar (Estudei Print 5 style) */}
+        <div className="w-full md:w-64 bg-slate-50 dark:bg-[#0d1626] border-b md:border-b-0 md:border-r border-slate-200 dark:border-[#1f304a] p-6 flex flex-col justify-between shrink-0">
+          <div>
+            <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+              Criar planejamento
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5 mb-6">Leva cerca de 2 minutos</p>
 
-        const topicList: { subjectId: string, topicText: string, count: number }[] = [];
-        const traverse = (topics: Topic[]) => {
-          topics.forEach(topic => {
-            if (!topic.is_grouping_topic) {
-              const count = bancaTopicWeights[subjectId]?.[topic.topic_text] ?? 0;
-              topicList.push({ subjectId, topicText: topic.topic_text, count });
-            }
-            if (topic.sub_topics) {
-              traverse(topic.sub_topics);
-            }
-          });
-        };
-        traverse(subject.topics);
-        return topicList;
-      });
-
-      const zeroCountTopics = topicsWithCounts.filter(t => t.count === 0);
-      const nonZeroCountTopics = topicsWithCounts.filter(t => t.count > 0);
-
-      if (nonZeroCountTopics.length === 0) {
-        showNotification('Nenhuma questão encontrada para as matérias selecionadas.', 'warning');
-        return;
-      }
-
-      nonZeroCountTopics.sort((a, b) => a.count - b.count);
-
-      const weightMap = new Map<string, number>();
-      const total = nonZeroCountTopics.length;
-      const binSize = Math.max(1, total / 5);
-
-      nonZeroCountTopics.forEach((topic, index) => {
-        const weight = Math.min(5, Math.floor(index / binSize) + 1);
-        const key = `${topic.subjectId}::${topic.topicText}`;
-        weightMap.set(key, weight);
-      });
-
-      zeroCountTopics.forEach(topic => {
-        const key = `${topic.subjectId}::${topic.topicText}`;
-        weightMap.set(key, 1);
-      });
-
-      const updatedSubjects = [...subjects];
-      const newWeightsMap: { [subjectId: string]: { [topicText: string]: number } } = {};
-
-      const updateTopicRecursively = (topics: Topic[], subjectId: string): Topic[] => {
-        return topics.map(topic => {
-          const key = `${subjectId}::${topic.topic_text}`;
-          const newWeight = weightMap.get(key) ?? topic.userWeight ?? 1;
-
-          if (topic.userWeight !== newWeight) {
-            if (!newWeightsMap[subjectId]) {
-              newWeightsMap[subjectId] = {};
-            }
-            newWeightsMap[subjectId][topic.topic_text] = newWeight;
-          }
-
-          const newSubTopics = topic.sub_topics ? updateTopicRecursively(topic.sub_topics, subjectId) : [];
-
-          return {
-            ...topic,
-            userWeight: newWeight,
-            sub_topics: newSubTopics,
-          };
-        });
-      };
-
-      selectedSubjectIds.forEach(subjectId => {
-        const subjectIndex = updatedSubjects.findIndex(s => s.id === subjectId);
-        if (subjectIndex !== -1) {
-          updatedSubjects[subjectIndex].topics = updateTopicRecursively(updatedSubjects[subjectIndex].topics, subjectId);
-        }
-      });
-
-      if (Object.keys(newWeightsMap).length > 0) {
-        await updateAllTopicWeightsAction(selectedDataFile, newWeightsMap);
-        await refreshPlans();
-      }
-
-      // setSubjects(updatedSubjects); // Removido pois a função não está definida neste escopo. A UI é atualizada via refreshPlans.
-      showNotification('Pesos dos tópicos recalculados com sucesso!', 'success');
-
-    } catch (error) {
-      console.error("Erro ao calcular pesos:", error);
-      showNotification('Ocorreu um erro ao atualizar os pesos.', 'error');
-    }
-  };
-
-  const renderModalContent = () => {
-    const daysOfWeek = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
-
-    switch (modalStep) {
-      case 0:
-        return (
-          <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg">
-            <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-2">{isEditing ? 'Editar Ciclo de Estudos' : 'Criar Novo Ciclo de Estudos'}</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-8">Escolha como você prefere montar seu plano de estudos.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div onClick={() => setModalStep(1)} className="group border-2 border-gray-200 hover:border-amber-500 p-6 rounded-lg cursor-pointer transition-all duration-300 transform hover:scale-105 dark:border-gray-700 dark:hover:border-amber-400">
-                <FaMagic className="text-4xl text-amber-500 mx-auto mb-4 transition-transform duration-300 group-hover:rotate-12 dark:text-amber-400" />
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Modo Guiado</h3>
-                <p className="text-gray-600 dark:text-gray-300 text-sm">Nós guiaremos você passo a passo para criar um plano otimizado e personalizado.</p>
-              </div>
-              <div onClick={() => setModalStep(4)} className="group border-2 border-gray-200 hover:border-amber-500 p-6 rounded-lg cursor-pointer transition-all duration-300 transform hover:scale-105 dark:border-gray-700 dark:hover:border-amber-400">
-                <FaTools className="text-4xl text-amber-500 mx-auto mb-4 transition-transform duration-300 group-hover:rotate-12 dark:text-amber-400" />
-                <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">Modo Manual</h3>
-                <p className="text-gray-600 dark:text-gray-300 text-sm">Crie seu ciclo de estudos adicionando sessões de estudo uma a uma.</p>
-              </div>
+            <div className="space-y-4">
+              {[
+                { step: 0, title: 'Formato', desc: 'Simples, detalhado ou manual' },
+                { step: 1, title: 'Disciplinas', desc: 'O que entra no plano' },
+                ...(wizardMode === 'detailed'
+                  ? [{ step: 2, title: 'Conhecimento e Peso', desc: 'Domínio e importância' }]
+                  : []),
+                { step: 3, title: 'Rotina', desc: 'Horas, sessões e dias' },
+              ].map((item, idx) => {
+                const isActive = modalStep === item.step;
+                const isDone = modalStep > item.step;
+                return (
+                  <div key={item.step} className="flex items-start gap-3">
+                    <div
+                      className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5 ${
+                        isActive
+                          ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                          : isDone
+                          ? 'bg-emerald-500/20 text-emerald-400'
+                          : 'bg-slate-200 dark:bg-[#1a2942] text-slate-400'
+                      }`}
+                    >
+                      {isDone ? <Check className="w-3.5 h-3.5" /> : idx + 1}
+                    </div>
+                    <div>
+                      <div
+                        className={`text-xs font-bold ${
+                          isActive
+                            ? 'text-slate-900 dark:text-white'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                      >
+                        {item.title}
+                      </div>
+                      <div className="text-[11px] text-slate-400">{item.desc}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
-        );
-      case 1:
-        const filteredSubjects = subjects.filter(s =>
-          s.subject.toLowerCase().includes(searchTerm.toLowerCase())
-        );
-        return (
-          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg">
-            <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-2">Selecione as Matérias</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">Clique nas matérias que você deseja incluir no seu ciclo de estudos.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8" style={{ minHeight: '400px' }}>
-              <div className="flex flex-col">
-                <h3 className="text-xl font-bold text-gray-700 dark:text-gray-100 mb-4">Matérias Disponíveis</h3>
-                <div className="relative mb-4">
-                  <label htmlFor="search-subject" className="sr-only">Buscar matéria</label>
-                  <FaSearch className="absolute top-1/2 left-3 -translate-y-1/2 text-gray-400 dark:text-gray-500 pointer-events-none" />
+
+          {/* Summary Box */}
+          <div className="mt-6 p-3.5 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] space-y-2 text-xs">
+            <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              SEU PLANEJAMENTO
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Formato</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {wizardMode === 'simple'
+                  ? 'Simples'
+                  : wizardMode === 'detailed'
+                  ? 'Detalhado'
+                  : 'Manual'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Assuntos</span>
+              <span className="font-semibold text-emerald-500">
+                {topicSuggestionMode === 'auto' ? 'Automático' : 'Livre'}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Disciplinas</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {selectedSubjectIds.length}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-slate-400">Por semana</span>
+              <span className="font-semibold text-slate-700 dark:text-slate-200">
+                {studyHours}h
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right Main Content */}
+        <div className="flex-1 p-6 sm:p-8 flex flex-col justify-between overflow-y-auto relative">
+          <button
+            onClick={onClose}
+            className="absolute top-5 right-5 p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+
+          {/* STEP 0: Choose Format (Estudei Print 5) */}
+          {modalStep === 0 && (
+            <div className="space-y-6 my-auto">
+              <div>
+                <span className="text-xs font-bold text-emerald-500 uppercase tracking-wider">
+                  Criar planejamento
+                </span>
+                <h3 className="text-2xl font-extrabold text-slate-900 dark:text-white mt-1">
+                  Como você quer montar seu planejamento?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Nos dois caminhos o Ouroboros monta a rotina ideal para você.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Começar Simples */}
+                <div
+                  onClick={() => {
+                    setWizardMode('simple');
+                    setModalStep(1);
+                  }}
+                  className="group p-5 rounded-2xl border-2 border-emerald-500/40 hover:border-emerald-500 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.06] cursor-pointer transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center mb-4 shadow-md shadow-emerald-500/20">
+                      <Wand2 className="w-5 h-5" />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">
+                      Começar simples
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Escolha as disciplinas e diga quanto tempo tem. O sistema distribui o resto — você ajusta depois.
+                    </p>
+                  </div>
+                  <div className="mt-5 pt-3 flex items-center justify-between">
+                    <div className="flex gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                        3 etapas
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                        ~1 min
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-emerald-500 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      Começar <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+
+                {/* Ajustar em detalhe */}
+                <div
+                  onClick={() => {
+                    setWizardMode('detailed');
+                    setModalStep(1);
+                  }}
+                  className="group p-5 rounded-2xl border border-slate-200 dark:border-[#243552] hover:border-indigo-500 bg-slate-50/50 dark:bg-[#0f1929]/50 cursor-pointer transition-all flex flex-col justify-between"
+                >
+                  <div>
+                    <div className="w-11 h-11 rounded-xl bg-slate-200 dark:bg-[#1a2942] text-indigo-400 flex items-center justify-center mb-4">
+                      <Sliders className="w-5 h-5" />
+                    </div>
+                    <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">
+                      Ajustar em detalhe
+                    </h4>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                      Diga quanto já domina de cada disciplina e quanto ela pesa na prova, e o tempo é dividido com base nisso.
+                    </p>
+                  </div>
+                  <div className="mt-5 pt-3 flex items-center justify-between">
+                    <div className="flex gap-2">
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                        4 etapas
+                      </span>
+                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                        ~2 min
+                      </span>
+                    </div>
+                    <span className="text-xs font-bold text-slate-700 dark:text-white inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                      Ajustar <ArrowRight className="w-3.5 h-3.5" />
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Topic Suggestion Option */}
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                <div className="text-xs font-bold text-slate-800 dark:text-slate-200 mb-2">
+                  Sugestão de Assuntos na hora de estudar:
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setTopicSuggestionMode('auto')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      topicSuggestionMode === 'auto'
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500'
+                        : 'border-slate-200 dark:border-[#1f304a] text-slate-500'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center gap-1.5">
+                      <Sparkles className="w-3.5 h-3.5" />O sistema sugere o próximo tópico
+                    </div>
+                    <div className="text-[11px] opacity-80 mt-0.5">
+                      Segue a sequência do edital verticalizado automaticamente
+                    </div>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTopicSuggestionMode('manual')}
+                    className={`p-3 rounded-xl border text-left transition-all ${
+                      topicSuggestionMode === 'manual'
+                        ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500'
+                        : 'border-slate-200 dark:border-[#1f304a] text-slate-500'
+                    }`}
+                  >
+                    <div className="text-xs font-bold">Eu escolho o assunto na hora</div>
+                    <div className="text-[11px] opacity-80 mt-0.5">
+                      Apenas a disciplina do bloco é indicada
+                    </div>
+                  </button>
+                </div>
+              </div>
+
+              {/* Manual option button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setWizardMode('manual');
+                  setModalStep(4);
+                }}
+                className="w-full p-4 rounded-xl border border-slate-200 dark:border-[#243552] hover:border-slate-400 flex items-center justify-between text-xs font-semibold text-slate-700 dark:text-slate-200 transition-colors"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Wrench className="w-4 h-4 text-slate-400" />
+                  Prefiro montar do zero, disciplina por disciplina
+                </span>
+                <ArrowRight className="w-4 h-4 text-slate-400" />
+              </button>
+            </div>
+          )}
+
+          {/* STEP 1: Select Disciplines */}
+          {modalStep === 1 && (
+            <div className="space-y-4 flex-1 flex flex-col">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+                  Quais disciplinas entram no seu ciclo?
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Selecione as matérias que deseja estudar neste planejamento
+                </p>
+              </div>
+
+              <div className="flex items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
                   <input
                     type="text"
-                    id="search-subject"
-                    name="search-subject"
-                    placeholder="Buscar matéria..."
+                    placeholder="Buscar disciplina..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
+                    className="w-full pl-9 pr-4 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
-                <div className="flex items-center mb-3 pl-1">
-                    <input
-                        type="checkbox"
-                        id="selectAll"
-                        className="h-4 w-4 text-amber-600 focus:ring-amber-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 accent-amber-500"
-                        onChange={() => {
-                            const allSubjectIds = filteredSubjects.map(s => s.id);
-                            const allSelected = allSubjectIds.every(id => selectedSubjectIds.includes(id));
-                            if (allSelected) {
-                                setSelectedSubjectIds(prev => prev.filter(id => !allSubjectIds.includes(id)));
-                            } else {
-                                setSelectedSubjectIds(prev => [...new Set([...prev, ...allSubjectIds])]);
-                            }
-                        }}
-                        checked={filteredSubjects.length > 0 && filteredSubjects.every(s => selectedSubjectIds.includes(s.id))}
-                    />
-                    <label htmlFor="selectAll" className="ml-2 text-sm font-medium text-gray-700 dark:text-gray-100">
-                        Selecionar Todas
-                    </label>
-                </div>
-                <div className="space-y-2 overflow-y-auto pr-2" style={{ maxHeight: '260px' }}>
-                  {filteredSubjects.map(s => (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const allIds = filteredSubjects.map((s) => s.id);
+                    const allSelected = allIds.every((id) => selectedSubjectIds.includes(id));
+                    if (allSelected) {
+                      setSelectedSubjectIds((prev) => prev.filter((id) => !allIds.includes(id)));
+                    } else {
+                      setSelectedSubjectIds((prev) => Array.from(new Set([...prev, ...allIds])));
+                    }
+                  }}
+                  className="px-3 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-700 dark:text-slate-200 hover:bg-emerald-500 hover:text-white transition-colors"
+                >
+                  Selecionar Todas
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 overflow-y-auto max-h-[300px] pr-1 flex-1">
+                {filteredSubjects.map((s) => {
+                  const isSelected = selectedSubjectIds.includes(s.id);
+                  return (
                     <div
                       key={s.id}
                       onClick={() => handleSubjectSelect(s.id)}
-                      className={`p-3 rounded-lg cursor-pointer transition-all duration-200 flex justify-between items-center ${selectedSubjectIds.includes(s.id) ? 'bg-amber-100 text-amber-800 font-semibold dark:bg-amber-800 dark:text-amber-100' : 'bg-gray-100 hover:bg-gray-200 dark:bg-gray-700 dark:hover:bg-gray-600 dark:text-gray-100'}`}>
-                      <span className="text-gray-800">{s.subject}</span>
-                      {selectedSubjectIds.includes(s.id) && <FaCheckCircle className="text-amber-500 dark:text-amber-400" />}
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div className="flex flex-col bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
-                <h3 className="text-xl font-bold text-gray-700 dark:text-gray-100 mb-4">Matérias Selecionadas ({selectedSubjectIds.length})</h3>
-                <div className="space-y-2 overflow-y-auto" style={{ maxHeight: '340px' }}>
-                  {selectedSubjectIds.length > 0 ? (
-                    selectedSubjectIds.map(subjectId => {
-                      const subject = subjectMap.get(subjectId);
-                      if (!subject) return null;
-                      return (
-                        <div key={subjectId} className="bg-white dark:bg-gray-800 p-3 rounded-lg shadow-sm flex justify-between items-center">
-                          <span className="font-semibold text-gray-800 dark:text-gray-100">{subject.subject}</span>
-                          <button onClick={() => handleSubjectSelect(subjectId)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-500">
-                            <FaTimes />
-                          </button>
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <div className="text-center text-gray-500 dark:text-gray-400 pt-16">
-                      <p>Nenhuma matéria selecionada ainda.</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="flex justify-between mt-8">
-              <button onClick={isEditing ? onClose : () => setModalStep(0)} className="px-6 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">Voltar</button>
-              <button onClick={() => setModalStep(2)} className="px-6 py-2 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700" disabled={selectedSubjectIds.length === 0}>Avançar</button>
-            </div>
-          </div>
-        );
-      case 2:
-        const totalWeight = Object.values(subjectSettings).reduce((acc, { importance, knowledge }) => acc + (importance / (knowledge || 1)), 0);
-        const StarRating = ({ value, onChange }: { value: number, onChange: (value: number) => void }) => (
-          <div className="flex space-x-1">
-            {[1, 2, 3, 4, 5].map(star => (
-              <FaStar
-                key={star}
-                className={`cursor-pointer ${star <= value ? 'text-amber-400' : 'text-gray-300'}`}
-                onClick={() => onChange(star)}
-              />
-            ))}
-          </div>
-        );
-        return (
-          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg">
-            <div className="flex justify-between items-center mb-2">
-              <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100">Ajuste de Peso das Matérias</h2>
-              <button
-                onClick={handleCalculateWeights}
-                className="relative flex items-center px-4 py-2 bg-gold-600 text-white font-semibold rounded-lg hover:bg-gold-700 transition-all duration-300 overflow-hidden group"
-                title="Calcular pesos dos tópicos com base na quantidade de questões da banca."
-              >
-                <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-amber-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out group-hover:left-[100%]"></span>
-                <span className="relative flex items-center">
-                  <FaMagic className="mr-2" />
-                  Calcular Pesos por Banca
-                </span>
-              </button>
-            </div>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">Defina a importância e seu conhecimento em cada matéria para balancear o ciclo.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8" style={{ minHeight: '400px' }}>
-              <div className="space-y-4 overflow-y-auto pr-4" style={{ maxHeight: '450px' }}>
-                {selectedSubjectIds.map(subjectId => {
-                  const subject = subjectMap.get(subjectId);
-                  if (!subject) return null;
-                  return (
-                    <div key={subjectId} className="p-4 bg-gray-50 rounded-lg border border-gray-200 dark:bg-gray-700 dark:border-gray-600 relative">
-                      <h3 className="font-bold text-lg text-gray-800 dark:text-gray-100 mb-3">{subject.subject}</h3>
-                      <div className="flex justify-between items-center mb-2">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-100">Importância</label>
-                        <StarRating
-                          value={subjectSettings[subjectId]?.importance || 3}
-                          onChange={(value) => handleSettingChange(subjectId, 'importance', value)}
+                      className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between gap-2 ${
+                        isSelected
+                          ? 'border-emerald-500 bg-emerald-500/10 text-slate-900 dark:text-white font-semibold'
+                          : 'border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0b1320]/50 text-slate-600 dark:text-slate-400 hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5 truncate">
+                        <span
+                          className="w-2.5 h-6 rounded-full shrink-0"
+                          style={{ backgroundColor: s.color || '#10b981' }}
                         />
+                        <span className="text-xs truncate">{s.subject}</span>
                       </div>
-                      <div className="flex justify-between items-center">
-                        <label className="text-sm font-medium text-gray-700 dark:text-gray-100">Conhecimento</label>
-                        <StarRating
-                          value={subjectSettings[subjectId]?.knowledge || 3}
-                          onChange={(value) => handleSettingChange(subjectId, 'knowledge', value)}
-                        />
-                      </div>
-                      <button
-                        onClick={() => openTopicWeightsModal(subjectId)}
-                        className="absolute top-2 right-2 text-gray-400 hover:text-amber-500 dark:hover:text-amber-400 transition-colors"
-                        title="Ajustar relevância dos tópicos"
+                      <div
+                        className={`w-5 h-5 rounded-md flex items-center justify-center shrink-0 ${
+                          isSelected
+                            ? 'bg-emerald-500 text-white'
+                            : 'border border-slate-300 dark:border-slate-600'
+                        }`}
                       >
-                        <FaHandSparkles />
-                      </button>
+                        {isSelected && <Check className="w-3.5 h-3.5" />}
+                      </div>
                     </div>
-                  )
+                  );
                 })}
               </div>
-              <div className="flex flex-col items-center bg-gray-50 p-6 rounded-lg dark:bg-gray-700">
-                <h3 className="text-xl font-bold text-gray-700 dark:text-gray-100 mb-4">Distribuição do Tempo</h3>
-                {totalWeight > 0 ? (
-                  <DonutChartForModal data={percentages} subjects={subjects} />
-                ) : (
-                  <div className="w-[200px] h-[200px] bg-gray-200 dark:bg-gray-600 rounded-full mx-auto flex items-center justify-center">
-                    <p className="text-gray-500 dark:text-gray-400 text-center text-sm">Ajuste os pesos para ver o gráfico</p>
-                  </div>
-                )}
-                <div className="w-full mt-6 space-y-2 overflow-y-auto" style={{ maxHeight: '180px' }}>
-                  {Object.entries(percentages).map(([subjectId, percentage]) => {
-                    const subject = subjectMap.get(subjectId);
-                    if (!subject) return null;
-                    return (
-                      <div key={subjectId} className="flex items-center justify-between text-sm">
-                        <div className="flex items-center">
-                          <span className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: subject.color }}></span>
-                          <span className="text-gray-700 dark:text-gray-100">{subject.subject}</span>
-                        </div>
-                        <span className="font-bold text-gray-800 dark:text-gray-100">{percentage}%</span>
-                      </div>
-                    );
-                  })}
-                </div>
+
+              <div className="flex justify-between pt-4 border-t border-slate-200 dark:border-[#1f304a]">
+                <button
+                  type="button"
+                  onClick={() => setModalStep(0)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedSubjectIds.length === 0}
+                  onClick={() => setModalStep(wizardMode === 'simple' ? 3 : 2)}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white disabled:opacity-40"
+                >
+                  Avançar
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
-            <div className="flex justify-between mt-8">
-              <button onClick={() => setModalStep(1)} className="px-6 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">Voltar</button>
-              <button onClick={() => setModalStep(3)} className="px-6 py-2 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700">Avançar</button>
+          )}
+
+          {/* STEP 2: Knowledge & Exam Weight (Estudei Pills) */}
+          {modalStep === 2 && (
+            <div className="space-y-4 flex-1 flex flex-col">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+                  Seu Conhecimento e Peso na Prova
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Disciplinas com maior peso e menor domínio recebem mais blocos no seu ciclo
+                </p>
+              </div>
+
+              <div className="space-y-3 overflow-y-auto max-h-[340px] pr-1 flex-1">
+                {selectedSubjectIds.map((subjectId) => {
+                  const subject = subjectMap.get(subjectId);
+                  if (!subject) return null;
+                  const currentKnow = subjectSettings[subjectId]?.knowledge || 3;
+                  const currentImp = subjectSettings[subjectId]?.importance || 3;
+                  const sharePct = percentages[subjectId] || '0.0';
+
+                  return (
+                    <div
+                      key={subjectId}
+                      className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] space-y-3"
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span
+                            className="w-2.5 h-5 rounded-full"
+                            style={{ backgroundColor: subject.color || '#10b981' }}
+                          />
+                          <h4 className="text-xs font-bold text-slate-900 dark:text-white">
+                            {subject.subject}
+                          </h4>
+                        </div>
+                        <span className="text-[11px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full">
+                          {sharePct}% do ciclo
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                        {/* Knowledge */}
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            Seu Conhecimento Atual
+                          </label>
+                          <div className="flex flex-wrap gap-1">
+                            {KNOWLEDGE_LABELS.map((k) => (
+                              <button
+                                key={k.value}
+                                type="button"
+                                onClick={() =>
+                                  handleSettingChange(subjectId, 'knowledge', k.value)
+                                }
+                                className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+                                  currentKnow === k.value
+                                    ? 'bg-indigo-500 text-white'
+                                    : 'bg-white dark:bg-[#131f33] text-slate-500 border border-slate-200 dark:border-[#1f304a]'
+                                }`}
+                              >
+                                {k.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Importance */}
+                        <div>
+                          <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                            Peso na Prova
+                          </label>
+                          <div className="flex flex-wrap gap-1">
+                            {IMPORTANCE_LABELS.map((imp) => (
+                              <button
+                                key={imp.value}
+                                type="button"
+                                onClick={() =>
+                                  handleSettingChange(subjectId, 'importance', imp.value)
+                                }
+                                className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-all ${
+                                  currentImp === imp.value
+                                    ? 'bg-emerald-500 text-white'
+                                    : 'bg-white dark:bg-[#131f33] text-slate-500 border border-slate-200 dark:border-[#1f304a]'
+                                }`}
+                              >
+                                {imp.label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="flex justify-between pt-4 border-t border-slate-200 dark:border-[#1f304a]">
+                <button
+                  type="button"
+                  onClick={() => setModalStep(1)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setModalStep(3)}
+                  className="inline-flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white"
+                >
+                  Avançar
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
-          </div>
-        );
-      case 3:
-        return (
-          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg">
-            <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-2">Planejamento Semanal</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-8">Defina a estrutura do seu ciclo de estudos semanal.</p>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-              <div className="space-y-6">
-                <div>
-                  <label htmlFor="weeklyHours" className="block text-lg font-semibold text-gray-700 dark:text-gray-100 mb-2 flex items-center">
-                    <FaClock className="mr-3 text-amber-500" />
-                    Horas Semanais
+          )}
+
+          {/* STEP 3: Routine (Hours, Session Duration, Days) */}
+          {modalStep === 3 && (
+            <div className="space-y-5 flex-1 flex flex-col justify-between">
+              <div>
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+                  Defina sua Rotina Semanal
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Configure quantas horas por semana pretende estudar e a duração de cada bloco
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                    <Clock className="w-4 h-4 text-emerald-500" />
+                    Horas de Estudo por Semana
                   </label>
                   <input
                     type="number"
-                    id="weeklyHours"
-                    name="weeklyHours"
                     value={studyHours}
                     onChange={(e) => setStudyHours(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                    placeholder="Ex: 40"
+                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label htmlFor="weeklyQuestions" className="block text-lg font-semibold text-gray-700 dark:text-gray-100 mb-2 flex items-center">
-                    <FaQuestionCircle className="mr-3 text-amber-500" />
-                    Meta de Questões
+
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                    <HelpCircle className="w-4 h-4 text-indigo-400" />
+                    Meta Semanal de Questões
                   </label>
                   <input
                     type="number"
-                    id="weeklyQuestions"
-                    name="weeklyQuestions"
                     value={weeklyQuestionsGoal}
                     onChange={(e) => setWeeklyQuestionsGoal(e.target.value)}
-                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                    placeholder="Ex: 250"
+                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
                   />
                 </div>
-                <div>
-                  <label htmlFor="minSession" className="block text-lg font-semibold text-gray-700 dark:text-gray-100 mb-2 flex items-center">
-                    <FaHourglassHalf className="mr-3 text-amber-500" />
-                    Duração da Sessão (min)
+
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-2">
+                    Duração de cada Bloco de Estudo (minutos)
                   </label>
-                  <div className="flex items-center space-x-4">
-                    <input
-                      type="number"
-                      id="minSession"
-                      name="minSession"
-                      placeholder="Mínimo"
-                      value={minSession}
-                      onChange={(e) => setMinSession(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                    />
-                    <span className="text-gray-500 font-bold dark:text-gray-400">-</span>
-                    <input
-                      type="number"
-                      id="maxSession"
-                      name="maxSession"
-                      placeholder="Máximo"
-                      value={maxSession}
-                      onChange={(e) => setMaxSession(e.target.value)}
-                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-500 text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                    />
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-[11px] text-slate-400 block mb-1">Mínimo (min)</span>
+                      <input
+                        type="number"
+                        value={minSession}
+                        onChange={(e) => setMinSession(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div>
+                      <span className="text-[11px] text-slate-400 block mb-1">Máximo (min)</span>
+                      <input
+                        type="number"
+                        value={maxSession}
+                        onChange={(e) => setMaxSession(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
+                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-3">
+                    <Calendar className="w-4 h-4 text-emerald-500" />
+                    Dias de Estudo na Semana
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {daysOfWeek.map((day) => {
+                      const active = studyDays.includes(day);
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => handleDaySelect(day)}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                            active
+                              ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20'
+                              : 'bg-white dark:bg-[#131f33] text-slate-500 border border-slate-200 dark:border-[#1f304a]'
+                          }`}
+                        >
+                          {day.slice(0, 3)}
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               </div>
+
+              <div className="flex justify-between pt-4 border-t border-slate-200 dark:border-[#1f304a]">
+                <button
+                  type="button"
+                  onClick={() => setModalStep(wizardMode === 'simple' ? 1 : 2)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleGenerateCycle}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20"
+                >
+                  <Check className="w-4 h-4" />
+                  Gerar Ciclo de Estudos
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* STEP 4: Manual Mode */}
+          {modalStep === 4 && (
+            <div className="space-y-4 flex-1 flex flex-col justify-between">
               <div>
-                <p className="block text-lg font-semibold text-gray-700 dark:text-gray-100 mb-3 flex items-center">
-                  <FaCalendarAlt className="mr-3 text-amber-500" />
-                  Dias de Estudo
+                <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
+                  Montar Ciclo Manualmente
+                </h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Adicione cada bloco de disciplina na ordem exata em que deseja estudar
                 </p>
-                <div className="flex justify-around items-center pt-4">
-                  {daysOfWeek.map(day => (
-                    <button
-                      key={day}
-                      onClick={() => handleDaySelect(day)}
-                      className={`w-10 h-10 rounded-full text-sm font-bold flex items-center justify-center transition-all duration-200 ${studyDays.includes(day) ? 'bg-amber-500 text-white transform scale-110 shadow-lg' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'}`}
-                      title={day}
-                    >
-                      {day.charAt(0)}
-                    </button>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-2.5">
+                <select
+                  value={newManualSessionSubjectId}
+                  onChange={(e) => setNewManualSessionSubjectId(e.target.value)}
+                  className="flex-1 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs text-slate-900 dark:text-white"
+                >
+                  <option value="">Selecione uma disciplina...</option>
+                  {subjects.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.subject}
+                    </option>
                   ))}
-                </div>
-              </div>
-            </div>
-            <div className="p-6 bg-amber-50 dark:bg-amber-900/50 rounded-lg border-2 border-amber-200 dark:border-amber-700">
-              <h3 className="text-xl font-bold text-amber-800 dark:text-amber-200 mb-4">Resumo do seu Planejamento</h3>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-amber-900 dark:text-amber-100">
-                <p><strong>Matérias:</strong> {selectedSubjectIds.length}</p>
-                <p><strong>Horas/Semana:</strong> {studyHours}h</p>
-                <p><strong>Meta de Questões:</strong> {weeklyQuestionsGoal}</p>
-                <p><strong>Dias de Estudo:</strong> {studyDays.length}</p>
-                <p><strong>Duração da Sessão:</strong> {minSession}-{maxSession} min</p>
-              </div>
-            </div>
-            <div className="flex justify-between mt-8">
-              <button onClick={() => setModalStep(2)} className="px-6 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">Voltar</button>
-              <button onClick={handleGenerateCycle} className="px-6 py-2 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700">Gerar Ciclo</button>
-            </div>
-          </div>
-        );
-      case 4:
-        const totalManualDuration = manualStudySessions.reduce((sum, session) => sum + session.duration, 0);
-        const selectedManualSubject = subjectMap.get(newManualSessionSubjectId);
-
-        return (
-          <div className="bg-white dark:bg-gray-800 p-8 rounded-lg">
-            <h2 className="text-3xl font-bold text-gray-800 dark:text-gray-100 mb-2">Criação Manual do Ciclo</h2>
-            <p className="text-gray-600 dark:text-gray-300 mb-6">Adicione sessões de estudo uma a uma para montar seu ciclo.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div>
-                <label htmlFor="manualSubject" className="block text-sm font-medium text-gray-700 dark:text-gray-100">Matéria</label>
-                <div className="flex items-end gap-2">
-                  <div className="relative w-full" ref={manualSubjectDropdownRef}>
-                    <button
-                      type="button"
-                      onClick={() => setIsManualSubjectDropdownOpen(!isManualSubjectDropdownOpen)}
-                      className="mt-1 block w-full pl-3 pr-10 py-2 text-left text-base border-2 border-gray-300 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm rounded-md dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                    >
-                      <span className="block truncate text-gray-900">{selectedManualSubject?.subject || 'Selecione uma matéria'}</span>
-                      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2">
-                        <svg className="h-5 w-5 text-gray-400 dark:text-gray-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
-                          <path fillRule="evenodd" d="M10 3a.75.75 0 01.53.22l3.5 3.5a.75.75 0 01-1.06 1.06L10 4.81 6.53 8.28a.75.75 0 01-1.06-1.06l3.5-3.5A.75.75 0 0110 3zm-3.72 9.53a.75.75 0 011.06 0L10 15.19l2.67-2.66a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 010-1.06z" clipRule="evenodd" />
-                        </svg>
-                      </span>
-                    </button>
-                    {isManualSubjectDropdownOpen && (
-                      <div className="absolute z-20 mt-1 w-full bg-white shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm dark:bg-gray-700 dark:ring-gray-600">
-                        {subjects.map(s => (
-                          <div
-                            key={s.id}
-                            onClick={() => {
-                              setNewManualSessionSubjectId(s.id);
-                              setIsManualSubjectDropdownOpen(false);
-                            }}
-                            className="text-gray-900 cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-amber-100 dark:text-gray-100 dark:hover:bg-amber-800"
-                          >
-                            <span className="block whitespace-normal">{s.subject}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => openTopicWeightsModal(newManualSessionSubjectId)}
-                    disabled={!newManualSessionSubjectId}
-                    className="p-3 h-full text-gray-600 bg-gray-100 rounded-md hover:bg-gray-200 disabled:opacity-50 disabled:cursor-not-allowed dark:bg-gray-600 dark:text-gray-300 dark:hover:bg-gray-500"
-                    title="Ajustar Relevância dos Tópicos"
-                  >
-                    <FaHandSparkles />
-                  </button>
-                </div>
-              </div>
-              <div>
-                <label htmlFor="manualDuration" className="block text-sm font-medium text-gray-700 dark:text-gray-100">Duração (min)</label>
+                </select>
                 <input
                   type="number"
-                  id="manualDuration"
                   value={newManualSessionDuration}
                   onChange={(e) => setNewManualSessionDuration(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                  placeholder="Ex: 60"
-                  min="1"
+                  placeholder="Minutos"
+                  className="w-28 px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs text-slate-900 dark:text-white"
                 />
+                <button
+                  type="button"
+                  onClick={handleAddManualSession}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-semibold shrink-0"
+                >
+                  + Adicionar Bloco
+                </button>
               </div>
-            </div>
-            <button
-              onClick={handleAddManualSession}
-              className="w-full py-2 px-4 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors mb-6 dark:bg-amber-600 dark:hover:bg-amber-700"
-            >
-              Adicionar Sessão
-            </button>
 
-            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Sessões Adicionadas ({manualStudySessions.length})</h3>
-            <div className="space-y-3 overflow-y-auto pr-2" style={{ maxHeight: '300px' }}>
-              {manualStudySessions.length > 0 ? (
-                manualStudySessions.map((session, index) => (
-                  <div key={session.id} className="flex justify-between items-stretch p-3 bg-gray-50 rounded-lg shadow-sm dark:bg-gray-700">
-                    <div className="flex items-center">
-                      <span className="w-3 h-3 rounded-full mr-3" style={{ backgroundColor: session.color }}></span>
-                      <span className="font-semibold text-gray-800 dark:text-gray-100">{session.subject}</span>
-                      <span className="ml-4 text-gray-700 dark:text-gray-100">{session.duration} min</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button onClick={() => handleDuplicateManualSession(session)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300">
-                        <FaCopy />
-                      </button>
-                      <button onClick={() => handleRemoveManualSession(session.id)} className="text-red-500 hover:text-red-700 dark:text-red-400 dark:hover:text-red-500">
-                        <FaTimes />
-                      </button>
-                    </div>
+              <div className="space-y-2 overflow-y-auto max-h-[260px] flex-1">
+                {manualStudySessions.length === 0 ? (
+                  <div className="p-8 text-center text-xs text-slate-400 border border-dashed border-slate-200 dark:border-[#1f304a] rounded-xl">
+                    Nenhum bloco adicionado ainda.
                   </div>
-                ))
-              ) : (
-                <div className="text-center text-gray-500 dark:text-gray-400 pt-8">
-                  <p>Nenhuma sessão adicionada ainda.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
-              <div>
-                <label className="block text-lg font-semibold text-gray-700 mb-2 flex items-center">
-                  <FaClock className="mr-3 text-amber-500 dark:text-amber-400" />
-                  Horas Semanais
-                </label>
-                <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{(totalManualDuration / 60).toFixed(1)}h</p>
+                ) : (
+                  manualStudySessions.map((session) => (
+                    <div
+                      key={session.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span
+                          className="w-2.5 h-5 rounded-full"
+                          style={{ backgroundColor: session.color }}
+                        />
+                        <span className="text-xs font-bold text-slate-900 dark:text-white">
+                          {session.subject}
+                        </span>
+                        <span className="text-xs text-slate-400">{session.duration} min</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setManualStudySessions((prev) => [
+                              ...prev,
+                              { ...session, id: `${Date.now()}-${Math.random()}` },
+                            ])
+                          }
+                          className="p-1.5 text-slate-400 hover:text-indigo-400"
+                          title="Duplicar"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setManualStudySessions((prev) =>
+                              prev.filter((s) => s.id !== session.id)
+                            )
+                          }
+                          className="p-1.5 text-slate-400 hover:text-rose-500"
+                          title="Remover"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
-              <div>
-                <label htmlFor="manualWeeklyQuestions" className="block text-lg font-semibold text-gray-700 mb-2 flex items-center">
-                  <FaQuestionCircle className="mr-3 text-amber-500 dark:text-amber-400" />
-                  Meta de Questões
-                </label>
-                <input
-                  type="number"
-                  id="manualWeeklyQuestions"
-                  name="manualWeeklyQuestions"
-                  value={weeklyQuestionsGoal}
-                  onChange={(e) => setWeeklyQuestionsGoal(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-amber-500 focus:border-amber-500 sm:text-sm text-gray-900 dark:bg-gray-700 dark:text-gray-100 dark:border-gray-600 dark:focus:ring-amber-400"
-                  placeholder="Ex: 250"
-                />
+
+              <div className="flex justify-between pt-4 border-t border-slate-200 dark:border-[#1f304a]">
+                <button
+                  type="button"
+                  onClick={() => setModalStep(0)}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
+                >
+                  <ArrowLeft className="w-3.5 h-3.5" />
+                  Voltar
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveManualCycle}
+                  className="inline-flex items-center gap-2 px-6 py-2.5 rounded-xl text-xs font-bold bg-emerald-500 hover:bg-emerald-600 text-white"
+                >
+                  <Check className="w-4 h-4" />
+                  Salvar Ciclo Manual
+                </button>
               </div>
             </div>
-            <div className="mt-6">
-              <label className="block text-lg font-semibold text-gray-700 mb-3 flex items-center">
-                <FaCalendarAlt className="mr-3 text-amber-500 dark:text-amber-400" />
-                Dias de Estudo
-              </label>
-              <div className="flex justify-around items-center pt-4">
-                {daysOfWeek.map(day => (
-                  <button
-                    key={day}
-                    onClick={() => handleDaySelect(day)}
-                    className={`w-10 h-10 rounded-full text-sm font-bold flex items-center justify-center transition-all duration-200 ${studyDays.includes(day) ? 'bg-amber-500 text-white transform scale-110 shadow-lg dark:bg-amber-600' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'}`}
-                    title={day}
-                  >
-                    {day.charAt(0)}
-                  </button>
-                ))}
-              </div>
-            </div>
+          )}
+        </div>
 
-            <div className="flex justify-between mt-8">
-              <button onClick={() => setModalStep(0)} className="px-6 py-2 bg-gray-300 text-gray-800 font-semibold rounded-lg hover:bg-gray-400 transition-colors dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600">Voltar</button>
-              <button onClick={handleSaveManualCycle} className="px-6 py-2 bg-amber-500 text-white font-semibold rounded-lg hover:bg-amber-600 transition-colors dark:bg-amber-600 dark:hover:bg-amber-700">Salvar Ciclo</button>
-            </div>
-          </div>
-        );
-      default:
-        return null;
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="fixed inset-0 bg-black/75 backdrop-blur-sm flex items-center justify-center z-50">
-      <div className="bg-white dark:bg-gray-800 p-4 sm:p-6 md:p-8 rounded-xl shadow-2xl max-w-4xl w-full mx-4 relative transform transition-all duration-300 ease-out scale-95 hover:scale-100">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-gray-800 transition-colors z-10 dark:text-gray-400 dark:hover:text-gray-100">
-          <FaTimes className="text-2xl" />
-        </button>
-        {renderModalContent()}
-        
-        {/* Renderiza o novo modal de pesos de tópicos */}
         <TopicWeightsModal
           isOpen={isTopicWeightsModalOpen}
           onClose={() => setIsTopicWeightsModalOpen(false)}
           subject={selectedSubjectForWeights}
         />
+        </div>
       </div>
     </div>
-  );
-};
-
-const DonutChartForModal = ({ data, subjects }: { data: { [key: string]: string }, subjects: Subject[] }) => {
-  const size = 200;
-  const strokeWidth = 20;
-  const radius = (size - strokeWidth) / 2;
-  const circumference = 2 * Math.PI * radius;
-  let offset = 0;
-
-  const subjectColorMap = new Map(subjects.map(s => [s.id, s.color]));
-
-  return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="transform -rotate-90 mx-auto">
-      {Object.entries(data).map(([subjectId, percentage]) => {
-        const color = subjectColorMap.get(subjectId) || '#94A3B8';
-        const dash = (parseFloat(percentage) / 100) * circumference;
-        const strokeDasharray = `${dash} ${circumference - dash}`;
-        const strokeDashoffset = -offset;
-        offset += dash;
-
-        return (
-          <circle
-            key={subjectId}
-            cx={size / 2}
-            cy={size / 2}
-            r={radius}
-            fill="transparent"
-            stroke={color}
-            strokeWidth={strokeWidth}
-            strokeDasharray={strokeDasharray}
-            strokeDashoffset={strokeDashoffset}
-          />
-        );
-      })}
-    </svg>
   );
 };
 

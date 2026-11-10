@@ -1,25 +1,36 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
-import { useData } from '../../context/DataContext'; // Use useData
-import { createPlanFile } from '../actions'; // Keep this import for modals
+import { useData } from '../../context/DataContext';
+import { createPlanFile } from '../actions';
 import Link from 'next/link';
-import Image from 'next/image';
 import CreatePlanModal from '../../components/CreatePlanModal';
-import { FaPlusCircle, FaFileAlt, FaTrash } from 'react-icons/fa';
+import ImportEditalModal from '../../components/ImportEditalModal';
+import {
+  Plus,
+  FolderKanban,
+  Trash2,
+  Sparkles,
+  CheckCircle2,
+  Clock,
+  HelpCircle,
+  Award,
+  ArrowRight,
+  Layers,
+} from 'lucide-react';
 import { useNotification } from '../../context/NotificationContext';
 import ConfirmationModal from '../../components/ConfirmationModal';
 import ImportGuideForm from '../../components/ImportGuideForm';
-import WelcomeScreen from '../../components/WelcomeScreen';
 
-// Interfaces (keep as is)
 interface PlanContent {
   name: string;
   observations: string;
+  cargo?: string;
+  edital?: string;
   iconUrl?: string;
   subjects: Subject[];
-  banca?: string; // Adicionado para a banca
+  banca?: string;
 }
 
 interface Subject {
@@ -30,23 +41,38 @@ interface Subject {
 interface Topic {
   topic_number?: string;
   topic_text: string;
+  is_completed?: boolean;
+  status?: string;
   sub_topics?: Topic[];
 }
 
 interface PlanInfo {
   fileName: string;
   name: string;
+  cargo?: string;
+  edital?: string;
   iconUrl?: string;
   subjectCount: number;
   topicCount: number;
+  completedTopics: number;
   banca?: string;
 }
 
 export default function Planos() {
-  const { data: session, status } = useSession();
-  const { deletePlan, availablePlans, studyPlans, loading: dataContextLoading, refreshPlans } = useData(); // Get data from context
+  const { status } = useSession();
+  const {
+    deletePlan,
+    availablePlans,
+    studyPlans,
+    selectedDataFile,
+    setSelectedDataFile,
+    studyRecords,
+    loading: dataContextLoading,
+    refreshPlans,
+  } = useData();
   const { showNotification } = useNotification();
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isImportAIModalOpen, setIsImportAIModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [planToDelete, setPlanToDelete] = useState<PlanInfo | null>(null);
 
@@ -66,14 +92,24 @@ export default function Planos() {
     }
   };
 
-  const handleSavePlan = async (planData: { name: string; observations: string; cargo: string; edital: string; image?: File }) => {
+  const handleSavePlan = async (planData: {
+    name: string;
+    observations: string;
+    cargo: string;
+    edital: string;
+    banca?: string;
+    image?: File;
+    imageFile?: File;
+  }) => {
     const formData = new FormData();
     formData.append('name', planData.name);
     formData.append('observations', planData.observations);
     formData.append('cargo', planData.cargo);
     formData.append('edital', planData.edital);
-    if (planData.image) {
-      formData.append('image', planData.image);
+    if (planData.banca) formData.append('banca', planData.banca);
+    const img = planData.imageFile || planData.image;
+    if (img) {
+      formData.append('image', img);
     }
 
     const result = await createPlanFile(formData);
@@ -81,7 +117,10 @@ export default function Planos() {
     if (result.success) {
       showNotification(`Plano "${planData.name}" criado com sucesso!`, 'success');
       setIsModalOpen(false);
-      await refreshPlans(); // Refresh plans after creating a new one
+      await refreshPlans();
+      if (result.fileName) {
+        setSelectedDataFile(result.fileName);
+      }
     } else {
       showNotification(`Erro: ${result.error}`, 'error');
     }
@@ -90,35 +129,48 @@ export default function Planos() {
   const plansToDisplay: PlanInfo[] = useMemo(() => {
     if (!availablePlans || !studyPlans) return [];
 
-    const countTopicsRecursively = (topics: Topic[]): number => {
-      let count = 0;
-      if (!topics) return 0;
+    const countTopicsRecursively = (topics: Topic[]): { total: number; completed: number } => {
+      let total = 0;
+      let completed = 0;
+      if (!topics) return { total: 0, completed: 0 };
       for (const topic of topics) {
-        count++;
+        total++;
+        if (topic.is_completed || topic.status === 'studied') {
+          completed++;
+        }
         if (topic.sub_topics && topic.sub_topics.length > 0) {
-          count += countTopicsRecursively(topic.sub_topics);
+          const sub = countTopicsRecursively(topic.sub_topics);
+          total += sub.total;
+          completed += sub.completed;
         }
       }
-      return count;
+      return { total, completed };
     };
 
     return availablePlans.map((fileName, index) => {
-      const rawData = studyPlans[index]; // Assume studyPlans is in the same order as availablePlans
+      const rawData = studyPlans[index];
       let plan: PlanContent;
 
       if (Array.isArray(rawData)) {
         plan = {
-          name: fileName.replace('.json', '').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+          name: fileName
+            .replace('.json', '')
+            .split('-')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' '),
           observations: '',
           subjects: rawData,
           banca: '',
         };
       } else if (rawData && typeof rawData === 'object') {
         plan = rawData as PlanContent;
-        plan.banca = (rawData as any).banca || '';
       } else {
         plan = {
-          name: fileName.replace('.json', '').split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' '),
+          name: fileName
+            .replace('.json', '')
+            .split('-')
+            .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+            .join(' '),
           observations: '',
           subjects: [],
           banca: '',
@@ -126,107 +178,295 @@ export default function Planos() {
       }
 
       const uniqueSubjectsMap = new Map<string, Subject>();
-      (plan.subjects || []).forEach(s => uniqueSubjectsMap.set(s.subject, s));
+      (plan.subjects || []).forEach((s) => uniqueSubjectsMap.set(s.subject, s));
       const subjectsToCount = Array.from(uniqueSubjectsMap.values());
 
       let totalTopics = 0;
-      subjectsToCount.forEach(subject => {
-        totalTopics += countTopicsRecursively(subject.topics || []);
+      let completedTopics = 0;
+      subjectsToCount.forEach((subject) => {
+        const res = countTopicsRecursively(subject.topics || []);
+        totalTopics += res.total;
+        completedTopics += res.completed;
       });
 
       return {
-        fileName: fileName,
+        fileName,
         name: plan.name || fileName.replace('.json', '').toUpperCase(),
+        cargo: plan.cargo,
+        edital: plan.edital,
         iconUrl: plan.iconUrl,
         subjectCount: subjectsToCount.length,
         topicCount: totalTopics,
+        completedTopics,
         banca: plan.banca,
       };
     });
   }, [availablePlans, studyPlans]);
 
+  // Stats for active plan
+  const activePlanStats = useMemo(() => {
+    const totalMs = studyRecords.reduce((acc, r) => acc + (r.studyTime || 0), 0);
+    const totalHours = Math.floor(totalMs / 3600000);
+    const totalMins = Math.floor((totalMs % 3600000) / 60000);
+    const correct = studyRecords.reduce((acc, r) => acc + (r.correctQuestions || 0), 0);
+    const incorrect = studyRecords.reduce((acc, r) => acc + (r.incorrectQuestions || 0), 0);
+    const totalQ = correct + incorrect;
+    const accPct = totalQ > 0 ? Math.round((correct / totalQ) * 100) : 0;
+    const studiedTopicSet = new Set(studyRecords.map((r) => r.topic).filter(Boolean));
+    return {
+      timeFormatted: `${totalHours}h${String(totalMins).padStart(2, '0')}min`,
+      totalQ,
+      accPct,
+      studiedTopicsCount: studiedTopicSet.size,
+    };
+  }, [studyRecords]);
 
   if (status === 'loading' || (status === 'authenticated' && dataContextLoading)) {
-    return <div className="min-h-screen bg-gray-100 dark:bg-gray-900 flex items-center justify-center"><p>Carregando...</p></div>;
-  }
-
-  if (status === 'unauthenticated') {
-    return <WelcomeScreen />;
-  }
-
-  if (status === 'authenticated') {
     return (
-      <>
-        <div className="min-h-screen bg-gray-100 dark:bg-gray-900 p-4 pt-12">
-          <div className="w-full">
-            <div className="mb-6">
-              <header className="flex justify-between items-center pt-4">
-                <h1 className="text-4xl font-bold text-gray-800 dark:text-gray-100">Meus Planos de Estudo</h1>
-                <div className="flex items-center space-x-4">
-                  <button
-                    onClick={() => setIsModalOpen(true)}
-                    className="flex items-center px-4 py-2 bg-amber-500 text-white rounded-full shadow-lg hover:bg-amber-600 transition-all duration-300 text-base font-semibold"
-                    title="Criar Novo Plano"
-                  >
-                    <FaPlusCircle className="mr-2 text-lg" />
-                    Criar Novo Plano
-                  </button>
-                </div>
-              </header>
-              <hr className="mt-2 mb-6 border-gray-300 dark:border-gray-700" />
-            </div>
-            <ImportGuideForm />
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {plansToDisplay.map((plan) => (
-                <div key={plan.fileName} className="relative bg-white dark:bg-gray-800 rounded-lg shadow-lg hover:shadow-xl transition-shadow duration-300 flex flex-col items-center text-center p-6 group">
-                  <Link href={`/planos/${plan.fileName}`} className="w-full h-full">
-                    {plan.iconUrl ? (
-                      <div className="relative w-24 h-24 mb-4 rounded-full overflow-hidden border-4 border-amber-500 shadow-md mx-auto">
-                        {plan.iconUrl.startsWith('data:') ? (
-                          <img src={plan.iconUrl} alt={`Ícone do plano ${plan.name}`} className="w-full h-full object-cover" />
-                        ) : (
-                          <Image src={plan.iconUrl} alt={`Ícone do plano ${plan.name}`} layout="fill" objectFit="cover" />
-                        )}
-                      </div>
-                    ) : (
-                      <div className="w-24 h-24 mb-4 flex items-center justify-center bg-gray-200 dark:bg-gray-700 rounded-full text-gray-500 dark:text-gray-400 mx-auto">
-                        <FaFileAlt size={48} />
-                      </div>
-                    )}
-                    <h2 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-2">{plan.name}</h2>
-                    {plan.banca && <p className="text-gray-600 dark:text-gray-300 text-sm">Banca: <span className="font-semibold">{plan.banca}</span></p>}
-                    <p className="text-gray-600 dark:text-gray-300 text-sm">Matérias: <span className="font-semibold">{plan.subjectCount}</span></p>
-                    <p className="text-gray-600 dark:text-gray-300 text-sm">Tópicos: <span className="font-semibold">{plan.topicCount}</span></p>
-                  </Link>
-                  <button
-                    onClick={(e) => handleDeleteClick(e, plan)}
-                    className="absolute top-2 right-2 p-2 bg-red-500 text-white rounded-full opacity-0 group-hover:opacity-100 hover:bg-red-600 transition-opacity duration-300"
-                    title="Excluir Plano"
-                  >
-                    <FaTrash />
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-        <CreatePlanModal
-          isOpen={isModalOpen}
-          onClose={() => setIsModalOpen(false)}
-          onSave={handleSavePlan}
-        />
-        <ConfirmationModal
-          isOpen={isConfirmModalOpen}
-          onClose={() => setIsConfirmModalOpen(false)}
-          onConfirm={handleConfirmDelete}
-          title="Confirmar Exclusão"
-          message={`Tem certeza que deseja excluir o plano "${planToDelete?.name}"? Esta ação é irreversível.`}
-          confirmText="Excluir"
-          cancelText="Cancelar"
-        />
-      </>
+      <div className="min-h-[60vh] flex items-center justify-center">
+        <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
+      </div>
     );
   }
 
-  return null;
+  return (
+    <div className="max-w-7xl mx-auto space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+            Planos
+          </h1>
+          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+            Gerencie seus objetivos, editais verticalizados e progresso global
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            onClick={() => setIsImportAIModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-all"
+          >
+            <Sparkles className="w-4 h-4" />
+            Importar Edital via IA
+          </button>
+
+          <button
+            onClick={() => setIsModalOpen(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Criar Plano
+          </button>
+        </div>
+      </div>
+
+      {/* Plans List (Estudei 2.0 Horizontal Card Style) */}
+      {plansToDisplay.length === 0 ? (
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-12 text-center">
+          <div className="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500 mx-auto mb-4">
+            <FolderKanban className="w-8 h-8" />
+          </div>
+          <h2 className="text-xl font-bold text-slate-900 dark:text-white mb-2">
+            Você ainda não possui nenhum plano de estudos
+          </h2>
+          <p className="text-sm text-slate-500 dark:text-slate-400 max-w-md mx-auto mb-6">
+            Crie um plano do zero ou importe seu edital completo estruturado via Inteligência Artificial em poucos segundos.
+          </p>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => setIsImportAIModalOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all"
+            >
+              <Sparkles className="w-4 h-4" />
+              Importar Edital via IA
+            </button>
+            <button
+              onClick={() => setIsModalOpen(true)}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold bg-slate-100 dark:bg-[#1a2b47] text-slate-800 dark:text-white hover:bg-slate-200 dark:hover:bg-[#223759] transition-all"
+            >
+              <Plus className="w-4 h-4" />
+              Criar Plano Manualmente
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {plansToDisplay.map((plan) => {
+            const isSelected = selectedDataFile === plan.fileName;
+            const completedCount = isSelected
+              ? Math.max(plan.completedTopics, activePlanStats.studiedTopicsCount)
+              : plan.completedTopics;
+            const progressPct =
+              plan.topicCount > 0
+                ? Math.min(100, Math.round((completedCount / plan.topicCount) * 100))
+                : 0;
+
+            return (
+              <div
+                key={plan.fileName}
+                className={`group relative bg-white dark:bg-[#131f33] rounded-2xl border transition-all p-5 sm:p-6 ${
+                  isSelected
+                    ? 'border-emerald-500/50 dark:border-emerald-500/40 shadow-lg shadow-emerald-500/5'
+                    : 'border-slate-200/80 dark:border-[#1f304a] hover:border-slate-300 dark:hover:border-[#2c4266]'
+                }`}
+              >
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
+                  {/* Left: Plan Identity */}
+                  <div className="flex items-start sm:items-center gap-4 min-w-0">
+                    <div className="w-14 h-14 rounded-2xl bg-slate-100 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] flex items-center justify-center overflow-hidden shrink-0">
+                      {plan.iconUrl ? (
+                        <img
+                          src={plan.iconUrl}
+                          alt={plan.name}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <FolderKanban className="w-7 h-7 text-emerald-500" />
+                      )}
+                    </div>
+
+                    <div className="min-w-0 flex-1">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        <Link
+                          href={`/planos/${plan.fileName}`}
+                          className="text-lg font-bold text-slate-900 dark:text-white hover:text-emerald-500 dark:hover:text-emerald-400 transition-colors truncate"
+                        >
+                          {plan.name}
+                        </Link>
+                        {isSelected ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-500/15 text-emerald-500 border border-emerald-500/30">
+                            <CheckCircle2 className="w-3 h-3" />
+                            Ativo
+                          </span>
+                        ) : (
+                          <button
+                            onClick={() => {
+                              setSelectedDataFile(plan.fileName);
+                              showNotification(`Plano "${plan.name}" ativado!`, 'success');
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300 hover:bg-emerald-500 hover:text-white transition-colors"
+                          >
+                            Tornar Ativo
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400 mt-1">
+                        {plan.cargo && <span>Cargo: <strong className="text-slate-700 dark:text-slate-200">{plan.cargo}</strong></span>}
+                        {plan.banca && <span>Banca: <strong className="text-slate-700 dark:text-slate-200">{plan.banca}</strong></span>}
+                        <span className="inline-flex items-center gap-1">
+                          <Layers className="w-3.5 h-3.5 text-slate-400" />
+                          {plan.subjectCount} disciplinas • {plan.topicCount} tópicos
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Center/Right: Metrics & Actions */}
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-6 lg:gap-8 pt-4 lg:pt-0 border-t lg:border-t-0 border-slate-100 dark:border-[#1f304a]">
+                    {/* Progress Bar */}
+                    <div className="min-w-[200px]">
+                      <div className="flex items-center justify-between text-xs mb-1.5">
+                        <span className="font-semibold uppercase tracking-wider text-slate-400 text-[10px]">
+                          Avanço no Edital
+                        </span>
+                        <span className="font-bold text-emerald-500">{progressPct}%</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-[#0b1320] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                          style={{ width: `${progressPct}%` }}
+                        />
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        {completedCount} de {plan.topicCount} tópicos concluídos
+                      </p>
+                    </div>
+
+                    {/* Stats if Active */}
+                    {isSelected && (
+                      <div className="grid grid-cols-3 gap-5 border-l border-slate-100 dark:border-[#1f304a] pl-5">
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Horas de Estudo
+                          </div>
+                          <div className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 flex items-center gap-1.5">
+                            <Clock className="w-3.5 h-3.5 text-emerald-500" />
+                            {activePlanStats.timeFormatted}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Questões
+                          </div>
+                          <div className="text-sm font-bold text-slate-900 dark:text-white mt-0.5 flex items-center gap-1.5">
+                            <HelpCircle className="w-3.5 h-3.5 text-indigo-400" />
+                            {activePlanStats.totalQ}
+                          </div>
+                        </div>
+
+                        <div>
+                          <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                            Desempenho
+                          </div>
+                          <div className="text-sm font-bold text-emerald-500 mt-0.5 flex items-center gap-1.5">
+                            <Award className="w-3.5 h-3.5" />
+                            {activePlanStats.accPct}%
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center gap-2 self-end sm:self-center">
+                      <Link
+                        href={`/planos/${plan.fileName}`}
+                        className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-700 dark:text-slate-200 hover:bg-emerald-500 hover:text-white dark:hover:bg-emerald-500 transition-colors"
+                      >
+                        Gerenciar
+                        <ArrowRight className="w-3.5 h-3.5" />
+                      </Link>
+                      <button
+                        onClick={(e) => handleDeleteClick(e, plan)}
+                        className="p-2 rounded-xl text-slate-400 hover:text-rose-500 hover:bg-rose-500/10 transition-colors"
+                        title="Excluir Plano"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* TEC Guide Importer */}
+      <ImportGuideForm />
+
+      <CreatePlanModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        onSave={handleSavePlan}
+      />
+
+      <ImportEditalModal
+        isOpen={isImportAIModalOpen}
+        onClose={() => setIsImportAIModalOpen(false)}
+      />
+
+      <ConfirmationModal
+        isOpen={isConfirmModalOpen}
+        onClose={() => setIsConfirmModalOpen(false)}
+        onConfirm={handleConfirmDelete}
+        title="Confirmar Exclusão"
+        message={`Tem certeza que deseja excluir o plano "${planToDelete?.name}"? Esta ação é irreversível.`}
+        confirmText="Excluir"
+        cancelText="Cancelar"
+      />
+    </div>
+  );
 }

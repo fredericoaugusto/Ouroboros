@@ -1,13 +1,12 @@
-
 'use client';
 
 import React, { useState, useMemo } from 'react';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import '../app/datepicker-custom.css';
-import { StudySession } from '@/types/types';
-import { FaBook, FaBullseye, FaChartLine, FaHistory, FaTimes, FaFileAlt, FaGavel, FaQuestionCircle, FaTag } from 'react-icons/fa';
+import { FiX, FiFilter, FiRotateCcw, FiCheck, FiArrowLeft } from 'react-icons/fi';
 import MultiSelectDropdown from './MultiSelectDropdown';
+import Breadcrumbs from './Breadcrumbs';
 
 interface EditalTopic {
   topic_text: string;
@@ -21,41 +20,38 @@ interface EditalSubject {
 interface FilterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onApply: (filters: any) => void;
-  sessions: StudySession[];
-  availableCategories: string[];
-  availableSubjects: string[];
-  availableEditalData: EditalSubject[];
+  onApply?: (filters: any) => void;
+  onApplyFilters?: (filters: any) => void;
+  initialFilters?: any;
+  sessions?: any[];
+  availableCategories?: string[];
+  availableSubjects?: string[];
+  availableEditalData?: EditalSubject[];
 }
-
-const categoryIcons: { [key: string]: JSX.Element } = {
-  Teoria: <FaBook className="mr-2" />,
-  Revisão: <FaHistory className="mr-2" />,
-  Exercícios: <FaBullseye className="mr-2" />,
-  Simulado: <FaChartLine className="mr-2" />,
-  'Leitura de Lei': <FaFileAlt className="mr-2" />,
-  Jurisprudência: <FaGavel className="mr-2" />,
-  Questões: <FaQuestionCircle className="mr-2" />,
-};
 
 const categoryLabels: { [key: string]: string } = {
   Teoria: 'Teoria',
+  teoria: 'Teoria',
   Revisão: 'Revisão',
+  revisao: 'Revisão',
   Exercícios: 'Exercícios',
   Simulado: 'Simulado',
   'Leitura de Lei': 'Leitura de Lei',
+  leitura_lei: 'Leitura de Lei',
   Jurisprudência: 'Jurisprudência',
+  jurisprudencia: 'Jurisprudência',
   Questões: 'Questões',
+  questoes: 'Questões',
 };
 
 const FilterModal: React.FC<FilterModalProps> = ({
   isOpen,
   onClose,
   onApply,
-  sessions,
-  availableCategories,
-  availableSubjects,
-  availableEditalData,
+  onApplyFilters,
+  availableCategories = ['teoria', 'revisao', 'questoes', 'leitura_lei', 'jurisprudencia'],
+  availableSubjects = [],
+  availableEditalData = [],
 }) => {
   const [startDate, setStartDate] = useState<Date | null>(null);
   const [endDate, setEndDate] = useState<Date | null>(null);
@@ -73,28 +69,37 @@ const FilterModal: React.FC<FilterModalProps> = ({
     }
     const topics = availableEditalData
       .filter((subjectData: EditalSubject) => selectedSubjects.includes(subjectData.subject))
-      .flatMap((subjectData: EditalSubject) => 
-        subjectData.topics.map((topic: EditalTopic) => `${subjectData.subject} - ${topic.topic_text}`)
+      .flatMap((subjectData: EditalSubject) =>
+        (subjectData.topics || []).map(
+          (topic: EditalTopic) => `${subjectData.subject} - ${topic.topic_text}`
+        )
       );
-    return [...new Set(topics)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    return [...new Set(topics)].sort((a, b) =>
+      a.localeCompare(b, undefined, { numeric: true })
+    );
   }, [availableEditalData, selectedSubjects]);
 
   const handleCategoryChange = (category: string) => {
     setSelectedCategories(prev =>
-      prev.includes(category)
-        ? prev.filter(c => c !== category)
-        : [...prev, category]
+      prev.includes(category) ? prev.filter(c => c !== category) : [...prev, category]
     );
   };
 
+  const triggerApply = (payload: any) => {
+    if (onApply) onApply(payload);
+    if (onApplyFilters) onApplyFilters(payload);
+  };
+
   const handleApply = () => {
-    onApply({
+    triggerApply({
       startDate,
       endDate,
       minDuration: minDuration ? Number(minDuration) : undefined,
       maxDuration: maxDuration ? Number(maxDuration) : undefined,
       categories: selectedCategories,
+      category: selectedCategories[0] || '',
       subjects: selectedSubjects,
+      subject: selectedSubjects[0] || '',
       topics: selectedTopics,
       minPerformance: minPerformance ? Number(minPerformance) : undefined,
       maxPerformance: maxPerformance ? Number(maxPerformance) : undefined,
@@ -112,157 +117,214 @@ const FilterModal: React.FC<FilterModalProps> = ({
     setSelectedTopics([]);
     setMinPerformance('');
     setMaxPerformance('');
-    onApply({});
+    triggerApply({
+      subject: '',
+      category: '',
+      startDate: '',
+      endDate: '',
+    });
   };
 
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-60 flex justify-center items-center z-50 p-4">
-      <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-4xl h-[95vh] flex flex-col animate-scale-in">
-        {/* Header */}
-        <div className="flex justify-between items-center p-4 border-b border-amber-200 dark:border-amber-700">
-          <h2 className="text-2xl font-bold text-amber-700 dark:text-amber-300">Filtros Avançados</h2>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-800 dark:text-gray-400 dark:hover:text-white transition-transform duration-200 hover:scale-125">
-            <FaTimes size={24} />
+    <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex items-center justify-between mb-4">
+          <Breadcrumbs
+            items={[
+              { label: 'Histórico & Estatísticas', onClick: onClose },
+              { label: 'Filtros Avançados' },
+            ]}
+            className="mb-0"
+          />
+          <button
+            onClick={onClose}
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942] transition-colors"
+          >
+            <FiArrowLeft className="w-4 h-4" />
+            Voltar
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-8 overflow-y-auto flex-grow">
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl shadow-sm border border-slate-200 dark:border-[#1f304a] w-full flex flex-col overflow-hidden">
+          {/* Header */}
+          <div className="flex justify-between items-center px-6 py-4 border-b border-slate-100 dark:border-[#1f304a]">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                <FiFilter className="w-4 h-4" />
+              </div>
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  Filtros Avançados
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Refine a visualização do seu histórico e estatísticas
+                </p>
+              </div>
+            </div>
+          </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+          {/* Content */}
+          <div className="p-6 space-y-5 flex-grow">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Período */}
-            <section className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-gray-700">
-              <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Período</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-4 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                Período
+              </label>
+              <div className="space-y-2">
                 <DatePicker
                   selected={startDate}
-                  onChange={(date: Date) => setStartDate(date)}
+                  onChange={(date: Date | null) => setStartDate(date)}
                   selectsStart
-                  startDate={startDate}
-                  endDate={endDate}
-                  placeholderText="Data de Início"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  startDate={startDate || undefined}
+                  endDate={endDate || undefined}
+                  placeholderText="Data inicial"
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   dateFormat="dd/MM/yyyy"
                   wrapperClassName="w-full"
-                  withPortal
                 />
                 <DatePicker
                   selected={endDate}
-                  onChange={(date: Date) => setEndDate(date)}
+                  onChange={(date: Date | null) => setEndDate(date)}
                   selectsEnd
-                  startDate={startDate}
-                  endDate={endDate}
-                  minDate={startDate}
-                  placeholderText="Data de Fim"
-                  className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg shadow-sm focus:outline-none focus:ring-2 focus:ring-amber-500 bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  startDate={startDate || undefined}
+                  endDate={endDate || undefined}
+                  minDate={startDate || undefined}
+                  placeholderText="Data final"
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   dateFormat="dd/MM/yyyy"
                   wrapperClassName="w-full"
-                  withPortal
                 />
               </div>
-            </section>
+            </div>
 
-            {/* Duração (minutos) */}
-            <section className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-gray-700">
-              <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Duração (minutos)</h3>
-              <div className="flex items-center space-x-4">
+            {/* Duração */}
+            <div className="p-4 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                Duração (min)
+              </label>
+              <div className="space-y-2">
                 <input
                   type="number"
-                  placeholder="Mínimo"
+                  placeholder="Mínimo (min)"
                   value={minDuration}
-                  onChange={(e) => setMinDuration(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"
+                  onChange={e => setMinDuration(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <input
                   type="number"
-                  placeholder="Máximo"
+                  placeholder="Máximo (min)"
                   value={maxDuration}
-                  onChange={(e) => setMaxDuration(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"
+                  onChange={e => setMaxDuration(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
-            </section>
+            </div>
 
             {/* Desempenho */}
-            <section className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-gray-700">
-              <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Desempenho (%)</h3>
-              <div className="flex items-center space-x-4">
+            <div className="p-4 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                Desempenho (%)
+              </label>
+              <div className="space-y-2">
                 <input
                   type="number"
-                  placeholder="Mínimo"
+                  placeholder="Mínimo (%)"
                   value={minPerformance}
-                  onChange={(e) => setMinPerformance(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"
+                  onChange={e => setMinPerformance(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
                 <input
                   type="number"
-                  placeholder="Máximo"
+                  placeholder="Máximo (%)"
                   value={maxPerformance}
-                  onChange={(e) => setMaxPerformance(e.target.value)}
-                  className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-amber-500 focus:border-amber-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"
+                  onChange={e => setMaxPerformance(e.target.value)}
+                  className="w-full px-3 py-2 text-xs rounded-lg border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-slate-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
                 />
               </div>
-            </section>
+            </div>
           </div>
 
           {/* Categoria */}
-          <section className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-gray-700">
-            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Categoria</h3>
-            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-                {availableCategories?.map(category => (
-                    <button
-                        key={category}
-                        onClick={() => handleCategoryChange(category)}
-                        className={`flex items-center justify-center p-4 rounded-lg font-semibold text-base transition-all duration-200 border-2
-                        ${selectedCategories.includes(category)
-                            ? 'bg-amber-500 border-amber-600 text-white shadow-lg scale-105'
-                            : 'bg-gray-100 border-gray-200 text-gray-700 hover:bg-gray-200 hover:border-gray-300 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 dark:hover:bg-gray-600'
-                        }`}
-                    >
-                        {categoryIcons[category] || <FaTag className="mr-2" />}
-                        <span>{categoryLabels[category] || category}</span>
-                    </button>
-                ))}
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+              Categoria de Estudo
+            </label>
+            <div className="flex flex-wrap gap-2">
+              {availableCategories.map(category => {
+                const isSelected = selectedCategories.includes(category);
+                return (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => handleCategoryChange(category)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold border transition-all ${
+                      isSelected
+                        ? 'bg-emerald-500 text-slate-950 border-emerald-500 shadow-sm'
+                        : 'bg-white dark:bg-[#131f33] border-slate-200 dark:border-[#1f304a] text-slate-700 dark:text-slate-300 hover:border-emerald-500/40'
+                    }`}
+                  >
+                    {categoryLabels[category] || category}
+                  </button>
+                );
+              })}
             </div>
-          </section>
+          </div>
 
           {/* Disciplina e Tópico */}
-          <section className="p-4 border border-gray-200 dark:border-gray-700 rounded-lg shadow-sm bg-gray-50 dark:bg-gray-700">
-            <h3 className="text-xl font-bold text-gray-800 dark:text-gray-100 mb-4">Disciplina e Tópico</h3>
+          <div className="p-4 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-3">
+              Disciplina e Tópico
+            </label>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label htmlFor="subject-filter" className="block text-lg font-medium text-gray-700 dark:text-gray-100 mb-2">Disciplina</label>
+                <span className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                  Disciplina
+                </span>
                 <MultiSelectDropdown
                   options={availableSubjects}
                   selectedOptions={selectedSubjects}
                   onChange={setSelectedSubjects}
-                  placeholder="Selecione as Disciplinas"
+                  placeholder="Todas as disciplinas"
                 />
               </div>
               <div>
-                <label htmlFor="topic-filter" className="block text-lg font-medium text-gray-700 dark:text-gray-100 mb-2">Tópico</label>
+                <span className="block text-xs font-medium text-slate-600 dark:text-slate-300 mb-1.5">
+                  Tópico
+                </span>
                 <MultiSelectDropdown
                   options={topicsForSelectedSubject}
                   selectedOptions={selectedTopics}
                   onChange={setSelectedTopics}
-                  placeholder="Selecione os Tópicos"
+                  placeholder="Todos os tópicos"
                   disabled={selectedSubjects.length === 0}
                 />
               </div>
             </div>
-          </section>
+          </div>
         </div>
 
         {/* Footer */}
-        <div className="flex justify-end p-4 border-t border-amber-200 bg-amber-50/50 space-x-4 dark:border-amber-700 dark:bg-amber-900/50">
-          <button onClick={handleClear} className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-6 rounded-lg dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-gray-200 transition-colors duration-200">
+        <div className="flex justify-end items-center gap-3 px-6 py-4 border-t border-slate-100 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+          <button
+            type="button"
+            onClick={handleClear}
+            className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 bg-slate-200/70 dark:bg-[#1a2942] hover:bg-slate-300/70 transition-colors"
+          >
+            <FiRotateCcw className="w-3.5 h-3.5" />
             Limpar
           </button>
-          <button onClick={handleApply} className="bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-6 rounded-lg dark:bg-amber-700 dark:hover:bg-amber-800 transition-colors duration-200">
-            Aplicar
+          <button
+            type="button"
+            onClick={handleApply}
+            className="flex items-center gap-1.5 px-5 py-2 rounded-xl text-xs font-bold text-slate-950 bg-emerald-500 hover:bg-emerald-400 shadow-sm transition-all"
+          >
+            <FiCheck className="w-4 h-4" />
+            Aplicar Filtros
           </button>
+        </div>
         </div>
       </div>
     </div>

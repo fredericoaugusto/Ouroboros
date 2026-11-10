@@ -13,7 +13,7 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        sans: ["var(--font-geist-sans)", ...fontFamily.sans],
+        sans: ["var(--font-geist-sans)", "Inter", ...fontFamily.sans],
         mono: ["var(--font-geist-mono)", ...fontFamily.mono],
       },
       gridTemplateColumns: {
@@ -26,12 +26,12 @@ module.exports = {
         },
         'bright-pulse': {
           '0%, 100%': {
-            filter: 'drop-shadow(0 0 2px #fbbf24)',
+            filter: 'drop-shadow(0 0 2px #10b981)',
             transform: 'scale(1)'
           },
           '50%': {
-            filter: 'drop-shadow(0 0 6px #fbbf24)',
-            transform: 'scale(1.1)'
+            filter: 'drop-shadow(0 0 6px #10b981)',
+            transform: 'scale(1.08)'
           }
         }
       },
@@ -40,18 +40,43 @@ module.exports = {
         'bright-pulse': 'bright-pulse 2s ease-in-out infinite',
       },
       colors: {
+        // Nova Identidade Visual Estudei / Bússola Notes
+        brand: {
+          50: '#ecfdf5',
+          100: '#d1fae5',
+          200: '#a7f3d0',
+          300: '#6ee7b7',
+          400: '#34d399',
+          500: '#10b981', // Verde esmeralda primário
+          600: '#059669',
+          700: '#047857',
+          800: '#065f46',
+          900: '#064e3b',
+          950: '#022c22',
+        },
+        indigoBrand: {
+          500: '#6366f1',
+          600: '#4f46e5',
+        },
+        // Tokens de Dark Mode Profundo
+        darkCanvas: '#0b1320',  // Fundo principal
+        darkCard: '#131f33',    // Cartões e painéis
+        darkCardHover: '#182740',
+        darkBorder: '#1f304a',  // Linhas sutis
+        darkBorderSubtle: '#18263c',
+        // Mapeamento de retrocompatibilidade para componentes que ainda usam gold-
         gold: {
-          '50': '#fffbeb',
-          '100': '#fef3c7',
-          '200': '#fde68a',
-          '300': '#fcd34d',
-          '400': '#fbbf24',
-          '500': '#f59e0b',
-          '600': '#d97706',
-          '700': '#b45309',
-          '800': '#92400e',
-          '900': '#78350f',
-          '950': '#451a03',
+          '50': '#ecfdf5',
+          '100': '#d1fae5',
+          '200': '#a7f3d0',
+          '300': '#6ee7b7',
+          '400': '#34d399',
+          '500': '#10b981', // Mapeado para o Emerald limpo
+          '600': '#059669',
+          '700': '#047857',
+          '800': '#065f46',
+          '900': '#064e3b',
+          '950': '#022c22',
         },
       }
     },

@@ -1,8 +1,7 @@
 'use client';
 
 import React, { useState } from 'react';
-import { FaPlus, FaFileAlt } from 'react-icons/fa';
-import PlanSelector from '../../components/PlanSelector';
+import { FiPlus, FiAward, FiCheckCircle, FiXCircle, FiMinusCircle, FiTrendingUp } from 'react-icons/fi';
 import AddSimuladoModal from '../../components/AddSimuladoModal';
 import SimuladoCard from '../../components/SimuladoCard';
 import SimuladoLineChart from '../../components/SimuladoLineChart';
@@ -14,25 +13,37 @@ export default function SimuladosPage() {
   const { simuladoRecords, deleteSimuladoRecord } = useData();
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSimulado, setEditingSimulado] = useState<SimuladoRecord | null>(null);
-  const [chartType, setChartType] = useState('desempenho'); // 'desempenho' ou 'pontuacao'
+  const [chartType, setChartType] = useState<'desempenho' | 'pontuacao'>('desempenho');
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [simuladoToDelete, setSimuladoToDelete] = useState<SimuladoRecord | null>(null);
 
   const realizadosCount = simuladoRecords.length;
-  const latestSimulado = simuladoRecords.length > 0 ? simuladoRecords[simuladoRecords.length - 1] : null;
+  const latestSimulado =
+    simuladoRecords.length > 0 ? simuladoRecords[simuladoRecords.length - 1] : null;
 
-  const acertos = latestSimulado ? latestSimulado.subjects.reduce((sum, s) => sum + s.correct, 0) : 0;
-  const totalQuestionsLastSimulado = latestSimulado ? latestSimulado.subjects.reduce((sum, s) => sum + s.totalQuestions, 0) : 0;
-  const erros = latestSimulado ? latestSimulado.subjects.reduce((sum, s) => sum + s.incorrect, 0) : 0;
+  const acertos = latestSimulado
+    ? latestSimulado.subjects.reduce((sum, s) => sum + s.correct, 0)
+    : 0;
+  const totalQuestionsLastSimulado = latestSimulado
+    ? latestSimulado.subjects.reduce((sum, s) => sum + s.totalQuestions, 0)
+    : 0;
+  const erros = latestSimulado
+    ? latestSimulado.subjects.reduce((sum, s) => sum + s.incorrect, 0)
+    : 0;
   const brancos = latestSimulado ? totalQuestionsLastSimulado - acertos - erros : 0;
-  const percentual = totalQuestionsLastSimulado > 0 ? Math.round((acertos / totalQuestionsLastSimulado) * 100) : 0;
+  const percentual =
+    totalQuestionsLastSimulado > 0
+      ? Math.round((acertos / totalQuestionsLastSimulado) * 100)
+      : 0;
 
   const formatDateForChartLabel = (dateString: string): string => {
-    const date = new Date(dateString + 'T00:00:00'); // Adiciona T00:00:00 para garantir interpretação UTC
-    return date.toLocaleDateString('pt-BR', { day: 'numeric', month: 'short', year: 'numeric' });
+    const date = new Date(dateString + 'T00:00:00');
+    return date.toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'short',
+    });
   };
 
-  // Processar dados para os gráficos
   const chartLabels = simuladoRecords.map(s => formatDateForChartLabel(s.date));
   const chartPerformanceData = simuladoRecords.map(s => {
     const totalQ = s.subjects.reduce((sum, sub) => sum + sub.totalQuestions, 0);
@@ -44,9 +55,9 @@ export default function SimuladosPage() {
     let totalScore = 0;
     s.subjects.forEach(sub => {
       if (s.style === 'Certo/Errado') {
-        totalScore += (sub.correct - sub.incorrect);
+        totalScore += sub.correct - sub.incorrect;
       } else {
-        totalScore += (sub.correct * sub.weight);
+        totalScore += sub.correct * sub.weight;
       }
     });
     return totalScore;
@@ -76,131 +87,177 @@ export default function SimuladosPage() {
   };
 
   return (
-    <>
-      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 p-4 sm:p-6 lg:p-8">
-        <div className="max-w-7xl mx-auto">
-          {/* Cabeçalho */}
-          <header className="flex justify-between items-center mb-8">
-            <h1 className="text-3xl sm:text-4xl font-bold text-gray-800 dark:text-gray-100">Simulados</h1>
-            <div className="flex items-center space-x-2 sm:space-x-4">
-              <button 
-                onClick={handleOpenModal}
-                className="relative flex items-center px-4 py-2 bg-amber-500 text-white rounded-full shadow-lg hover:bg-amber-600 transition-all duration-300 text-base font-semibold overflow-hidden group"
-              >
-                <span className="absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-amber-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out group-hover:left-[100%]"></span>
-                <span className="relative flex items-center">
-                  <FaPlus className="mr-2" />
-                  Novo Simulado
+    <div className="min-h-screen text-slate-900 dark:text-slate-100 pb-16">
+      <div className="max-w-7xl mx-auto">
+        {/* Header */}
+        <header className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+          <div>
+            <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 dark:text-white tracking-tight">
+              Simulados
+            </h1>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+              Acompanhe sua evolução em provas completas e simulados cronometrados
+            </p>
+          </div>
+          <button
+            onClick={handleOpenModal}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 rounded-xl shadow-sm transition-all text-xs font-bold"
+          >
+            <FiPlus className="w-4 h-4 stroke-[2.5]" />
+            Novo Simulado
+          </button>
+        </header>
+
+        {/* Top Grid: KPIs + Evolution Chart */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 mb-6">
+          <div className="lg:col-span-4 flex flex-col gap-4">
+            <div className="bg-white dark:bg-[#131f33] p-5 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                  Simulados Realizados
                 </span>
-              </button>
-              
+                <p className="text-3xl font-bold text-slate-900 dark:text-white mt-1">
+                  {realizadosCount}
+                </p>
+              </div>
+              <div className="w-11 h-11 rounded-xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                <FiAward className="w-5 h-5" />
+              </div>
             </div>
-          </header>
 
-          {/* Corpo Principal */}
-          <main>
-            <div className="grid grid-cols-1 lg:grid-cols-5 gap-6 mb-8">
-              {/* Coluna Esquerda: Simulados Realizados e Último Simulado */}
-              <div className="flex flex-col gap-6 lg:col-span-1">
-                {/* Simulados Realizados */}
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 text-center">
-                  <h2 className="text-lg font-semibold text-gray-600 dark:text-gray-300 mb-2">Simulados Realizados</h2>
-                  <p className="text-4xl font-bold text-amber-500">{realizadosCount}</p>
-                </div>
-
-                {/* Último Simulado */}
-                {latestSimulado && (
-                  <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-                    <h2 className="text-lg font-semibold text-gray-600 dark:text-gray-300 mb-3 text-center">Último Simulado</h2>
-                    <div className="grid grid-cols-2 gap-4 items-center">
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Acertos</p>
-                        <p className="text-xl font-bold text-green-500">{acertos}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Brancos</p>
-                        <p className="text-xl font-bold text-gray-400">{brancos}</p>
-                      </div>
-                      <div className="text-center">
-                        <p className="text-sm text-gray-500 dark:text-gray-400">Erros</p>
-                        <p className="text-xl font-bold text-red-500">{erros}</p>
-                      </div>
-                      <div className="bg-gray-100 dark:bg-gray-700 p-4 rounded-full flex items-center justify-center w-20 h-20 mx-auto">
-                        <p className="text-2xl font-bold text-gray-800 dark:text-gray-100">{percentual}%</p>
-                      </div>
-                    </div>
+            {latestSimulado ? (
+              <div className="bg-white dark:bg-[#131f33] p-5 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm flex-1 flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 dark:text-slate-500 block">
+                      Último Simulado
+                    </span>
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-white truncate max-w-[180px]">
+                      {latestSimulado.name}
+                    </h3>
                   </div>
-                )}
-              </div>
-
-              {/* Coluna Direita: Seu Desempenho */}
-              <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 flex flex-col lg:col-span-4">
-                <h2 className="text-lg font-semibold text-gray-600 dark:text-gray-300 mb-4">Seu Desempenho</h2>
-                {/* Placeholder para o gráfico */}
-                <div className="relative flex-grow flex items-center justify-center bg-gray-100 dark:bg-gray-700 rounded-lg p-4 text-gray-500 dark:text-gray-400">
-                  {simuladoRecords.length > 0 && (
-                    <div className="absolute top-4 right-4 flex flex-col space-y-2 z-10">
-                      <button
-                        onClick={() => setChartType('desempenho')}
-                        className={`relative overflow-hidden group px-4 py-2 rounded-lg text-sm font-medium ${chartType === 'desempenho' ? 'bg-amber-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'} transition-colors`}>
-                        <span className={`absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-amber-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out ${chartType === 'desempenho' ? 'group-hover:left-[100%]' : ''}`}></span>
-                        <span className="relative">Desempenho</span>
-                      </button>
-                      <button
-                        onClick={() => setChartType('pontuacao')}
-                        className={`relative overflow-hidden group px-4 py-2 rounded-lg text-sm font-medium ${chartType === 'pontuacao' ? 'bg-yellow-500 text-white' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-600 dark:text-gray-200 dark:hover:bg-gray-500'} transition-colors`}>
-                        <span className={`absolute top-0 left-[-100%] w-full h-full bg-gradient-to-r from-transparent via-yellow-300 to-transparent opacity-80 transform -skew-x-30 transition-all duration-700 ease-in-out ${chartType === 'pontuacao' ? 'group-hover:left-[100%]' : ''}`}></span>
-                        <span className="relative">Pontuação</span>
-                      </button>
-                    </div>
-                  )}
-                  {simuladoRecords.length > 0 ? (
-                    <SimuladoLineChart 
-                      labels={chartLabels} 
-                      performanceData={chartPerformanceData} 
-                      scoreData={chartScoreData} 
-                      chartType={chartType} 
-                    />
-                  ) : (
-                    <p>Registre simulados para ver seu desempenho aqui.</p>
-                  )}
+                  <div className="px-3 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-500 font-bold text-lg">
+                    {percentual}%
+                  </div>
                 </div>
-              </div>
-            </div>
 
-            {/* Mensagem Central */}
-            {realizadosCount > 0 ? (
-              <div className="lg:col-span-1 flex flex-col gap-4">
-                {simuladoRecords.map(simulado => (
-                  <SimuladoCard 
-                    key={simulado.id} 
-                    simulado={simulado} 
-                    onEdit={handleEditSimulado} 
-                    onDelete={handleDeleteSimulado} 
-                  />
-                ))}
+                <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-100 dark:border-[#1f304a]">
+                  <div className="bg-slate-50 dark:bg-[#0f1929] p-2.5 rounded-xl text-center">
+                    <span className="text-[10px] text-slate-400 uppercase block">Acertos</span>
+                    <span className="text-sm font-bold text-emerald-500">{acertos}</span>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-[#0f1929] p-2.5 rounded-xl text-center">
+                    <span className="text-[10px] text-slate-400 uppercase block">Erros</span>
+                    <span className="text-sm font-bold text-rose-500">{erros}</span>
+                  </div>
+                  <div className="bg-slate-50 dark:bg-[#0f1929] p-2.5 rounded-xl text-center">
+                    <span className="text-[10px] text-slate-400 uppercase block">Brancos</span>
+                    <span className="text-sm font-bold text-slate-400">{brancos}</span>
+                  </div>
+                </div>
               </div>
             ) : (
-              <div className="text-center bg-white dark:bg-gray-800 p-8 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700 lg:col-span-2">
-                <h3 className="text-xl font-semibold text-gray-700 dark:text-gray-100 mb-4">Você ainda não registrou nenhum simulado.</h3>
-                <p className="text-gray-500 dark:text-gray-300 mb-6">Que tal começar agora para acompanhar seu progresso?</p>
-                <button 
-                  onClick={handleOpenModal}
-                  className="bg-amber-500 text-white font-bold py-3 px-6 rounded-lg shadow-lg hover:bg-amber-600 transition-transform transform hover:scale-105 duration-300 flex items-center mx-auto"
-                >
-                  <FaPlus className="mr-2" />
-                  Registrar Novo Simulado
-                </button>
+              <div className="bg-white dark:bg-[#131f33] p-5 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm flex-1 flex items-center justify-center text-center">
+                <p className="text-xs text-slate-400">
+                  As métricas do seu último simulado aparecerão aqui.
+                </p>
               </div>
             )}
-          </main>
+          </div>
+
+          <div className="lg:col-span-8 bg-white dark:bg-[#131f33] p-5 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm flex flex-col">
+            <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
+              <div className="flex items-center gap-2">
+                <FiTrendingUp className="w-4 h-4 text-emerald-500" />
+                <h2 className="text-sm font-bold text-slate-800 dark:text-white">
+                  Evolução nos Simulados
+                </h2>
+              </div>
+              {simuladoRecords.length > 0 && (
+                <div className="inline-flex rounded-xl p-1 bg-slate-100 dark:bg-[#0f1929] border border-slate-200 dark:border-[#1f304a]">
+                  <button
+                    onClick={() => setChartType('desempenho')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      chartType === 'desempenho'
+                        ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                  >
+                    Desempenho (%)
+                  </button>
+                  <button
+                    onClick={() => setChartType('pontuacao')}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-all ${
+                      chartType === 'pontuacao'
+                        ? 'bg-indigo-500 text-white shadow-sm'
+                        : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white'
+                    }`}
+                  >
+                    Pontuação Líquida
+                  </button>
+                </div>
+              )}
+            </div>
+
+            <div className="flex-1 min-h-[240px] flex items-center justify-center bg-slate-50/50 dark:bg-[#0f1929]/50 rounded-xl p-4 border border-slate-100 dark:border-[#1f304a]/60">
+              {simuladoRecords.length > 0 ? (
+                <div className="w-full h-[230px]">
+                  <SimuladoLineChart
+                    labels={chartLabels}
+                    performanceData={chartPerformanceData}
+                    scoreData={chartScoreData}
+                    chartType={chartType}
+                  />
+                </div>
+              ) : (
+                <p className="text-xs text-slate-400">
+                  Registre simulados para visualizar o gráfico de evolução.
+                </p>
+              )}
+            </div>
+          </div>
         </div>
+
+        {/* Simulados List */}
+        {realizadosCount > 0 ? (
+          <div className="space-y-3">
+            {simuladoRecords.map(simulado => (
+              <SimuladoCard
+                key={simulado.id}
+                simulado={simulado}
+                onEdit={handleEditSimulado}
+                onDelete={handleDeleteSimulado}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center bg-white dark:bg-[#131f33] p-12 rounded-2xl shadow-sm border border-slate-200 dark:border-[#1f304a]">
+            <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-500 flex items-center justify-center mx-auto mb-3">
+              <FiAward className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-bold text-slate-800 dark:text-white mb-1">
+              Você ainda não registrou nenhum simulado
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mb-5">
+              Cadastre seus simulados para acompanhar sua pontuação líquida e evolução por disciplina.
+            </p>
+            <button
+              onClick={handleOpenModal}
+              className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-xl shadow-sm transition-all inline-flex items-center gap-2"
+            >
+              <FiPlus className="w-4 h-4 stroke-[2.5]" />
+              Registrar Primeiro Simulado
+            </button>
+          </div>
+        )}
       </div>
-      <AddSimuladoModal 
-        isOpen={isModalOpen} 
-        onClose={() => setIsModalOpen(false)} 
+
+      <AddSimuladoModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
         initialSimulado={editingSimulado}
       />
+
       <ConfirmationModal
         isOpen={isConfirmModalOpen}
         onClose={() => setIsConfirmModalOpen(false)}
@@ -210,6 +267,6 @@ export default function SimuladosPage() {
         confirmText="Excluir"
         cancelText="Cancelar"
       />
-    </>
+    </div>
   );
 }

@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
 import { useTheme } from '../context/ThemeContext';
-import { FaSun, FaMoon } from 'react-icons/fa';
+import { FiSun, FiMoon } from 'react-icons/fi';
 
 const ThemeToggleButton = () => {
   const { theme, toggleTheme } = useTheme();
@@ -9,10 +9,10 @@ const ThemeToggleButton = () => {
   return (
     <button
       onClick={toggleTheme}
-      className="p-2 rounded-md text-gray-500 hover:bg-gray-100 dark:text-gray-400 dark:hover:bg-gray-800 focus:outline-none focus:ring-2 focus:ring-gray-500"
-      aria-label="Toggle dark mode"
+      className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 dark:text-slate-400 dark:hover:bg-[#1a2942] focus:outline-none transition-colors"
+      aria-label="Alternar tema claro/escuro"
     >
-      {theme === 'light' ? <FaMoon size={20} /> : <FaSun size={20} />}
+      {theme === 'light' ? <FiMoon size={18} /> : <FiSun size={18} />}
     </button>
   );
 };

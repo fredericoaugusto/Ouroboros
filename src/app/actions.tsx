@@ -864,3 +864,130 @@ export async function updateAllTopicWeightsAction(
     return { success: false, error: error.message || 'Falha ao atualizar pesos de tópicos.' };
   }
 }
+
+export async function importEditalMutationAction(options: {
+  mode: 'new' | 'append';
+  targetPlanFile?: string;
+  newPlanName?: string;
+  cargo?: string;
+  edital?: string;
+  subjects: any[];
+}): Promise<{ success: boolean; fileName?: string; error?: string }> {
+  try {
+    const userDir = await getUserDataDirectory();
+
+    const formatSubjectsWithIds = (subs: any[]): Subject[] => {
+      return subs.map((s) => ({
+        id: s.id || crypto.randomUUID(),
+        subject: s.subject,
+        color: s.color || '#10B981',
+        topics: s.topics || [],
+      }));
+    };
+
+    if (options.mode === 'new' || !options.targetPlanFile) {
+      const rawName = (options.newPlanName || 'Meu Plano de Estudos').trim();
+      const safeSlug = rawName
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || `plano-${Date.now()}`;
+      const fileName = `${safeSlug}.json`;
+      const filePath = path.join(userDir, fileName);
+
+      const newPlanData: PlanData = {
+        name: rawName,
+        observations: 'Importado via Assistente de IA',
+        cargo: options.cargo || '',
+        edital: options.edital || '',
+        subjects: formatSubjectsWithIds(options.subjects),
+        records: [],
+        reviewRecords: [],
+        simuladoRecords: [],
+      };
+
+      await fs.writeFile(filePath, JSON.stringify(newPlanData, null, 2), 'utf-8');
+      return { success: true, fileName };
+    } else {
+      const fileName = options.targetPlanFile.endsWith('.json')
+        ? options.targetPlanFile
+        : `${options.targetPlanFile}.json`;
+      const filePath = path.join(userDir, fileName);
+      const fileContent = await fs.readFile(filePath, 'utf-8');
+      const planData: PlanData = JSON.parse(fileContent);
+
+      if (!planData.subjects) planData.subjects = [];
+      const incoming = formatSubjectsWithIds(options.subjects);
+
+      for (const inc of incoming) {
+        const existingIdx = planData.subjects.findIndex(
+          (s) => s.subject.toLowerCase() === inc.subject.toLowerCase()
+        );
+        if (existingIdx !== -1) {
+          planData.subjects[existingIdx].topics = [
+            ...(planData.subjects[existingIdx].topics || []),
+            ...inc.topics,
+          ];
+        } else {
+          planData.subjects.push(inc);
+        }
+      }
+
+      await fs.writeFile(filePath, JSON.stringify(planData, null, 2), 'utf-8');
+      return { success: true, fileName };
+    }
+  } catch (error: any) {
+    console.error('Erro ao importar edital via IA:', error);
+    return { success: false, error: error.message || 'Falha ao importar edital.' };
+  }
+}
+
+export async function updateTopicDetailsAction(
+  fileName: string,
+  subjectNameOrId: string,
+  topicText: string,
+  patch: Record<string, any>
+): Promise<{ success: boolean; error?: string }> {
+  if (!fileName || !subjectNameOrId || !topicText) {
+    return { success: false, error: 'Parâmetros inválidos.' };
+  }
+  try {
+    const userDir = await getUserDataDirectory();
+    const filePath = path.join(userDir, fileName);
+    const fileContent = await fs.readFile(filePath, 'utf-8');
+    const planData: PlanData = JSON.parse(fileContent);
+
+    const subject = planData.subjects.find(
+      (s) => s.id === subjectNameOrId || s.subject === subjectNameOrId
+    );
+    if (!subject) {
+      return { success: false, error: 'Disciplina não encontrada.' };
+    }
+
+    const updateRecursive = (topics: any[]): boolean => {
+      for (let i = 0; i < topics.length; i++) {
+        if (topics[i].topic_text === topicText) {
+          topics[i] = { ...topics[i], ...patch };
+          return true;
+        }
+        if (topics[i].sub_topics && updateRecursive(topics[i].sub_topics)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const updated = updateRecursive(subject.topics || []);
+    if (!updated) {
+      return { success: false, error: 'Tópico não encontrado.' };
+    }
+
+    await fs.writeFile(filePath, JSON.stringify(planData, null, 2), 'utf-8');
+    return { success: true };
+  } catch (error: any) {
+    console.error('Erro ao atualizar detalhes do tópico:', error);
+    return { success: false, error: error.message || 'Falha ao atualizar tópico.' };
+  }
+}
+

@@ -2,17 +2,32 @@
 
 import React, { useState, useEffect, useRef, Fragment } from 'react';
 import { getJsonContent } from '../app/actions';
-import { useData, EditalTopic } from '../context/DataContext';
+import { useData, EditalTopic, StudyRecord } from '../context/DataContext';
 import { useNotification } from '../context/NotificationContext';
-import { StudyRecord } from '@/context/DataContext';
 import AddReviewModal from './AddReviewModal';
 import AddSubjectModal from './AddSubjectModal';
-import { FaInfoCircle } from 'react-icons/fa';
+import Breadcrumbs from './Breadcrumbs';
+import {
+  X,
+  ArrowLeft,
+  Calendar,
+  Folder,
+  Layers,
+  Clock,
+  FileText,
+  BookOpen,
+  Plus,
+  ChevronDown,
+  Trash2,
+  Sparkles,
+} from 'lucide-react';
 
-// --- INTERFACES HIERÁRQUICAS ATUALIZADAS ---
+export type { StudyRecord };
+
 interface Topic extends EditalTopic {}
 
 interface Subject {
+  id?: string;
   subject: string;
   topics: Topic[];
   color?: string;
@@ -37,7 +52,7 @@ interface Question {
 interface StudyRegisterModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (record: StudyRecord) => void;
+  onSave?: (record: StudyRecord) => void;
   initialRecord?: Partial<StudyRecord> | null;
   topic?: { subject: string; topic: Topic } | null;
   initialTime?: number;
@@ -45,79 +60,34 @@ interface StudyRegisterModalProps {
   showDeleteButton?: boolean;
 }
 
-const JustificationDetails: React.FC<{ justification: string }> = ({ justification }) => {
-    const cleanedJustification = justification.replace(/^Prioridade: /, '').replace(/\.$/, '');
-    const parts = cleanedJustification.split(', ');
-    let details = parts.map(part => {
-        const match = part.match(/(.+) \((.+)\)/);
-        if (match) {
-            const [, name, value] = match;
-            return { name, value };
-        }
-        return null;
-    }).filter(Boolean) as { name: string; value: string }[];
-
-    const hasHistory = details.length > 0;
-    if (!hasHistory) {
-        return <p className="text-sm text-purple-700 dark:text-purple-300">Ainda não há dados de estudo para gerar uma sugestão detalhada.</p>;
-    }
-    const hasStudied = !details.some(d => d.name === 'Frequência' && d.value === '0x');
-    details = details.map(detail => {
-        let { name, value } = detail;
-        if (name === 'Frequência') value = value === '0x' ? 'Nenhuma vez' : value.replace('x', ' vezes');
-        if (name === 'Último Estudo') value = value.includes('999d') ? 'Nunca estudado' : value.replace('d', ' dias atrás');
-        if (name === 'Taxa de Acertos' && !hasStudied) value = 'Sem histórico';
-        return { name, value };
-    });
-
-    return (
-        <div className="text-sm text-purple-700 dark:text-purple-300">
-            <p className="font-semibold mb-2">Este tópico foi sugerido com base nos seguintes critérios:</p>
-            <ul className="list-disc list-inside space-y-1">
-                {details.map((detail, index) => (
-                    <li key={index}>
-                        <span className="font-semibold">{detail.name}:</span>
-                        <span className="ml-2">{detail.value}</span>
-                    </li>
-                ))}
-            </ul>
-        </div>
-    );
-};
-
-const TopicSelectItem: React.FC<{ 
+const TopicSelectItem: React.FC<{
   topic: Topic;
   level: number;
   onSelect: (topicText: string) => void;
 }> = ({ topic, level, onSelect }) => {
   const isGroupingTopic = topic.is_grouping_topic || (topic.sub_topics && topic.sub_topics.length > 0);
 
-  const handleClick = () => {
-    if (!isGroupingTopic) {
-      onSelect(topic.topic_text);
-    }
-  };
-
   return (
     <Fragment>
       <div
-        onClick={handleClick}
-        className={`text-gray-900 dark:text-gray-200 select-none relative py-2 pr-9 ${isGroupingTopic ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed' : 'cursor-pointer hover:bg-gold-100 dark:hover:bg-gold-800'}`}
+        onClick={() => {
+          onSelect(topic.topic_text);
+        }}
+        className={`text-xs select-none relative py-2 pr-4 cursor-pointer transition-colors hover:bg-emerald-500/10 hover:text-emerald-500 ${
+          isGroupingTopic
+            ? 'font-bold text-slate-800 dark:text-slate-200'
+            : 'text-slate-700 dark:text-slate-300'
+        }`}
         style={{ paddingLeft: `${level * 16 + 12}px` }}
-        title={isGroupingTopic ? 'Este é um tópico de agrupamento e não pode ser selecionado.' : topic.topic_text}
       >
-        <span className={`block whitespace-normal ${isGroupingTopic ? 'font-bold' : ''}`}>
-          {isGroupingTopic ? `* ${topic.topic_text}` : topic.topic_text}
+        <span className="block truncate">
+          {level > 0 ? `↳ ${topic.topic_text}` : topic.topic_text}
         </span>
       </div>
-      {topic.sub_topics && topic.sub_topics.map((subTopic, index) => (
-        <TopicSelectItem 
-          key={index} 
-          topic={subTopic} 
-          level={level + 1} 
-          onSelect={onSelect} 
-        />
-      ))}
+      {topic.sub_topics &&
+        topic.sub_topics.map((subTopic, index) => (
+          <TopicSelectItem key={index} topic={subTopic} level={level + 1} onSelect={onSelect} />
+        ))}
     </Fragment>
   );
 };
@@ -130,7 +100,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   topic: initialTopicData,
   initialTime: initialStudyTime,
   justification,
-  showDeleteButton = false, 
+  showDeleteButton = false,
 }) => {
   const getLocalYYYYMMDD = (date = new Date()) => {
     const year = date.getFullYear();
@@ -139,9 +109,10 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     return `${year}-${month}-${day}`;
   };
 
-  const formatTime = (ms: number): string => {
-    if (isNaN(ms) || ms < 0) ms = 0;
-    const totalSeconds = Math.floor(ms / 1000);
+  const formatTime = (msOrSec: number): string => {
+    if (isNaN(msOrSec) || msOrSec <= 0) return '00:00:00';
+    // Se vier em segundos (< 86400) ou milissegundos
+    const totalSeconds = msOrSec > 86400 ? Math.floor(msOrSec / 1000) : Math.floor(msOrSec);
     const hours = Math.floor(totalSeconds / 3600);
     const minutes = Math.floor((totalSeconds % 3600) / 60);
     const seconds = totalSeconds % 60;
@@ -151,13 +122,21 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
 
   const parseTime = (timeStr: string): number => {
     const parts = timeStr.split(':').map(Number);
-    if (parts.length === 3 && parts.every(n => !isNaN(n))) {
+    if (parts.length === 3 && parts.every((n) => !isNaN(n))) {
       return (parts[0] * 3600 + parts[1] * 60 + parts[2]) * 1000;
     }
     return 0;
   };
 
-  const { selectedDataFile, deleteStudyRecord, cycleGenerationTimestamp, saveSubject } = useData();
+  const {
+    selectedDataFile,
+    addStudyRecord,
+    updateStudyRecord,
+    deleteStudyRecord,
+    saveSubject,
+    initialStudyRecord: contextInitialRecord,
+    setInitialStudyRecord,
+  } = useData();
   const { showNotification } = useNotification();
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -166,8 +145,8 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   const [selectedTopic, setSelectedTopic] = useState('');
   const [isTeoriaFinalizada, setIsTeoriaFinalizada] = useState(false);
   const [countInPlanning, setCountInPlanning] = useState(true);
-  const [selectedCategory, setSelectedCategory] = useState('');
-  const [studyTime, setStudyTime] = useState('00:00:00');
+  const [selectedCategory, setSelectedCategory] = useState('teoria');
+  const [studyTime, setStudyTime] = useState('00:45:00');
   const [isReviewSchedulingEnabled, setIsReviewSchedulingEnabled] = useState(false);
   const [reviewPeriods, setReviewPeriods] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(getLocalYYYYMMDD());
@@ -192,9 +171,9 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
 
   const categories = [
     { value: 'teoria', label: 'Teoria' },
-    { value: 'revisao', label: 'Revisão' },
     { value: 'questoes', label: 'Questões' },
-    { value: 'leitura_lei', label: 'Leitura de Lei' },
+    { value: 'revisao', label: 'Revisão' },
+    { value: 'leitura_lei', label: 'Lei Seca' },
     { value: 'jurisprudencia', label: 'Jurisprudência' },
   ];
 
@@ -215,8 +194,8 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     setSelectedTopic('');
     setIsTeoriaFinalizada(false);
     setCountInPlanning(true);
-    setSelectedCategory('');
-    setStudyTime('00:00:00');
+    setSelectedCategory('teoria');
+    setStudyTime('00:45:00');
     setIsReviewSchedulingEnabled(false);
     setReviewPeriods([]);
     setSelectedDate(getLocalYYYYMMDD());
@@ -254,7 +233,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
 
   useEffect(() => {
     if (selectedSubject) {
-      const subjectData = subjects.find(s => s.subject === selectedSubject);
+      const subjectData = subjects.find((s) => s.subject === selectedSubject);
       setTopics(subjectData?.topics || []);
     } else {
       setTopics([]);
@@ -264,40 +243,54 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   useEffect(() => {
     if (isOpen) {
       resetForm();
-      if (initialRecord) {
-        setSelectedSubject(initialRecord.subject || '');
-        setSelectedTopic(initialRecord.topic || '');
-        setIsTeoriaFinalizada(initialRecord.teoriaFinalizada ?? false);
-        setCountInPlanning(initialRecord.countInPlanning ?? true);
-        setSelectedCategory(initialRecord.category || '');
-        setStudyTime(formatTime(initialRecord.studyTime || 0));
-        setIsReviewSchedulingEnabled(!!initialRecord.reviewPeriods?.length);
-        setReviewPeriods(initialRecord.reviewPeriods ?? []);
-        setSelectedDate(initialRecord.date || getLocalYYYYMMDD());
+      const effectiveRecord = initialRecord || contextInitialRecord;
+      if (effectiveRecord) {
+        setSelectedSubject(effectiveRecord.subject || '');
+        setSelectedTopic(effectiveRecord.topic || '');
+        setIsTeoriaFinalizada(effectiveRecord.teoriaFinalizada ?? false);
+        setCountInPlanning(effectiveRecord.countInPlanning ?? true);
+        setSelectedCategory(effectiveRecord.category || 'teoria');
+        setStudyTime(effectiveRecord.studyTime ? formatTime(effectiveRecord.studyTime) : '00:45:00');
+        setIsReviewSchedulingEnabled(!!effectiveRecord.reviewPeriods?.length);
+        setReviewPeriods(effectiveRecord.reviewPeriods ?? []);
+        setSelectedDate(effectiveRecord.date || getLocalYYYYMMDD());
         const today = getLocalYYYYMMDD();
         const yesterday = getLocalYYYYMMDD(new Date(new Date().setDate(new Date().getDate() - 1)));
-        setShowDatePicker(initialRecord.date && initialRecord.date !== today && initialRecord.date !== yesterday);
-        const total = initialRecord.questions?.total || 0;
-        const correct = initialRecord.questions?.correct || 0;
-        setQuestions([{ correct: correct, incorrect: total - correct }]);
-        setPages(initialRecord.pages && initialRecord.pages.length > 0 ? initialRecord.pages : [{ start: 0, end: 0 }]);
-        setVideos(initialRecord.videos && initialRecord.videos.length > 0 ? initialRecord.videos : [{ title: '', start: '00:00:00', end: '00:00:00' }]);
-        setComments(initialRecord.notes || '');
+        setShowDatePicker(
+          Boolean(effectiveRecord.date && effectiveRecord.date !== today && effectiveRecord.date !== yesterday)
+        );
+        const total = effectiveRecord.questions?.total || 0;
+        const correct = effectiveRecord.questions?.correct || 0;
+        setQuestions([{ correct: correct, incorrect: Math.max(0, total - correct) }]);
+        setPages(
+          effectiveRecord.pages && effectiveRecord.pages.length > 0
+            ? effectiveRecord.pages
+            : [{ start: 0, end: 0 }]
+        );
+        setVideos(
+          effectiveRecord.videos && effectiveRecord.videos.length > 0
+            ? effectiveRecord.videos
+            : [{ title: '', start: '00:00:00', end: '00:00:00' }]
+        );
+        setComments(effectiveRecord.notes || '');
       } else if (initialTopicData) {
         setSelectedSubject(initialTopicData.subject);
         setSelectedTopic(initialTopicData.topic.topic_text);
-        setStudyTime(formatTime(initialStudyTime || 0));
-      } else {
-        setStudyTime(formatTime(initialStudyTime || 0));
+        setStudyTime(initialStudyTime ? formatTime(initialStudyTime) : '00:45:00');
+      } else if (initialStudyTime) {
+        setStudyTime(formatTime(initialStudyTime));
       }
     }
-  }, [isOpen, initialRecord, initialTopicData, initialStudyTime]);
+  }, [isOpen, initialRecord, contextInitialRecord, initialTopicData, initialStudyTime]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node)) setIsCategoryDropdownOpen(false);
-      if (subjectDropdownRef.current && !subjectDropdownRef.current.contains(event.target as Node)) setIsSubjectDropdownOpen(false);
-      if (topicDropdownRef.current && !topicDropdownRef.current.contains(event.target as Node)) setIsTopicDropdownOpen(false);
+      if (categoryDropdownRef.current && !categoryDropdownRef.current.contains(event.target as Node))
+        setIsCategoryDropdownOpen(false);
+      if (subjectDropdownRef.current && !subjectDropdownRef.current.contains(event.target as Node))
+        setIsSubjectDropdownOpen(false);
+      if (topicDropdownRef.current && !topicDropdownRef.current.contains(event.target as Node))
+        setIsTopicDropdownOpen(false);
     };
     if (isOpen) document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
@@ -312,23 +305,8 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     if (!selectedSubject) newErrors.subject = 'Selecione uma disciplina';
     if (!selectedCategory) newErrors.category = 'Selecione uma categoria';
     if (!studyTime || studyTime === '00:00:00') newErrors.studyTime = 'Informe o tempo de estudo';
-    if (!timeRegex.test(studyTime)) newErrors.studyTime = 'Formato de tempo inválido (use HH:MM:SS)';
-    if (selectedSubject && !selectedTopic && topics.length > 0) newErrors.topic = 'Selecione um tópico';
-    pages.forEach((page, index) => {
-      if (page.start < 0 || page.end < 0) newErrors[`page-${index}`] = 'Páginas não podem ser negativas';
-      if (page.end < page.start) newErrors[`page-${index}`] = 'Página final deve ser maior ou igual à inicial';
-    });
-    videos.forEach((video, index) => {
-      const hasInfo = video.title.trim() || video.start !== '00:00:00' || video.end !== '00:00:00';
-      if (hasInfo) {
-        if (!video.title.trim()) newErrors[`video-title-${index}`] = 'Título do vídeo é obrigatório';
-        if (!timeRegex.test(video.start) || !timeRegex.test(video.end)) newErrors[`video-time-${index}`] = 'Formato de tempo inválido (HH:MM:SS)';
-        if (parseTime(video.end) <= parseTime(video.start)) newErrors[`video-time-${index}`] = 'Tempo final deve ser maior que o inicial';
-      }
-    });
-    questions.forEach((q, index) => {
-      if (q.correct < 0 || q.incorrect < 0) newErrors[`question-${index}`] = 'Valores não podem ser negativos';
-    });
+    if (!timeRegex.test(studyTime)) newErrors.studyTime = 'Use o formato HH:MM:SS';
+    if (selectedSubject && !selectedTopic && topics.length > 0) newErrors.topic = 'Selecione ou digite um tópico';
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -336,35 +314,37 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   const handleSave = () => {
     if (!validateForm()) return;
 
-    if (countInPlanning && cycleGenerationTimestamp) {
-      const [year, month, day] = selectedDate.split('-').map(Number);
-      const recordDate = new Date(Date.UTC(year, month - 1, day));
-  
-      const cycleCreationDate = new Date(cycleGenerationTimestamp);
-      cycleCreationDate.setUTCHours(0, 0, 0, 0);
-  
-      if (recordDate.getTime() < cycleCreationDate.getTime()) {
-        showNotification('Não é possível contabilizar um estudo anterior à criação do planejamento.', 'error');
-        return;
-      }
-    }
+    const matchedSub = subjects.find((s) => s.subject === selectedSubject);
 
     const studyRecord: StudyRecord = {
       id: initialRecord?.id || '',
       date: selectedDate,
+      subjectId: matchedSub?.id || initialRecord?.subjectId || '',
       subject: selectedSubject,
-      topic: selectedTopic,
+      topic: selectedTopic || 'Estudo Geral',
       studyTime: parseTime(studyTime),
-      questions: { correct: questions[0].correct, total: questions[0].correct + questions[0].incorrect },
+      questions: {
+        correct: questions[0].correct,
+        total: questions[0].correct + questions[0].incorrect,
+      },
       notes: comments,
       category: selectedCategory,
       reviewPeriods: isReviewSchedulingEnabled ? reviewPeriods : undefined,
       teoriaFinalizada: isTeoriaFinalizada,
       countInPlanning: countInPlanning,
-      pages: pages.filter(p => p.start > 0 || p.end > 0),
-      videos: videos.filter(v => v.title),
+      pages: pages.filter((p) => p.start > 0 || p.end > 0),
+      videos: videos.filter((v) => v.title),
     };
-    onSave(studyRecord);
+    if (onSave) {
+      onSave(studyRecord);
+    } else if (studyRecord.id) {
+      updateStudyRecord(studyRecord);
+    } else {
+      addStudyRecord(studyRecord);
+    }
+    if (setInitialStudyRecord) {
+      setInitialStudyRecord(null);
+    }
     onClose();
   };
 
@@ -376,225 +356,559 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   };
 
   const handleAddReview = (days: number) => {
-    setReviewPeriods(prev => [...prev, `${days}d`]);
+    setReviewPeriods((prev) => [...prev, `${days}d`]);
     setIsAddReviewModalOpen(false);
   };
 
-  const handleAddSubject = async (subjectName: string, topics: Topic[], color: string) => {
+  const handleAddSubject = async (subjectName: string, newTopics: Topic[], color: string) => {
     if (!saveSubject) return;
-
-    const result = await saveSubject({ subject: subjectName, topics, color });
-
+    const result = await saveSubject({ subject: subjectName, topics: newTopics, color });
     if (result.success) {
       setIsAddSubjectModalOpen(false);
       setSelectedSubject(subjectName);
-      setRefreshSubjects(prev => prev + 1);
-      // A atualização da lista de matérias agora é tratada pelo refreshPlans no DataContext
+      setRefreshSubjects((prev) => prev + 1);
     }
   };
 
   if (!isOpen) return null;
 
+  const isToday = selectedDate === getLocalYYYYMMDD() && !showDatePicker;
+  const isYesterday =
+    selectedDate === getLocalYYYYMMDD(new Date(new Date().setDate(new Date().getDate() - 1))) &&
+    !showDatePicker;
+
   return (
     <>
-      <div className="fixed inset-0 bg-black/80 flex justify-center items-center z-50 p-4">
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto">
-          <div className="flex justify-between items-center p-4 border-b border-gold-200 bg-gold-50 dark:border-gold-700 dark:bg-gold-900">
-            <h2 className="text-xl font-bold text-gold-800 dark:text-gold-200">Registro de Estudo</h2>
-            <button onClick={onClose} className="text-gold-600 hover:text-gold-800 text-2xl font-bold dark:text-gold-400 dark:hover:text-gold-200">&times;</button>
+      <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8">
+        <div className="max-w-4xl mx-auto">
+          <div className="flex items-center justify-between mb-4">
+            <Breadcrumbs
+              items={[
+                { label: 'Estudos', onClick: onClose },
+                ...(selectedSubject ? [{ label: selectedSubject, onClick: onClose }] : []),
+                { label: initialRecord?.id ? 'Editar Registro' : 'Registrar Estudo' },
+              ]}
+              className="mb-0"
+            />
+            <button
+              onClick={onClose}
+              className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942] transition-colors"
+            >
+              <ArrowLeft size={14} />
+              Voltar
+            </button>
           </div>
-          <div className="p-6 space-y-6 dark:text-gray-100">
+
+          <div className="bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl shadow-sm w-full flex flex-col overflow-hidden">
+            {/* Header Clean */}
+            <div className="flex justify-between items-start px-6 py-4 border-b border-slate-100 dark:border-[#1a293e]">
+              <div>
+                <h2 className="text-lg font-extrabold text-slate-900 dark:text-white tracking-tight">
+                  Registro de Estudo
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  Preencha os detalhes da sessão para contabilizar seu tempo, questões e avanço no edital
+                </p>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="p-6 space-y-5">
             {justification && (
-              <div className="p-4 mb-4 bg-purple-100 border-l-4 border-purple-500 text-purple-700 dark:bg-purple-900/50 dark:text-purple-200 dark:border-purple-400 rounded-r-lg">
-                <div className="flex">
-                  <div className="py-1"><FaInfoCircle className="h-5 w-5 text-purple-500 mr-3" /></div>
-                  <div>
-                    <p className="font-bold">Sugestão do Algoritmo</p>
-                    <JustificationDetails justification={justification} />
-                  </div>
-                </div>
+              <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-300 text-xs flex items-center gap-2.5">
+                <Sparkles size={16} className="flex-shrink-0 text-indigo-500" />
+                <span>{justification}</span>
               </div>
             )}
-            <div className="flex items-center space-x-2 mb-4">
-              <button onClick={() => handleDateSelect('today')} className={`py-2 px-4 rounded-lg font-semibold ${selectedDate === new Date().toISOString().split('T')[0] && !showDatePicker ? 'bg-gold-600 text-white dark:bg-gold-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'}`}>Hoje</button>
-              <button onClick={() => handleDateSelect('yesterday')} className={`py-2 px-4 rounded-lg font-semibold ${selectedDate === new Date(new Date().setDate(new Date().getDate() - 1)).toISOString().split('T')[0] && !showDatePicker ? 'bg-gold-600 text-white dark:bg-gold-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'}`}>Ontem</button>
-              <button onClick={() => setShowDatePicker(true)} className={`py-2 px-4 rounded-lg font-semibold ${showDatePicker ? 'bg-gold-600 text-white dark:bg-gold-700' : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-100 dark:hover:bg-gray-600'}`}>Outro</button>
-              {showDatePicker && <input type="date" value={selectedDate} onChange={(e) => setSelectedDate(e.target.value)} className="py-2 px-3 rounded-lg font-semibold border-gray-300 border focus:outline-none focus:ring-gold-500 focus:border-gold-500 text-gray-900 dark:bg-gray-700 dark:border-gray-600 dark:text-gray-100" />}
+
+            {/* Barra de Data: Hoje | Ontem | Outro */}
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <Calendar size={16} className="text-slate-400" />
+              <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a]">
+                <button
+                  type="button"
+                  onClick={() => handleDateSelect('today')}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    isToday
+                      ? 'bg-emerald-500 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Hoje
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDateSelect('yesterday')}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    isYesterday
+                      ? 'bg-emerald-500 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Ontem
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowDatePicker(true)}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                    showDatePicker
+                      ? 'bg-emerald-500 text-white shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Outro
+                </button>
+              </div>
+              {showDatePicker && (
+                <input
+                  type="date"
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="md:col-span-2">
-                <label htmlFor="category" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Categoria</label>
-                <div className="relative" ref={categoryDropdownRef}>
-                  <button type="button" onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)} className={`mt-1 block w-full pl-3 pr-10 py-2 text-left text-base border-2 ${errors.category ? 'border-red-500' : 'border-gold-500 dark:border-gold-700'} focus:outline-none focus:ring-gold-500 focus:border-gold-500 sm:text-sm rounded-md bg-white dark:bg-gray-700 dark:text-gray-100`}>
-                    <span className="block truncate text-gray-700 dark:text-gray-100">{categories.find(c => c.value === selectedCategory)?.label || 'Selecione...'}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2"><svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a.75.75 0 01.53.22l3.5 3.5a.75.75 0 01-1.06 1.06L10 4.81 6.53 8.28a.75.75 0 01-1.06-1.06l3.5-3.5A.75.75 0 0110 3zm-3.72 9.53a.75.75 0 011.06 0L10 15.19l2.67-2.66a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 010-1.06z" clipRule="evenodd" /></svg></span>
+
+            {/* Linha 1: Categoria, Disciplina e Tempo */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+              {/* Categoria (3 cols) */}
+              <div className="sm:col-span-3" ref={categoryDropdownRef}>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Categoria
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsCategoryDropdownOpen(!isCategoryDropdownOpen)}
+                    className="w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] text-xs font-medium text-slate-800 dark:text-slate-100 hover:border-emerald-500/50 transition-colors"
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <Folder size={14} className="text-slate-400 flex-shrink-0" />
+                      {categories.find((c) => c.value === selectedCategory)?.label || 'Teoria'}
+                    </span>
+                    <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
                   </button>
                   {isCategoryDropdownOpen && (
-                    <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
+                    <div className="absolute z-30 mt-1 w-full bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-xl shadow-xl py-1 overflow-hidden">
                       {categories.map((cat) => (
-                        <div key={cat.value} onClick={() => { setSelectedCategory(cat.value); setIsCategoryDropdownOpen(false); }} className="text-gray-900 dark:text-gray-200 cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gold-100 dark:hover:bg-gold-800">
-                          <span className="block whitespace-normal">{cat.label}</span>
+                        <div
+                          key={cat.value}
+                          onClick={() => {
+                            setSelectedCategory(cat.value);
+                            setIsCategoryDropdownOpen(false);
+                          }}
+                          className="px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-emerald-500/10 hover:text-emerald-500 cursor-pointer transition-colors"
+                        >
+                          {cat.label}
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
-                {errors.category && <p className="mt-1 text-sm text-red-600">{errors.category}</p>}
               </div>
-              <div className="md:col-span-2">
-                <label htmlFor="subject" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Disciplina</label>
-                <div className="flex items-center gap-2">
-                  <div className="relative flex-grow" ref={subjectDropdownRef}>
-                    <button type="button" onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)} className={`mt-1 block w-full pl-3 pr-10 py-2 text-left text-base border-2 ${errors.subject ? 'border-red-500' : 'border-gold-500 dark:border-gold-700'} focus:outline-none focus:ring-gold-500 focus:border-gold-500 sm:text-sm rounded-md bg-white dark:bg-gray-700 dark:text-gray-100`}>
-                      <span className="block truncate text-gray-700 dark:text-gray-100">{selectedSubject || 'Selecione...'}</span>
-                      <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2"><svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a.75.75 0 01.53.22l3.5 3.5a.75.75 0 01-1.06 1.06L10 4.81 6.53 8.28a.75.75 0 01-1.06-1.06l3.5-3.5A.75.75 0 0110 3zm-3.72 9.53a.75.75 0 011.06 0L10 15.19l2.67-2.66a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 010-1.06z" clipRule="evenodd" /></svg></span>
+
+              {/* Disciplina (6 cols) */}
+              <div className="sm:col-span-6" ref={subjectDropdownRef}>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Disciplina
+                </label>
+                <div className="flex items-center gap-1.5">
+                  <div className="relative flex-grow min-w-0">
+                    <button
+                      type="button"
+                      onClick={() => setIsSubjectDropdownOpen(!isSubjectDropdownOpen)}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border ${
+                        errors.subject ? 'border-rose-500' : 'border-slate-200 dark:border-[#1f304a]'
+                      } text-xs font-medium text-slate-800 dark:text-slate-100 hover:border-emerald-500/50 transition-colors`}
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <Layers size={14} className="text-slate-400 flex-shrink-0" />
+                        <span className="truncate">{selectedSubject || 'Selecione a disciplina...'}</span>
+                      </span>
+                      <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
                     </button>
                     {isSubjectDropdownOpen && (
-                      <div className="absolute z-20 mt-1 w-full bg-white dark:bg-gray-800 shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-                        {subjects.map((sub, index) => (
-                          <div key={index} onClick={() => { setSelectedSubject(sub.subject); setIsSubjectDropdownOpen(false); setSelectedTopic(''); }} className="text-gray-900 dark:text-gray-200 cursor-pointer select-none relative py-2 pl-3 pr-9 hover:bg-gold-100 dark:hover:bg-gold-800">
-                            <span className="block whitespace-normal">{sub.subject}</span>
+                      <div className="absolute z-30 mt-1 w-full bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-xl shadow-xl max-h-56 overflow-y-auto py-1">
+                        {subjects.length === 0 ? (
+                          <div className="px-3 py-2 text-xs text-slate-400">
+                            Nenhuma disciplina cadastrada
                           </div>
-                        ))}
+                        ) : (
+                          subjects.map((sub, index) => (
+                            <div
+                              key={index}
+                              onClick={() => {
+                                setSelectedSubject(sub.subject);
+                                setIsSubjectDropdownOpen(false);
+                                setSelectedTopic('');
+                              }}
+                              className="px-3 py-2 text-xs text-slate-700 dark:text-slate-200 hover:bg-emerald-500/10 hover:text-emerald-500 cursor-pointer flex items-center gap-2 transition-colors"
+                            >
+                              <span
+                                className="w-2 h-2 rounded-full flex-shrink-0"
+                                style={{ backgroundColor: sub.color || '#10b981' }}
+                              />
+                              <span className="truncate">{sub.subject}</span>
+                            </div>
+                          ))
+                        )}
                       </div>
                     )}
                   </div>
-                  <button onClick={() => setIsAddSubjectModalOpen(true)} className="mt-1 bg-gold-500 hover:bg-gold-600 text-white font-bold py-2 px-3 rounded-md text-lg dark:bg-gold-600 dark:hover:bg-gold-700">+</button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAddSubjectModalOpen(true)}
+                    className="p-2.5 rounded-xl bg-slate-100 dark:bg-[#0c1421] hover:bg-emerald-500/15 text-slate-600 dark:text-slate-300 hover:text-emerald-500 border border-slate-200 dark:border-[#1f304a] transition-colors flex-shrink-0"
+                    title="Criar nova disciplina"
+                  >
+                    <Plus size={15} />
+                  </button>
                 </div>
-                {errors.subject && <p className="mt-1 text-sm text-red-600">{errors.subject}</p>}
+                {errors.subject && <p className="mt-1 text-[11px] text-rose-500">{errors.subject}</p>}
               </div>
-              <div>
-                <label htmlFor="studyTime" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tempo de Estudo</label>
-                <input type="text" id="studyTime" value={studyTime} onChange={(e) => setStudyTime(e.target.value)} className={`mt-1 block w-full border ${errors.studyTime ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} placeholder="HH:MM:SS" />
-                {errors.studyTime && <p className="mt-1 text-sm text-red-600">{errors.studyTime}</p>}
+
+              {/* Tempo de Estudo (3 cols) */}
+              <div className="sm:col-span-3">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Tempo de estudo
+                </label>
+                <div className="relative">
+                  <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    value={studyTime}
+                    onChange={(e) => setStudyTime(e.target.value)}
+                    placeholder="00:00:00"
+                    className={`w-full pl-8 pr-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border ${
+                      errors.studyTime ? 'border-rose-500' : 'border-slate-200 dark:border-[#1f304a]'
+                    } text-xs font-mono font-bold text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-emerald-500`}
+                  />
+                </div>
+                {errors.studyTime && <p className="mt-1 text-[11px] text-rose-500">{errors.studyTime}</p>}
               </div>
-              <div className="md:col-span-2">
-                <label htmlFor="topic" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tópico</label>
-                <div className="relative" ref={topicDropdownRef}>
-                  <button type="button" disabled={!selectedSubject} onClick={() => setIsTopicDropdownOpen(!isTopicDropdownOpen)} className={`mt-1 block w-full pl-3 pr-10 py-2 text-left text-base border-2 ${errors.topic ? 'border-red-500' : 'border-gold-500 dark:border-gold-700'} focus:outline-none focus:ring-gold-500 focus:border-gold-500 sm:text-sm rounded-md disabled:bg-gray-200 dark:disabled:bg-gray-600 disabled:cursor-not-allowed bg-white dark:bg-gray-700 dark:text-gray-100`}>
-                    <span className="block truncate text-gray-700 dark:text-gray-100">{selectedTopic || 'Selecione um tópico...'}</span>
-                    <span className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2"><svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fillRule="evenodd" d="M10 3a.75.75 0 01.53.22l3.5 3.5a.75.75 0 01-1.06 1.06L10 4.81 6.53 8.28a.75.75 0 01-1.06-1.06l3.5-3.5A.75.75 0 0110 3zm-3.72 9.53a.75.75 0 011.06 0L10 15.19l2.67-2.66a.75.75 0 111.06 1.06l-3.5 3.5a.75.75 0 01-1.06 0l-3.5-3.5a.75.75 0 010-1.06z" clipRule="evenodd" /></svg></span>
+            </div>
+
+            {/* Linha 2: Tópico e Material */}
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
+              {/* Tópico (8 cols) */}
+              <div className="sm:col-span-8" ref={topicDropdownRef}>
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Tópico
+                </label>
+                <div className="relative">
+                  <button
+                    type="button"
+                    disabled={!selectedSubject}
+                    onClick={() => setIsTopicDropdownOpen(!isTopicDropdownOpen)}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border ${
+                      errors.topic ? 'border-rose-500' : 'border-slate-200 dark:border-[#1f304a]'
+                    } text-xs font-medium text-slate-800 dark:text-slate-100 disabled:opacity-50 disabled:cursor-not-allowed hover:border-emerald-500/50 transition-colors`}
+                  >
+                    <span className="flex items-center gap-2 truncate">
+                      <FileText size={14} className="text-slate-400 flex-shrink-0" />
+                      <span className="truncate">{selectedTopic || 'Selecione um tópico do edital...'}</span>
+                    </span>
+                    <ChevronDown size={14} className="text-slate-400 flex-shrink-0" />
                   </button>
                   {isTopicDropdownOpen && (
-                    <div className="absolute z-10 mt-1 w-full bg-white dark:bg-gray-800 shadow-lg max-h-60 rounded-md py-1 text-base ring-1 ring-black ring-opacity-5 overflow-auto focus:outline-none sm:text-sm">
-                      {topics.map((topic, index) => (
-                        <TopicSelectItem 
-                          key={index} 
-                          topic={topic} 
-                          level={0} 
-                          onSelect={(topicText) => {
-                            setSelectedTopic(topicText);
-                            setIsTopicDropdownOpen(false);
-                          }}
-                        />
-                      ))}
+                    <div className="absolute z-30 mt-1 w-full bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-xl shadow-xl max-h-60 overflow-y-auto py-1">
+                      {topics.length === 0 ? (
+                        <div className="px-3 py-2 text-xs text-slate-400">
+                          Nenhum tópico nesta disciplina
+                        </div>
+                      ) : (
+                        topics.map((topic, index) => (
+                          <TopicSelectItem
+                            key={index}
+                            topic={topic}
+                            level={0}
+                            onSelect={(topicText) => {
+                              setSelectedTopic(topicText);
+                              setIsTopicDropdownOpen(false);
+                            }}
+                          />
+                        ))
+                      )}
                     </div>
                   )}
                 </div>
-                {errors.topic && <p className="mt-1 text-sm text-red-600">{errors.topic}</p>}
+                {errors.topic && <p className="mt-1 text-[11px] text-rose-500">{errors.topic}</p>}
               </div>
-              <div>
-                <label htmlFor="material" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Material</label>
-                <input type="text" id="material" placeholder="Ex.: Aula 01" value={material} onChange={(e) => setMaterial(e.target.value)} className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm" />
+
+              {/* Material (4 cols) */}
+              <div className="sm:col-span-4">
+                <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                  Material <span className="text-slate-400 font-normal">(opcional)</span>
+                </label>
+                <div className="relative">
+                  <BookOpen size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Ex.: PDF Aula 01"
+                    value={material}
+                    onChange={(e) => setMaterial(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
               </div>
             </div>
-            <div className="flex flex-col space-y-2 mt-4">
-              <div className="flex justify-between w-full">
-                <div className="flex items-center">
-                  <input id="teoriaFinalizada" type="checkbox" className="h-4 w-4 text-gold-600 focus:ring-gold-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 accent-gold-500" checked={isTeoriaFinalizada} onChange={(e) => setIsTeoriaFinalizada(e.target.checked)} />
-                  <label htmlFor="teoriaFinalizada" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Teoria Finalizada</label>
-                </div>
-                <div className="flex items-center">
-                  <input id="countInPlanning" type="checkbox" className="h-4 w-4 text-gold-600 focus:ring-gold-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 accent-gold-500" checked={countInPlanning} onChange={(e) => setCountInPlanning(e.target.checked)} />
-                  <label htmlFor="countInPlanning" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Contabilizar no Planejamento</label>
-                </div>
-              </div>
-              <div className="flex items-center">
-                <input id="programarRevisoes" type="checkbox" className="h-4 w-4 text-gold-600 focus:ring-gold-500 border-gray-300 rounded dark:bg-gray-700 dark:border-gray-600 accent-gold-500" checked={isReviewSchedulingEnabled} onChange={(e) => setIsReviewSchedulingEnabled(e.target.checked)} />
-                <label htmlFor="programarRevisoes" className="ml-2 block text-sm text-gray-900 dark:text-gray-300">Programar Revisões</label>
-              </div>
+
+            {/* Checkboxes */}
+            <div className="flex flex-wrap items-center gap-5 pt-1">
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isTeoriaFinalizada}
+                  onChange={(e) => setIsTeoriaFinalizada(e.target.checked)}
+                  className="h-4 w-4 rounded accent-emerald-500 cursor-pointer"
+                />
+                <span>Teoria finalizada</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={countInPlanning}
+                  onChange={(e) => setCountInPlanning(e.target.checked)}
+                  className="h-4 w-4 rounded accent-emerald-500 cursor-pointer"
+                />
+                <span>Contabilizar no planejamento</span>
+              </label>
+
+              <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-700 dark:text-slate-300 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={isReviewSchedulingEnabled}
+                  onChange={(e) => setIsReviewSchedulingEnabled(e.target.checked)}
+                  className="h-4 w-4 rounded accent-emerald-500 cursor-pointer"
+                />
+                <span>Programar revisões manuais</span>
+              </label>
             </div>
+
             {isReviewSchedulingEnabled && (
-              <div className="flex flex-wrap gap-2 mt-2">
+              <div className="flex flex-wrap items-center gap-2 p-3 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a]">
                 {reviewPeriods.map((period, index) => (
-                  <span key={index} className="bg-gold-100 text-gold-800 px-3 py-1 rounded-full text-sm font-semibold flex items-center dark:bg-gold-800 dark:text-gold-100">
+                  <span
+                    key={index}
+                    className="bg-emerald-500/15 text-emerald-500 border border-emerald-500/30 px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5"
+                  >
                     {period}
-                    <button onClick={() => setReviewPeriods(prev => prev.filter((_, i) => i !== index))} className="ml-2 text-gold-600 hover:text-gold-800 dark:text-gold-300 dark:hover:text-gold-100">&times;</button>
+                    <button
+                      type="button"
+                      onClick={() => setReviewPeriods((prev) => prev.filter((_, i) => i !== index))}
+                      className="hover:text-rose-400"
+                    >
+                      &times;
+                    </button>
                   </span>
                 ))}
-                <div className="ml-2"><button onClick={() => setIsAddReviewModalOpen(true)} className="bg-gold-500 hover:bg-gold-600 text-white font-bold py-1 px-2 rounded-full text-xs dark:bg-gold-600 dark:hover:bg-gold-700">+</button></div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddReviewModalOpen(true)}
+                  className="px-2.5 py-1 rounded-lg bg-emerald-500 text-white text-xs font-bold flex items-center gap-1"
+                >
+                  <Plus size={12} /> Adicionar dia
+                </button>
               </div>
             )}
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="border border-gold-300 dark:border-gold-700 p-4 rounded-md md:col-span-1">
-                <h3 className="text-lg font-semibold text-gold-800 dark:text-gold-200 mb-3">Questões</h3>
+
+            {/* Linha 3: Questões, Páginas e Videoaulas (3 Cards Limpos) */}
+            <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
+              {/* Card Questões (4 cols) */}
+              <div className="md:col-span-4 p-3.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] space-y-2.5">
+                <div>
+                  <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                    Questões <span className="text-slate-400 font-normal">(opcional)</span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400">Acertos / Erros</p>
+                </div>
                 {questions.map((q, index) => (
-                  <div key={index} className="flex space-x-2 mb-2 w-full">
-                    <div className="flex-1">
-                      <label htmlFor={`acertos-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Acertos</label>
-                      <input type="number" id={`acertos-${index}`} value={q.correct} min="0" onChange={(e) => { const newQuestions = [...questions]; newQuestions[index].correct = parseInt(e.target.value) || 0; setQuestions(newQuestions); }} className={`mt-1 block w-full border ${errors[`question-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} />
-                      {errors[`question-${index}`] && <p className="mt-1 text-sm text-red-600">{errors[`question-${index}`]}</p>}
-                    </div>
-                    <div className="flex-1">
-                      <label htmlFor={`erros-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Erros</label>
-                      <input type="number" id={`erros-${index}`} value={q.incorrect} min="0" onChange={(e) => { const newQuestions = [...questions]; newQuestions[index].incorrect = parseInt(e.target.value) || 0; setQuestions(newQuestions); }} className={`mt-1 block w-full border ${errors[`question-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} />
-                    </div>
+                  <div key={index} className="grid grid-cols-2 gap-2">
+                    <input
+                      type="number"
+                      min="0"
+                      value={q.correct}
+                      onChange={(e) => {
+                        const next = [...questions];
+                        next[index].correct = parseInt(e.target.value) || 0;
+                        setQuestions(next);
+                      }}
+                      placeholder="Acertos"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-emerald-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={q.incorrect}
+                      onChange={(e) => {
+                        const next = [...questions];
+                        next[index].incorrect = parseInt(e.target.value) || 0;
+                        setQuestions(next);
+                      }}
+                      placeholder="Erros"
+                      className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-rose-500 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                    />
                   </div>
                 ))}
               </div>
-              <div className="border border-gold-300 dark:border-gold-700 p-4 rounded-md md:col-span-1 relative">
-                <h3 className="text-lg font-semibold text-gold-800 dark:text-gold-200 mb-3">Páginas</h3>
+
+              {/* Card Páginas (3 cols) */}
+              <div className="md:col-span-3 p-3.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">Páginas</h3>
+                    <p className="text-[10px] text-slate-400">Início / Fim</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addPagePair}
+                    className="p-1 rounded-md text-slate-400 hover:text-emerald-500 hover:bg-slate-200/50 dark:hover:bg-slate-800"
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
                 {pages.map((p, index) => (
-                  <div key={index} className="flex space-x-2 mb-2 w-full">
-                    <div className="flex-1">
-                      <label htmlFor={`inicio-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Início</label>
-                      <input type="number" id={`inicio-${index}`} value={p.start} min="0" onChange={(e) => { const newPages = [...pages]; newPages[index].start = parseInt(e.target.value) || 0; setPages(newPages); }} className={`mt-1 block w-full border ${errors[`page-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} />
-                    </div>
-                    <div className="flex-1">
-                      <label htmlFor={`fim-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fim</label>
-                      <input type="number" id={`fim-${index}`} value={p.end} min="0" onChange={(e) => { const newPages = [...pages]; newPages[index].end = parseInt(e.target.value) || 0; setPages(newPages); }} className={`mt-1 block w-full border ${errors[`page-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} />
-                      {errors[`page-${index}`] && <p className="mt-1 text-sm text-red-600">{errors[`page-${index}`]}</p>}
-                    </div>
+                  <div key={index} className="grid grid-cols-2 gap-1.5">
+                    <input
+                      type="number"
+                      min="0"
+                      value={p.start}
+                      onChange={(e) => {
+                        const next = [...pages];
+                        next[index].start = parseInt(e.target.value) || 0;
+                        setPages(next);
+                      }}
+                      className="w-full px-2 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="number"
+                      min="0"
+                      value={p.end}
+                      onChange={(e) => {
+                        const next = [...pages];
+                        next[index].end = parseInt(e.target.value) || 0;
+                        setPages(next);
+                      }}
+                      className="w-full px-2 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
                   </div>
                 ))}
-                <button onClick={addPagePair} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 bg-gold-500 hover:bg-gold-600 text-white font-bold py-1 px-2 rounded-full text-xs z-10 dark:bg-gold-600 dark:hover:bg-gold-700">+</button>
               </div>
-              <div className="border border-gold-300 dark:border-gold-700 p-4 rounded-md md:col-span-2 relative">
-                <h3 className="text-lg font-semibold text-gold-800 dark:text-gold-200 mb-3">Vídeo/Aulas</h3>
+
+              {/* Card Videoaulas (5 cols) */}
+              <div className="md:col-span-5 p-3.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                      Videoaulas <span className="text-slate-400 font-normal">(opcional)</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-400">Título / Início / Fim</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addVideoRow}
+                    className="p-1 rounded-md text-slate-400 hover:text-emerald-500 hover:bg-slate-200/50 dark:hover:bg-slate-800"
+                  >
+                    <Plus size={13} />
+                  </button>
+                </div>
                 {videos.map((v, index) => (
-                  <div key={index} className="grid grid-cols-3 gap-2 mb-2">
-                    <div>
-                      <label htmlFor={`video-title-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Título</label>
-                      <input type="text" id={`video-title-${index}`} value={v.title} onChange={(e) => { const newVideos = [...videos]; newVideos[index] = { ...newVideos[index], title: e.target.value }; setVideos(newVideos); }} className={`mt-1 block w-full border ${errors[`video-title-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} />
-                      {errors[`video-title-${index}`] && <p className="mt-1 text-sm text-red-600">{errors[`video-title-${index}`]}</p>}
-                    </div>
-                    <div>
-                      <label htmlFor={`video-start-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Início</label>
-                      <input type="text" id={`video-start-${index}`} value={v.start} onChange={(e) => { const newVideos = [...videos]; newVideos[index] = { ...newVideos[index], start: e.target.value }; setVideos(newVideos); }} className={`mt-1 block w-full border ${errors[`video-time-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} placeholder="HH:MM:SS" />
-                    </div>
-                    <div>
-                      <label htmlFor={`video-end-${index}`} className="block text-sm font-medium text-gray-700 dark:text-gray-300">Fim</label>
-                      <input type="text" id={`video-end-${index}`} value={v.end} onChange={(e) => { const newVideos = [...videos]; newVideos[index] = { ...newVideos[index], end: e.target.value }; setVideos(newVideos); }} className={`mt-1 block w-full border ${errors[`video-time-${index}`] ? 'border-red-500' : 'border-gray-300 dark:border-gray-600'} rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm`} placeholder="HH:MM:SS" />
-                      {errors[`video-time-${index}`] && <p className="mt-1 text-sm text-red-600">{errors[`video-time-${index}`]}</p>}
-                    </div>
+                  <div key={index} className="grid grid-cols-3 gap-1.5">
+                    <input
+                      type="text"
+                      placeholder="Aula"
+                      value={v.title}
+                      onChange={(e) => {
+                        const next = [...videos];
+                        next[index] = { ...next[index], title: e.target.value };
+                        setVideos(next);
+                      }}
+                      className="w-full px-2 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder="00:00:00"
+                      value={v.start}
+                      onChange={(e) => {
+                        const next = [...videos];
+                        next[index] = { ...next[index], start: e.target.value };
+                        setVideos(next);
+                      }}
+                      className="w-full px-2 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-[11px] font-mono text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
+                    <input
+                      type="text"
+                      placeholder="00:00:00"
+                      value={v.end}
+                      onChange={(e) => {
+                        const next = [...videos];
+                        next[index] = { ...next[index], end: e.target.value };
+                        setVideos(next);
+                      }}
+                      className="w-full px-2 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-[11px] font-mono text-center text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    />
                   </div>
                 ))}
-                <button onClick={addVideoRow} className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 bg-gold-500 hover:bg-gold-600 text-white font-bold py-1 px-2 rounded-full text-xs z-10 dark:bg-gold-600 dark:hover:bg-gold-700">+</button>
               </div>
             </div>
+
+            {/* Comentários */}
             <div>
-              <label htmlFor="comments" className="block text-sm font-medium text-gray-700 dark:text-gray-300">Comentários</label>
-              <textarea id="comments" rows={3} value={comments} onChange={(e) => setComments(e.target.value)} className="mt-1 block w-full border border-gray-300 dark:border-gray-600 rounded-md shadow-sm py-2 px-3 focus:outline-none focus:ring-gold-500 focus:border-gold-500 bg-white text-gray-900 dark:bg-gray-700 dark:text-gray-100 sm:text-sm"></textarea>
+              <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
+                Comentários <span className="text-slate-400 font-normal">(opcional)</span>
+              </label>
+              <textarea
+                rows={3}
+                value={comments}
+                onChange={(e) => setComments(e.target.value)}
+                placeholder="Adicione observações sobre o seu estudo..."
+                className="w-full p-3 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              />
             </div>
           </div>
-          <div className="flex justify-end items-center p-4 border-t border-gold-200 dark:border-gold-700 bg-gold-50 dark:bg-gold-900/50 space-x-4">
-            {initialRecord && showDeleteButton && (<button onClick={handleDelete} className="bg-red-500 hover:bg-red-600 text-white font-bold py-2 px-4 rounded-lg dark:bg-red-600 dark:hover:bg-red-700">Excluir</button>)}
-            <button onClick={onClose} className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded-lg dark:bg-gray-600 dark:hover:bg-gray-500 dark:text-gray-200">Cancelar</button>
-            <button onClick={handleSave} className="bg-gold-600 hover:bg-gold-700 text-white font-bold py-2 px-4 rounded-lg dark:bg-gold-700 dark:hover:bg-gold-800">Salvar</button>
+
+          {/* Footer Clean */}
+          <div className="flex justify-between items-center px-6 py-4 border-t border-slate-100 dark:border-[#1a293e] bg-slate-50/50 dark:bg-[#0c1421]/50">
+            <div>
+              {initialRecord?.id && showDeleteButton && (
+                <button
+                  type="button"
+                  onClick={handleDelete}
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-rose-500/10 hover:bg-rose-500 text-rose-500 hover:text-white text-xs font-bold transition-colors"
+                >
+                  <Trash2 size={14} /> Excluir
+                </button>
+              )}
+            </div>
+            <div className="flex items-center gap-2.5">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSave}
+                className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold shadow-sm transition-all"
+              >
+                Salvar estudo
+              </button>
+            </div>
+          </div>
           </div>
         </div>
-        {isAddReviewModalOpen && (<AddReviewModal isOpen={isAddReviewModalOpen} onClose={() => setIsAddReviewModalOpen(false)} onSave={handleAddReview} />)}
-        <AddSubjectModal 
+
+        {isAddReviewModalOpen && (
+          <AddReviewModal
+            isOpen={isAddReviewModalOpen}
+            onClose={() => setIsAddReviewModalOpen(false)}
+            onSave={handleAddReview}
+          />
+        )}
+        <AddSubjectModal
           isOpen={isAddSubjectModalOpen}
           onClose={() => setIsAddSubjectModalOpen(false)}
           onSave={handleAddSubject}
