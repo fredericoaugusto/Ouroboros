@@ -19,6 +19,9 @@ import {
   TrendingUp,
   Edit3,
   Trash2,
+  Check,
+  Activity,
+  Sparkles,
 } from 'lucide-react';
 import { getJsonContent, StudyRecord, updateTopicDetailsAction } from '../../actions';
 import { useData } from '../../../context/DataContext';
@@ -27,7 +30,11 @@ import { useNotification } from '../../../context/NotificationContext';
 import StudyRegisterModal from '../../../components/StudyRegisterModal';
 import TopicCockpitModal, { TopicMetadata } from '../../../components/TopicCockpitModal';
 import Breadcrumbs from '../../../components/Breadcrumbs';
-import { computeTopicScore } from '../../../lib/scoreEngine';
+import {
+  computeTopicScore,
+  computeSubjectScore,
+  findTopicNotebookUrl,
+} from '../../../lib/scoreEngine';
 
 import { Line } from 'react-chartjs-2';
 import {
@@ -90,8 +97,9 @@ const formatTime = (milliseconds: number) => {
 const countTopicsRecursively = (topics: Topic[]): number => {
   let count = 0;
   for (const topic of topics) {
-    count++;
-    if (topic.sub_topics && topic.sub_topics.length > 0) {
+    if (!topic.sub_topics || topic.sub_topics.length === 0) {
+      count++;
+    } else {
       count += countTopicsRecursively(topic.sub_topics);
     }
   }
@@ -100,19 +108,21 @@ const countTopicsRecursively = (topics: Topic[]): number => {
 
 const countStudiedTopicsRecursively = (
   topics: Topic[],
-  studiedTopicTexts: Set<string>
+  completedTopicTexts: Set<string>
 ): number => {
   let count = 0;
   for (const topic of topics) {
-    if (
-      topic.is_completed ||
-      topic.status === 'studied' ||
-      studiedTopicTexts.has(topic.topic_text)
-    ) {
-      count++;
-    }
-    if (topic.sub_topics && topic.sub_topics.length > 0) {
-      count += countStudiedTopicsRecursively(topic.sub_topics, studiedTopicTexts);
+    if (!topic.sub_topics || topic.sub_topics.length === 0) {
+      if (
+        topic.is_completed ||
+        topic.status === 'completed' ||
+        topic.status === 'studied' ||
+        completedTopicTexts.has(topic.topic_text)
+      ) {
+        count++;
+      }
+    } else {
+      count += countStudiedTopicsRecursively(topic.sub_topics, completedTopicTexts);
     }
   }
   return count;
@@ -172,6 +182,7 @@ export default function MateriaDetalhes() {
 
   const {
     studyRecords,
+    simuladoRecords,
     addStudyRecord,
     updateStudyRecord,
     deleteStudyRecord,
@@ -190,6 +201,9 @@ export default function MateriaDetalhes() {
   );
   const [cockpitTopic, setCockpitTopic] = useState<Topic | null>(null);
   const [activeView, setActiveView] = useState<'edital' | 'historico' | 'evolucao'>('edital');
+  const [historyFilterMode, setHistoryFilterMode] = useState<'all' | 'revisions' | 'by_topic'>(
+    'all'
+  );
   const [activeChartRange, setActiveChartRange] = useState<'daily' | 'weekly' | 'monthly'>(
     'monthly'
   );
@@ -249,10 +263,29 @@ export default function MateriaDetalhes() {
   const performancePercentage =
     totalQuestions > 0 ? Math.round((totalCorrectQuestions / totalQuestions) * 100) : 0;
 
+  const completedTopicTextsSet = useMemo(() => {
+    return new Set(
+      filteredStudyRecords
+        .filter((r) => r.teoriaFinalizada)
+        .map((record) => record.topic)
+    );
+  }, [filteredStudyRecords]);
+
   const studiedTopics = useMemo(() => {
-    const studiedTopicTexts = new Set(filteredStudyRecords.map((record) => record.topic));
-    return countStudiedTopicsRecursively(currentSubject?.topics || [], studiedTopicTexts);
-  }, [filteredStudyRecords, currentSubject]);
+    return countStudiedTopicsRecursively(
+      currentSubject?.topics || [],
+      completedTopicTextsSet
+    );
+  }, [completedTopicTextsSet, currentSubject]);
+
+  const subjectScoreObj = useMemo(() => {
+    return computeSubjectScore({
+      subjectName,
+      topics: currentSubject?.topics || [],
+      studyRecords: studyRecords || [],
+      simuladoRecords: simuladoRecords || [],
+    });
+  }, [subjectName, currentSubject?.topics, studyRecords, simuladoRecords]);
 
   const pendingTopics = Math.max(0, totalTopicsCount - studiedTopics);
   const progressPercentage =
@@ -330,7 +363,68 @@ export default function MateriaDetalhes() {
     }
   };
 
-  // Recursive Topic Row with Score & Cockpit trigger
+  const handleToggleTopicCompletion = async (topicNode: Topic, currentlyCompleted: boolean) => {
+    const nextState = !currentlyCompleted;
+    const leafNames: string[] = [];
+    const allNames: string[] = [];
+    const collect = (node: Topic) => {
+      allNames.push(node.topic_text);
+      if (!node.sub_topics || node.sub_topics.length === 0) {
+        leafNames.push(node.topic_text);
+      } else {
+        node.sub_topics.forEach(collect);
+      }
+    };
+    collect(topicNode);
+
+    if (nextState) {
+      for (const leafName of leafNames) {
+        const recs = filteredStudyRecords.filter((r) => r.topic === leafName);
+        if (recs.length > 0) {
+          for (const rec of recs) {
+            if (!rec.teoriaFinalizada) {
+              await updateStudyRecord({ ...rec, teoriaFinalizada: true });
+            }
+          }
+        } else {
+          await addStudyRecord({
+            date: new Date().toISOString().split('T')[0],
+            subjectId: (currentSubject as any)?.id || '',
+            subject: subjectName,
+            topic: leafName,
+            studyTime: 0,
+            questions: { correct: 0, total: 0 },
+            pages: [],
+            videos: [],
+            notes: '',
+            category: 'teoria',
+            teoriaFinalizada: true,
+            countInPlanning: false,
+          });
+        }
+      }
+    } else {
+      const matching = filteredStudyRecords.filter((r) => allNames.includes(r.topic));
+      for (const rec of matching) {
+        if (rec.teoriaFinalizada) {
+          await updateStudyRecord({ ...rec, teoriaFinalizada: false });
+        }
+      }
+    }
+
+    if (currentFile) {
+      for (const tName of allNames) {
+        await updateTopicDetailsAction(currentFile, subjectName, tName, {
+          is_completed: nextState,
+          status: nextState ? 'completed' : 'not_started',
+        });
+      }
+      await fetchPlan(true);
+      await refreshPlans();
+    }
+  };
+
+  // Recursive Topic Row with Score, Retention & Cockpit trigger
   const TopicRow: React.FC<{
     topic: Topic;
     level: number;
@@ -360,12 +454,30 @@ export default function MateriaDetalhes() {
         mapped,
         topic.relevance ?? 3,
         topic.difficulty ?? 3,
-        topic.mastery ?? 3
+        topic.perceivedMastery ?? topic.mastery ?? 3,
+        {
+          subjectRecords: filteredStudyRecords,
+          allStudyRecords: studyRecords || [],
+          simuladoRecords: simuladoRecords || [],
+          subjectName,
+        }
       );
-    }, [topicRecords, topic.relevance, topic.difficulty, topic.mastery]);
+    }, [topicRecords, topic.relevance, topic.difficulty, topic.perceivedMastery, topic.mastery]);
 
-    const isStudied =
-      topic.is_completed || topic.status === 'studied' || topicRecords.length > 0;
+    const isLeafCompleted = (t: Topic): boolean => {
+      if (!t.sub_topics || t.sub_topics.length === 0) {
+        return Boolean(
+          t.is_completed ||
+            t.status === 'completed' ||
+            t.status === 'studied' ||
+            completedTopicTextsSet.has(t.topic_text)
+        );
+      }
+      return t.sub_topics.every(isLeafCompleted);
+    };
+
+    const isCompleted = isLeafCompleted(topic);
+    const hasStudiedData = isCompleted || topicRecords.length > 0;
     const hasSubtopics = !!(topic.sub_topics && topic.sub_topics.length > 0);
     const hasNotes = !!(topic.notes && topic.notes.replace(/<[^>]*>/g, '').trim().length > 0);
 
@@ -391,6 +503,19 @@ export default function MateriaDetalhes() {
               ) : (
                 <span className="w-5" />
               )}
+
+              <button
+                type="button"
+                onClick={() => handleToggleTopicCompletion(topic, isCompleted)}
+                className={`w-4 h-4 rounded flex items-center justify-center border transition-all shrink-0 ${
+                  isCompleted
+                    ? 'bg-emerald-500 border-emerald-500 text-white'
+                    : 'border-slate-300 dark:border-slate-600 hover:border-emerald-500 bg-white dark:bg-[#0b1320]'
+                }`}
+                title={isCompleted ? 'Marcar como pendente' : 'Marcar como concluído'}
+              >
+                {isCompleted && <Check className="w-3 h-3 stroke-[3]" />}
+              </button>
 
               {topic.topic_number && (
                 <span className="font-mono text-[11px] font-bold text-emerald-500 shrink-0">
@@ -436,12 +561,12 @@ export default function MateriaDetalhes() {
           <td className="py-3 px-4 whitespace-nowrap text-xs">
             <span
               className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
-                isStudied
+                isCompleted
                   ? 'bg-emerald-500/15 text-emerald-500'
                   : 'bg-slate-100 dark:bg-[#0b1320] text-slate-400'
               }`}
             >
-              {isStudied ? 'Concluído' : 'Pendente'}
+              {isCompleted ? 'Concluído' : 'Pendente'}
             </span>
           </td>
 
@@ -457,9 +582,11 @@ export default function MateriaDetalhes() {
           </td>
 
           <td className="py-3 px-4 whitespace-nowrap">
-            {isStudied ? (
-              <span
-                className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-xs font-extrabold ${
+            {hasStudiedData ? (
+              <button
+                type="button"
+                onClick={() => setCockpitTopic(topic)}
+                className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-xs font-extrabold border transition-transform hover:scale-105 ${
                   scoreRes.color === 'emerald'
                     ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
                     : scoreRes.color === 'amber'
@@ -467,8 +594,11 @@ export default function MateriaDetalhes() {
                     : 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
                 }`}
               >
-                {scoreRes.currentScore} pts
-              </span>
+                <span>{scoreRes.currentScore} pts</span>
+                <span className="opacity-75 font-semibold text-[10px]">
+                  ({scoreRes.retention}% ret.)
+                </span>
+              </button>
             ) : (
               <span className="text-xs text-slate-400">—</span>
             )}
@@ -597,8 +727,32 @@ export default function MateriaDetalhes() {
         </button>
       </div>
 
-      {/* 4 Sleek KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* 5 Sleek KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-5 shadow-sm">
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+              Score & Retenção
+            </span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-500">
+              <Sparkles className="w-4 h-4" />
+            </div>
+          </div>
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-extrabold text-emerald-500">
+              {subjectScoreObj.subjectScore} pts
+            </span>
+            <span className="text-xs font-bold text-indigo-400">
+              • {subjectScoreObj.subjectRetention}% ret.
+            </span>
+          </div>
+          <p className="text-xs text-slate-400 mt-1">
+            {subjectScoreObj.simuladoQuestionsTotal > 0
+              ? `Inclui ${subjectScoreObj.simuladoQuestionsTotal} questões de simulados`
+              : 'Baseado nos tópicos e histórico'}
+          </p>
+        </div>
+
         <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-5 shadow-sm">
           <div className="flex items-center justify-between mb-3">
             <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
@@ -701,7 +855,7 @@ export default function MateriaDetalhes() {
           }`}
         >
           <TrendingUp className="w-4 h-4" />
-          Evolução no Tempo
+          Desempenho & Evolução
         </button>
       </div>
 
@@ -752,9 +906,52 @@ export default function MateriaDetalhes() {
         </div>
       )}
 
-      {/* Tab Content 2: Histórico de Registros */}
+      {/* Tab Content 2: Histórico de Registros & Histórico de Revisões por Tópico */}
       {activeView === 'historico' && (
         <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] overflow-hidden shadow-sm">
+          {/* Sub-barra de filtro do Histórico da Disciplina */}
+          <div className="px-6 py-4 border-b border-slate-200/80 dark:border-[#1f304a] flex flex-wrap items-center justify-between gap-3 bg-slate-50/40 dark:bg-[#0f1929]/40">
+            <div className="flex items-center gap-1.5 bg-slate-100 dark:bg-[#0f1826] p-1 rounded-xl border border-slate-200/80 dark:border-[#1f304a]">
+              <button
+                type="button"
+                onClick={() => setHistoryFilterMode('all')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  historyFilterMode === 'all'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Todas as Sessões ({filteredStudyRecords.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryFilterMode('revisions')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  historyFilterMode === 'revisions'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Apenas Revisões (
+                {filteredStudyRecords.filter((r) => r.category === 'revisao').length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setHistoryFilterMode('by_topic')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                  historyFilterMode === 'by_topic'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                Histórico por Tópico
+              </button>
+            </div>
+            <span className="text-[11px] text-slate-400">
+              Acompanhe revisões, sessões de estudo e acesse o Caderno de Questões de cada tópico
+            </span>
+          </div>
+
           {filteredStudyRecords.length === 0 ? (
             <div className="p-12 text-center">
               <p className="text-sm text-slate-400 mb-4">
@@ -768,64 +965,208 @@ export default function MateriaDetalhes() {
                 Adicionar Primeiro Registro
               </button>
             </div>
+          ) : historyFilterMode === 'by_topic' ? (
+            <div className="divide-y divide-slate-100 dark:divide-[#1f304a] p-5 space-y-4">
+              {Array.from(
+                filteredStudyRecords.reduce((acc, rec) => {
+                  const key = rec.topic || 'Tópico Geral';
+                  const list = acc.get(key) || [];
+                  list.push(rec);
+                  acc.set(key, list);
+                  return acc;
+                }, new Map<string, StudyRecord[]>())
+              ).map(([topicName, recs]) => {
+                const nbUrl = findTopicNotebookUrl(
+                  planData?.subjects || [],
+                  subjectName,
+                  topicName
+                );
+                const revCount = recs.filter((r) => r.category === 'revisao').length;
+                const totalQ = recs.reduce((s, r) => s + (r.questions?.total || 0), 0);
+                const totalC = recs.reduce((s, r) => s + (r.questions?.correct || 0), 0);
+                const accPct = totalQ > 0 ? Math.round((totalC / totalQ) * 100) : null;
+                return (
+                  <div
+                    key={topicName}
+                    className="pt-4 first:pt-0 rounded-xl border border-slate-200/70 dark:border-[#1f304a] p-4 bg-slate-50/40 dark:bg-[#0f1826]/40"
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm font-bold text-slate-900 dark:text-white">
+                          {topicName}
+                        </span>
+                        <span className="px-2 py-0.5 rounded-md bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/20 text-[10px] font-bold">
+                          {revCount} {revCount === 1 ? 'revisão' : 'revisões'} • {recs.length}{' '}
+                          {recs.length === 1 ? 'sessão' : 'sessões'}
+                        </span>
+                        {accPct !== null && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[10px] font-bold">
+                            {totalC}/{totalQ} ({accPct}%)
+                          </span>
+                        )}
+                      </div>
+                      {nbUrl && (
+                        <a
+                          href={nbUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 text-[11px] font-bold transition-colors"
+                        >
+                          <ExternalLink className="w-3 h-3" />
+                          Abrir Caderno de Questões
+                        </a>
+                      )}
+                    </div>
+                    <div className="space-y-1.5">
+                      {recs.map((r, idx) => {
+                        const qT = r.questions?.total || 0;
+                        const qC = r.questions?.correct || 0;
+                        const qP = qT > 0 ? Math.round((qC / qT) * 100) : null;
+                        return (
+                          <div
+                            key={r.id || idx}
+                            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200/60 dark:border-[#1f304a]/80 text-xs"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <span className="font-semibold text-slate-700 dark:text-slate-300">
+                                {new Date(r.date).toLocaleDateString('pt-BR')}
+                              </span>
+                              <span
+                                className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                                  r.category === 'revisao'
+                                    ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400'
+                                    : r.category === 'questoes'
+                                    ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                    : 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+                                }`}
+                              >
+                                {r.category === 'revisao'
+                                  ? 'Revisão'
+                                  : r.category === 'questoes'
+                                  ? 'Questões'
+                                  : 'Teoria'}
+                              </span>
+                              {r.comments && (
+                                <span className="text-[11px] text-slate-400 italic truncate max-w-xs">
+                                  “{r.comments}”
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-3">
+                              <span className="text-slate-500">{formatTime(r.studyTime)}</span>
+                              {qP !== null && (
+                                <span className="font-bold text-emerald-500">
+                                  {qC}/{qT} ({qP}%)
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
                   <tr className="border-b border-slate-200/80 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/40 text-[10px] font-bold uppercase tracking-wider text-slate-400">
                     <th className="py-3.5 px-6">Data</th>
+                    <th className="py-3.5 px-4">Categoria</th>
                     <th className="py-3.5 px-4">Tópico</th>
                     <th className="py-3.5 px-4">Tempo</th>
                     <th className="py-3.5 px-4">Acertos / Erros</th>
-                    <th className="py-3.5 px-4">Páginas</th>
+                    <th className="py-3.5 px-4">Caderno</th>
                     <th className="py-3.5 px-6 text-right">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 dark:divide-[#1f304a]">
-                  {filteredStudyRecords.map((record, index) => {
-                    const c = record.questions?.correct ?? (record as any).correctQuestions ?? 0;
-                    const inc =
-                      record.questions?.total !== undefined
-                        ? record.questions.total - c
-                        : (record as any).incorrectQuestions ?? 0;
-                    return (
-                      <tr
-                        key={record.id || index}
-                        className="hover:bg-slate-50/80 dark:hover:bg-[#17263f]/60 transition-colors text-xs"
-                      >
-                        <td className="py-3.5 px-6 whitespace-nowrap text-slate-600 dark:text-slate-300">
-                          {new Date(record.date).toLocaleDateString('pt-BR')}
-                        </td>
-                        <td className="py-3.5 px-4 font-medium text-slate-900 dark:text-white">
-                          {record.topic}
-                        </td>
-                        <td className="py-3.5 px-4 whitespace-nowrap text-slate-600 dark:text-slate-300">
-                          {formatTime(record.studyTime)}
-                        </td>
-                        <td className="py-3.5 px-4 whitespace-nowrap">
-                          <span className="text-emerald-500 font-bold">{c}</span> /{' '}
-                          <span className="text-rose-400 font-bold">{inc}</span>
-                        </td>
-                        <td className="py-3.5 px-4 text-slate-500">
-                          {record.pagesRead || '—'}
-                        </td>
-                        <td className="py-3.5 px-6 text-right whitespace-nowrap">
-                          <button
-                            onClick={() => handleEditRecord(record)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 mr-1"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteRecord(record.id)}
-                            className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
+                  {filteredStudyRecords
+                    .filter((r) =>
+                      historyFilterMode === 'revisions' ? r.category === 'revisao' : true
+                    )
+                    .map((record, index) => {
+                      const c =
+                        record.questions?.correct ?? (record as any).correctQuestions ?? 0;
+                      const inc =
+                        record.questions?.total !== undefined
+                          ? record.questions.total - c
+                          : (record as any).incorrectQuestions ?? 0;
+                      const nbUrl = findTopicNotebookUrl(
+                        planData?.subjects || [],
+                        subjectName,
+                        record.topic
+                      );
+                      return (
+                        <tr
+                          key={record.id || index}
+                          className="hover:bg-slate-50/80 dark:hover:bg-[#17263f]/60 transition-colors text-xs"
+                        >
+                          <td className="py-3.5 px-6 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                            {new Date(record.date).toLocaleDateString('pt-BR')}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${
+                                record.category === 'revisao'
+                                  ? 'bg-cyan-500/15 text-cyan-600 dark:text-cyan-400'
+                                  : record.category === 'questoes'
+                                  ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+                                  : 'bg-indigo-500/15 text-indigo-600 dark:text-indigo-400'
+                              }`}
+                            >
+                              {record.category === 'revisao'
+                                ? 'Revisão'
+                                : record.category === 'questoes'
+                                ? 'Questões'
+                                : 'Teoria'}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-4 font-medium text-slate-900 dark:text-white">
+                            {record.topic}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap text-slate-600 dark:text-slate-300">
+                            {formatTime(record.studyTime)}
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            <span className="text-emerald-500 font-bold">{c}</span> /{' '}
+                            <span className="text-rose-400 font-bold">{inc}</span>
+                          </td>
+                          <td className="py-3.5 px-4 whitespace-nowrap">
+                            {nbUrl ? (
+                              <a
+                                href={nbUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 text-[10px] font-bold transition-colors"
+                                title="Abrir Caderno de Questões"
+                              >
+                                <ExternalLink className="w-3 h-3" />
+                                Caderno
+                              </a>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                          </td>
+                          <td className="py-3.5 px-6 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => handleEditRecord(record)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 mr-1"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteRecord(record.id)}
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-rose-500 hover:bg-rose-500/10"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                 </tbody>
               </table>
             </div>
@@ -833,57 +1174,99 @@ export default function MateriaDetalhes() {
         </div>
       )}
 
-      {/* Tab Content 3: Evolução no Tempo */}
+      {/* Tab Content 3: Desempenho & Evolução no Tempo */}
       {activeView === 'evolucao' && (
-        <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-sm font-bold text-slate-900 dark:text-white">
-              Evolução das Horas de Estudo
-            </h2>
-            <div className="inline-flex rounded-xl bg-slate-100 dark:bg-[#0b1320] p-1">
-              {(['daily', 'weekly', 'monthly'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  onClick={() => setActiveChartRange(tab)}
-                  className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                    activeChartRange === tab
-                      ? 'bg-emerald-500 text-white'
-                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                  }`}
-                >
-                  {tab === 'daily' ? 'Diário' : tab === 'weekly' ? 'Semanal' : 'Mensal'}
-                </button>
-              ))}
+        <div className="space-y-6">
+          {/* Painel de Desempenho Consolidado da Disciplina */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200/80 dark:border-[#1f304a] shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 block">
+                Score Geral da Disciplina
+              </span>
+              <div className="text-3xl font-extrabold text-slate-900 dark:text-white mt-1">
+                {subjectScoreObj.subjectScore} <span className="text-sm text-slate-400">/ 100 pts</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Combina tópicos estudados ({subjectScoreObj.topicsEvaluated}/{subjectScoreObj.totalTopics}), questões e simulados
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200/80 dark:border-[#1f304a] shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 block">
+                Retenção Ativa da Disciplina
+              </span>
+              <div className="text-3xl font-extrabold text-indigo-400 mt-1">
+                {subjectScoreObj.subjectRetention}%
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Último estudo registrado há {subjectScoreObj.daysSinceLastStudy} dias
+              </p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200/80 dark:border-[#1f304a] shadow-sm">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 block">
+                Questões em Simulados vs Estudos
+              </span>
+              <div className="text-lg font-extrabold text-slate-900 dark:text-white mt-1.5">
+                Estudos: {subjectScoreObj.studyQuestionsCorrect}/{subjectScoreObj.studyQuestionsTotal} • Simulados:{' '}
+                {subjectScoreObj.simuladoQuestionsCorrect}/{subjectScoreObj.simuladoQuestionsTotal}
+              </div>
+              <p className="text-xs text-slate-400 mt-1">
+                Aproveitamento combinado: {subjectScoreObj.combinedAccuracyPct}%
+              </p>
             </div>
           </div>
-          <div className="h-80">
-            {filteredStudyRecords.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-sm text-slate-400">
-                Sem registros suficientes para exibir o gráfico.
+
+          <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-6">
+              <h2 className="text-sm font-bold text-slate-900 dark:text-white">
+                Evolução das Horas de Estudo em {subjectName}
+              </h2>
+              <div className="inline-flex rounded-xl bg-slate-100 dark:bg-[#0b1320] p-1">
+                {(['daily', 'weekly', 'monthly'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setActiveChartRange(tab)}
+                    className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      activeChartRange === tab
+                        ? 'bg-emerald-500 text-white'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                    }`}
+                  >
+                    {tab === 'daily' ? 'Diário' : tab === 'weekly' ? 'Semanal' : 'Mensal'}
+                  </button>
+                ))}
               </div>
-            ) : (
-              <Line
-                data={chartData}
-                options={{
-                  responsive: true,
-                  maintainAspectRatio: false,
-                  plugins: {
-                    legend: { display: false },
-                  },
-                  scales: {
-                    x: {
-                      ticks: { color: theme === 'dark' ? '#94a3b8' : '#64748b' },
-                      grid: { display: false },
+            </div>
+            <div className="h-80">
+              {filteredStudyRecords.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-sm text-slate-400">
+                  Sem registros suficientes para exibir o gráfico.
+                </div>
+              ) : (
+                <Line
+                  data={chartData}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                      legend: { display: false },
                     },
-                    y: {
-                      beginAtZero: true,
-                      ticks: { color: theme === 'dark' ? '#94a3b8' : '#64748b' },
-                      grid: { color: theme === 'dark' ? '#1f304a' : '#e2e8f0' },
+                    scales: {
+                      x: {
+                        ticks: { color: theme === 'dark' ? '#94a3b8' : '#64748b' },
+                        grid: { display: false },
+                      },
+                      y: {
+                        beginAtZero: true,
+                        ticks: { color: theme === 'dark' ? '#94a3b8' : '#64748b' },
+                        grid: { color: theme === 'dark' ? '#1f304a' : '#e2e8f0' },
+                      },
                     },
-                  },
-                }}
-              />
-            )}
+                  }}
+                />
+              )}
+            </div>
           </div>
         </div>
       )}

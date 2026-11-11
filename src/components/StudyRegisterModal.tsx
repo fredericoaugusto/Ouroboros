@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef, Fragment, useMemo } from 'react';
-import { getJsonContent } from '../app/actions';
+import { getJsonContent, updateTopicDetailsAction } from '../app/actions';
 import { useData, EditalTopic, StudyRecord } from '../context/DataContext';
 import { useNotification } from '../context/NotificationContext';
 import { useSidebar } from '../context/SidebarContext';
@@ -27,6 +27,7 @@ import {
   Check,
   HelpCircle,
   Info,
+  ExternalLink,
 } from 'lucide-react';
 
 export type { StudyRecord };
@@ -216,10 +217,12 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   const {
     selectedDataFile,
     studyRecords,
+    simuladoRecords,
     addStudyRecord,
     updateStudyRecord,
     deleteStudyRecord,
     saveSubject,
+    refreshPlans,
     initialStudyRecord: contextInitialRecord,
     setInitialStudyRecord,
   } = useData();
@@ -243,6 +246,10 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   const [videos, setVideos] = useState<VideoInput[]>([{ title: '', start: '', end: '' }]);
   const [material, setMaterial] = useState('');
   const [comments, setComments] = useState('');
+  const [newNotebookUrl, setNewNotebookUrl] = useState('');
+  const [firstStudyRelevance, setFirstStudyRelevance] = useState(3);
+  const [firstStudyDifficulty, setFirstStudyDifficulty] = useState(3);
+  const [firstStudyMastery, setFirstStudyMastery] = useState(3);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [showDatePicker, setShowDatePicker] = useState(false);
   const [isCalendarPopoverOpen, setIsCalendarPopoverOpen] = useState(false);
@@ -269,17 +276,8 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     { value: 'jurisprudencia', label: 'Jurisprudência' },
   ];
 
-  // Calcula o intervalo da próxima revisão automática pelo Score/Desempenho de forma granular e explicativa
-  const smartReviewEstimate = useMemo(() => {
-    const corr = parseInt(questions[0]?.correct || '0', 10) || 0;
-    const inc = parseInt(questions[0]?.incorrect || '0', 10) || 0;
-    const prevSessions = (studyRecords || []).filter(
-      (r) =>
-        r.subject === selectedSubject &&
-        r.topic === selectedTopic &&
-        (!initialRecord?.id || r.id !== initialRecord.id)
-    ).length;
-
+  const matchedTopicNode = useMemo(() => {
+    if (!selectedTopic) return null;
     const findTopicNode = (list: Topic[]): Topic | null => {
       for (const t of list) {
         if (t.topic_text === selectedTopic) return t;
@@ -290,16 +288,85 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
       }
       return null;
     };
-    const matchedTopic = selectedTopic ? findTopicNode(topics) : null;
+    return findTopicNode(topics);
+  }, [selectedTopic, topics]);
+
+  const existingTopicRecords = useMemo(() => {
+    if (!selectedSubject || !selectedTopic) return [];
+    return (studyRecords || []).filter(
+      (r) =>
+        (!initialRecord?.id || r.id !== initialRecord.id) &&
+        r.subject === selectedSubject &&
+        r.topic === selectedTopic
+    );
+  }, [studyRecords, selectedSubject, selectedTopic, initialRecord?.id]);
+
+  const isFirstStudyOfTopic = Boolean(
+    selectedSubject && selectedTopic && existingTopicRecords.length === 0
+  );
+  const existingNotebookUrl = (matchedTopicNode as any)?.notebookUrl
+    ? String((matchedTopicNode as any).notebookUrl).trim()
+    : '';
+
+  useEffect(() => {
+    if (matchedTopicNode) {
+      setFirstStudyRelevance((matchedTopicNode as any).relevance ?? 3);
+      setFirstStudyDifficulty((matchedTopicNode as any).difficulty ?? 3);
+      setFirstStudyMastery(
+        (matchedTopicNode as any).perceivedMastery ?? (matchedTopicNode as any).mastery ?? 3
+      );
+      setNewNotebookUrl('');
+    }
+  }, [matchedTopicNode]);
+
+  // Calcula o intervalo da próxima revisão automática pelo Score completo (histórico tópico + sessão + disciplina + simulados + R/D/P + perfil pessoal)
+  const smartReviewEstimate = useMemo(() => {
+    const corr = parseInt(questions[0]?.correct || '0', 10) || 0;
+    const inc = parseInt(questions[0]?.incorrect || '0', 10) || 0;
+    const allRecs = (studyRecords || []).filter(
+      (r) => !initialRecord?.id || r.id !== initialRecord.id
+    );
+    const subjRecs = selectedSubject
+      ? allRecs.filter((r) => r.subject === selectedSubject)
+      : [];
+
+    const effR = isFirstStudyOfTopic
+      ? firstStudyRelevance
+      : (matchedTopicNode as any)?.relevance ?? 3;
+    const effD = isFirstStudyOfTopic
+      ? firstStudyDifficulty
+      : (matchedTopicNode as any)?.difficulty ?? 3;
+    const effP = isFirstStudyOfTopic
+      ? firstStudyMastery
+      : (matchedTopicNode as any)?.perceivedMastery ?? (matchedTopicNode as any)?.mastery ?? 3;
 
     return calculateSmartSessionReview({
       sessionCorrect: corr,
       sessionIncorrect: inc,
-      previousSessionsCount: prevSessions,
-      relevance: (matchedTopic as any)?.relevance ?? 3,
-      difficulty: (matchedTopic as any)?.difficulty ?? 3,
+      previousSessionsCount: existingTopicRecords.length,
+      relevance: effR,
+      difficulty: effD,
+      perceivedMastery: effP,
+      topicRecords: existingTopicRecords,
+      subjectRecords: subjRecs,
+      allStudyRecords: allRecs,
+      simuladoRecords: simuladoRecords || [],
+      subjectName: selectedSubject,
     });
-  }, [questions, studyRecords, selectedSubject, selectedTopic, topics, initialRecord?.id]);
+  }, [
+    questions,
+    studyRecords,
+    simuladoRecords,
+    selectedSubject,
+    selectedTopic,
+    matchedTopicNode,
+    existingTopicRecords,
+    isFirstStudyOfTopic,
+    firstStudyRelevance,
+    firstStudyDifficulty,
+    firstStudyMastery,
+    initialRecord?.id,
+  ]);
 
   const estimatedAutoReviewDays = smartReviewEstimate.days;
 
@@ -526,6 +593,31 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     } else {
       addStudyRecord(studyRecord);
     }
+
+    // Se for o 1º registro do tópico OU se o usuário cadastrou o link do caderno de questões agora, persiste no tópico do Edital
+    if (selectedDataFile && selectedSubject && selectedTopic) {
+      const topicUpdates: Record<string, any> = {};
+      if (isFirstStudyOfTopic) {
+        topicUpdates.relevance = firstStudyRelevance;
+        topicUpdates.difficulty = firstStudyDifficulty;
+        topicUpdates.perceivedMastery = firstStudyMastery;
+        topicUpdates.mastery = firstStudyMastery;
+      }
+      if (!existingNotebookUrl && newNotebookUrl.trim()) {
+        topicUpdates.notebookUrl = newNotebookUrl.trim();
+      }
+      if (Object.keys(topicUpdates).length > 0) {
+        updateTopicDetailsAction(
+          selectedDataFile,
+          selectedSubject,
+          selectedTopic,
+          topicUpdates
+        ).then(() => {
+          if (refreshPlans) refreshPlans();
+        });
+      }
+    }
+
     if (setInitialStudyRecord) {
       setInitialStudyRecord(null);
     }
@@ -934,9 +1026,27 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
               <div className="grid grid-cols-1 sm:grid-cols-12 gap-3.5">
                 {/* Tópico (8 cols) */}
                 <div className="sm:col-span-8" ref={topicDropdownRef}>
-                  <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-1.5">
-                    Tópico
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300">
+                      Tópico
+                    </label>
+                    {existingNotebookUrl && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const url = existingNotebookUrl.startsWith('http')
+                            ? existingNotebookUrl
+                            : `https://${existingNotebookUrl}`;
+                          window.open(url, '_blank', 'noopener,noreferrer');
+                        }}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-indigo-500 hover:text-indigo-400 transition-colors"
+                        title="Abrir Caderno de Questões já cadastrado neste tópico"
+                      >
+                        <ExternalLink size={12} />
+                        Abrir Caderno de Questões
+                      </button>
+                    )}
+                  </div>
                   <div className="relative">
                     <button
                       type="button"
@@ -1004,6 +1114,119 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
                   </div>
                 </div>
               </div>
+
+              {/* Opção de Cadastrar Link do Caderno de Questões (Apenas se o tópico AINDA NÃO tiver um cadastrado) */}
+              {selectedSubject && selectedTopic && !existingNotebookUrl && (
+                <div className="p-3 rounded-xl bg-indigo-500/[0.04] border border-indigo-500/20 flex flex-col sm:flex-row sm:items-center gap-2.5">
+                  <div className="flex items-center gap-2 shrink-0">
+                    <ExternalLink size={14} className="text-indigo-500" />
+                    <span className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      Link do Caderno de Questões <span className="text-slate-400 font-normal">(opcional)</span>:
+                    </span>
+                  </div>
+                  <input
+                    type="url"
+                    value={newNotebookUrl}
+                    onChange={(e) => setNewNotebookUrl(e.target.value)}
+                    placeholder="Cole o link do TEC / QConcursos para salvar direto neste tópico..."
+                    className="flex-1 px-3 py-1.5 rounded-lg bg-white dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              )}
+
+              {/* Calibração Inicial do 1º Estudo do Tópico (Relevância, Dificuldade e Domínio 0-5) */}
+              {isFirstStudyOfTopic && (
+                <div className="p-3.5 rounded-xl bg-emerald-500/[0.05] border border-emerald-500/25 space-y-2.5">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <span className="text-xs font-extrabold text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                      <Sparkles size={14} />
+                      1º Registro neste Tópico — Calibre o Score Inicial (0 a 5)
+                    </span>
+                    <span className="text-[10px] text-slate-400">
+                      Salvo automaticamente no Cockpit do tópico
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Relevância */}
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a]">
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">
+                          Relevância na Prova
+                        </span>
+                        <strong className="text-amber-500">{firstStudyRelevance}/5</strong>
+                      </div>
+                      <div className="grid grid-cols-6 gap-1">
+                        {[0, 1, 2, 3, 4, 5].map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setFirstStudyRelevance(v)}
+                            className={`py-1 rounded text-[11px] font-bold border transition-all ${
+                              firstStudyRelevance === v
+                                ? 'bg-amber-500/20 border-amber-500 text-amber-500'
+                                : 'bg-slate-50 dark:bg-[#131f33] border-slate-200 dark:border-[#1f304a] text-slate-400'
+                            }`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dificuldade */}
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a]">
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">
+                          Dificuldade Pessoal
+                        </span>
+                        <strong className="text-rose-500">{firstStudyDifficulty}/5</strong>
+                      </div>
+                      <div className="grid grid-cols-6 gap-1">
+                        {[0, 1, 2, 3, 4, 5].map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setFirstStudyDifficulty(v)}
+                            className={`py-1 rounded text-[11px] font-bold border transition-all ${
+                              firstStudyDifficulty === v
+                                ? 'bg-rose-500/20 border-rose-500 text-rose-500'
+                                : 'bg-slate-50 dark:bg-[#131f33] border-slate-200 dark:border-[#1f304a] text-slate-400'
+                            }`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Domínio Declarado */}
+                    <div className="p-2.5 rounded-lg bg-white dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a]">
+                      <div className="flex justify-between text-[11px] mb-1">
+                        <span className="font-semibold text-slate-600 dark:text-slate-300">
+                          Domínio Sentido
+                        </span>
+                        <strong className="text-emerald-500">{firstStudyMastery}/5</strong>
+                      </div>
+                      <div className="grid grid-cols-6 gap-1">
+                        {[0, 1, 2, 3, 4, 5].map((v) => (
+                          <button
+                            key={v}
+                            type="button"
+                            onClick={() => setFirstStudyMastery(v)}
+                            className={`py-1 rounded text-[11px] font-bold border transition-all ${
+                              firstStudyMastery === v
+                                ? 'bg-emerald-500/20 border-emerald-500 text-emerald-500'
+                                : 'bg-slate-50 dark:bg-[#131f33] border-slate-200 dark:border-[#1f304a] text-slate-400'
+                            }`}
+                          >
+                            {v}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               {/* Checkboxes Customizados Modernos */}
               <div className="flex flex-wrap items-center gap-6 pt-1">

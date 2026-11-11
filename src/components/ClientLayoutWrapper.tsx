@@ -76,7 +76,7 @@ export default function ClientLayoutWrapper({
         <div className="flex items-center gap-3 text-emerald-500">
           <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Carregando Alexandria...
+            Carregando Krono...
           </p>
         </div>
       </div>

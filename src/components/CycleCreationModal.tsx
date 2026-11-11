@@ -456,7 +456,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
                   Como você quer montar seu planejamento?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Nos dois caminhos o Alexandria monta a rotina ideal para você.
+                  Nos dois caminhos o Krono monta a rotina ideal para você.
                 </p>
               </div>
 

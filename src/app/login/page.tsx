@@ -56,7 +56,7 @@ export default function LoginPage() {
             </svg>
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Alexandria
+            Krono
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5">
             <Sparkles size={13} className="text-emerald-500" />

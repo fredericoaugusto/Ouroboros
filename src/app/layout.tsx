@@ -11,7 +11,7 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Alexandria • Estudos & Alta Performance",
+  title: "Krono • Estudos & Alta Performance",
   description: "Plataforma inteligente de gestão de estudos, editais e revisões adaptativas",
   icons: {
     icon: '/icon.svg?v=2',

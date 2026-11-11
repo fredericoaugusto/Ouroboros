@@ -255,7 +255,9 @@ const calculateStats = async (
         total: 0,
         percentage: 0,
         last_study: '-',
-        is_completed: false,
+        is_completed: Boolean(
+          topic.is_completed || topic.status === 'completed' || topic.status === 'studied'
+        ),
         sub_topics: topic.sub_topics ? initializeTopicsRecursively(topic.sub_topics, topic.topic_text) : [],
       };
       return [newTopic];
@@ -415,10 +417,10 @@ const calculateStats = async (
     currentTopicPerf.performance = currentTopicPerf.correctPercentage;
   });
 
-  const processTopicsRecursively = (topics: EditalTopic[], subjectId: string) => {
+  const processTopicsRecursively = (topics: EditalTopic[], subjectId: string, subjectName: string) => {
     topics.forEach(topic => {
       filteredStudyRecords.forEach(record => {
-        if (record.subjectId === subjectId && record.topic === topic.topic_text) {
+        if ((record.subjectId === subjectId || record.subject === subjectName) && record.topic === topic.topic_text) {
           topic.completed += record.questions?.correct || 0;
           topic.reviewed += (record.questions?.total || 0) - (record.questions?.correct || 0);
           if (record.date > topic.last_study) {
@@ -433,13 +435,13 @@ const calculateStats = async (
       topic.percentage = topic.total > 0 ? Math.round((topic.completed / topic.total) * 100) : 0;
 
       if (topic.sub_topics && topic.sub_topics.length > 0) {
-        processTopicsRecursively(topic.sub_topics, subjectId);
+        processTopicsRecursively(topic.sub_topics, subjectId, subjectName);
       }
     });
   };
 
   editalData.forEach(subject => {
-    processTopicsRecursively(subject.topics, subject.id);
+    processTopicsRecursively(subject.topics, subject.id, subject.subject);
   });
 
   const aggregateStatsRecursively = (topic: EditalTopic): { completed: number, total: number, last_study: string, is_completed: boolean } => {
@@ -1256,12 +1258,61 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       await saveStudyRecord(selectedDataFile, newRecord);
       showNotification('Registro de estudo salvo com sucesso!', 'success');
 
+      // 1. Verifica se já havia alguma revisão pendente vencida ou muito próxima (<= +3 dias da data do estudo)
+      // para o mesmo (subject, topic) — se houver, este estudo/revisão já cumpre essa pendência!
+      const [recY, recM, recD] = newRecord.date.split('-').map(Number);
+      const recordTimestamp = Date.UTC(recY, recM - 1, recD);
+      const dayMs = 1000 * 60 * 60 * 24;
+
+      const updatedExistingReviews: ReviewRecord[] = [];
+      const fulfilledIds = new Set<string>();
+
+      for (const existing of reviewRecords) {
+        const isPending =
+          !existing.completedDate && !existing.ignored && existing.status !== 'completed';
+        const isSameTopic =
+          existing.subject === newRecord.subject && existing.topic === newRecord.topic;
+
+        if (isPending && isSameTopic && existing.scheduledDate) {
+          const [sy, sm, sd] = existing.scheduledDate.split('-').map(Number);
+          const schedTs = Date.UTC(sy, sm - 1, sd);
+          const diffDaysFromStudy = Math.round((schedTs - recordTimestamp) / dayMs);
+
+          // Se estava atrasada, para hoje ou para os próximos 3 dias, o estudo/revisão de hoje já a cumpriu
+          if (diffDaysFromStudy <= 3) {
+            const fulfilled: ReviewRecord = {
+              ...existing,
+              completedDate: newRecord.date,
+              status: 'completed',
+              ignored: false,
+            };
+            updatedExistingReviews.push(fulfilled);
+            fulfilledIds.add(existing.id);
+          }
+        }
+      }
+
+      if (updatedExistingReviews.length > 0) {
+        setReviewRecords(prev =>
+          prev.map(r => {
+            const match = updatedExistingReviews.find(u => u.id === r.id);
+            return match || r;
+          })
+        );
+        for (const rev of updatedExistingReviews) {
+          await saveReviewRecord(selectedDataFile, rev);
+        }
+      }
+
       if (newRecord.reviewPeriods && newRecord.reviewPeriods.length > 0) {
         const newReviewRecords: ReviewRecord[] = [];
+        const mergedExistingReviews: ReviewRecord[] = [];
+        let mergedCount = 0;
+
         newRecord.reviewPeriods.forEach(period => {
           const [year, month, day] = newRecord.date.split('-').map(Number);
           const originalDate = new Date(Date.UTC(year, month - 1, day));
-          let scheduledDate = new Date(originalDate);
+          const scheduledDate = new Date(originalDate);
 
           if (period.endsWith('d')) {
             scheduledDate.setUTCDate(originalDate.getUTCDate() + parseInt(period.slice(0, -1)));
@@ -1271,24 +1322,81 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             scheduledDate.setUTCMonth(originalDate.getUTCMonth() + parseInt(period.slice(0, -1)));
           }
 
-          newReviewRecords.push({
-            id: `${newRecord.id}-${period}`, studyRecordId: newRecord.id,
-            scheduledDate: scheduledDate.toISOString().split('T')[0], status: 'pending',
-            originalDate: newRecord.date, subjectId: newRecord.subjectId, subject: newRecord.subject, topic: newRecord.topic,
-            reviewPeriod: period,
+          const targetDateStr = scheduledDate.toISOString().split('T')[0];
+          const targetTs = scheduledDate.getTime();
+
+          // 2. Verifica se já existe outra revisão futura pendente muito próxima (+/- 5 dias) para o mesmo tópico
+          const nearbyPending = reviewRecords.find(r => {
+            if (fulfilledIds.has(r.id)) return false;
+            const isPending = !r.completedDate && !r.ignored && r.status !== 'completed';
+            if (!isPending || r.subject !== newRecord.subject || r.topic !== newRecord.topic) {
+              return false;
+            }
+            const [ry, rm, rd] = (r.scheduledDate || '').split('-').map(Number);
+            if (!ry || !rm || !rd) return false;
+            const rTs = Date.UTC(ry, rm - 1, rd);
+            const gapDays = Math.abs(Math.round((rTs - targetTs) / dayMs));
+            return gapDays <= 5;
           });
+
+          if (nearbyPending) {
+            // Unifica/recalibra a revisão próxima em vez de duplicar
+            const recalibrated: ReviewRecord = {
+              ...nearbyPending,
+              scheduledDate: targetDateStr,
+              originalDate: newRecord.date,
+              reviewPeriod: period,
+              studyRecordId: newRecord.id,
+            };
+            mergedExistingReviews.push(recalibrated);
+            fulfilledIds.add(nearbyPending.id);
+            mergedCount++;
+          } else {
+            newReviewRecords.push({
+              id: `${newRecord.id}-${period}`,
+              studyRecordId: newRecord.id,
+              scheduledDate: targetDateStr,
+              status: 'pending',
+              originalDate: newRecord.date,
+              subjectId: newRecord.subjectId,
+              subject: newRecord.subject,
+              topic: newRecord.topic,
+              reviewPeriod: period,
+            });
+          }
         });
 
-        setReviewRecords(prevReviews => [...prevReviews, ...newReviewRecords]);
-        for (const review of newReviewRecords) {
-          await saveReviewRecord(selectedDataFile, review);
+        if (mergedExistingReviews.length > 0) {
+          setReviewRecords(prev =>
+            prev.map(r => {
+              const m = mergedExistingReviews.find(u => u.id === r.id);
+              return m || r;
+            })
+          );
+          for (const mRev of mergedExistingReviews) {
+            await saveReviewRecord(selectedDataFile, mRev);
+          }
+        }
+
+        if (newReviewRecords.length > 0) {
+          setReviewRecords(prevReviews => [...prevReviews, ...newReviewRecords]);
+          for (const review of newReviewRecords) {
+            await saveReviewRecord(selectedDataFile, review);
+          }
+        }
+
+        if (mergedCount > 0) {
+          showNotification(
+            'Revisão recalibrada e unificada com agendamento próximo para evitar duplicidade!',
+            'info'
+          );
         }
       }
     } catch (error) {
       console.error("Falha ao salvar o registro de estudo:", error);
       showNotification('Erro ao salvar o registro. Tente novamente.', 'error');
     }
-  }, [selectedDataFile, showNotification, stats.editalData]);
+  }, [selectedDataFile, showNotification, stats.editalData, reviewRecords]);
 
   const addSimuladoRecord = useCallback(async (record: Omit<SimuladoRecord, 'id'>) => {
     if (!selectedDataFile) {

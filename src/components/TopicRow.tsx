@@ -51,9 +51,14 @@ const TopicRow: React.FC<TopicRowProps> = ({
     }
   }, [allTopicsExpanded]);
 
+  const subjectRecords = useMemo(
+    () => studyRecords.filter((r) => r.subject === subjectName),
+    [studyRecords, subjectName]
+  );
+
   const topicRecords = useMemo(
-    () => studyRecords.filter((r) => r.subject === subjectName && r.topic === topic.topic_text),
-    [studyRecords, subjectName, topic.topic_text]
+    () => subjectRecords.filter((r) => r.topic === topic.topic_text),
+    [subjectRecords, topic.topic_text]
   );
 
   const scoreRes = useMemo(() => {
@@ -71,9 +76,23 @@ const TopicRow: React.FC<TopicRowProps> = ({
       mapped,
       topic.relevance ?? 3,
       topic.difficulty ?? 3,
-      topic.mastery ?? 3
+      (topic as any).perceivedMastery ?? topic.mastery ?? 3,
+      {
+        subjectRecords,
+        allStudyRecords: studyRecords,
+        subjectName,
+      }
     );
-  }, [topicRecords, topic.relevance, topic.difficulty, topic.mastery]);
+  }, [
+    topicRecords,
+    topic.relevance,
+    topic.difficulty,
+    (topic as any).perceivedMastery,
+    topic.mastery,
+    subjectRecords,
+    studyRecords,
+    subjectName,
+  ]);
 
   const completedQ = topic.completed ?? scoreRes.correctQuestions;
   const totalQ =
@@ -83,8 +102,8 @@ const TopicRow: React.FC<TopicRowProps> = ({
   const wrongQ = Math.max(0, totalQ - completedQ);
   const percentageCorrect = totalQ > 0 ? Math.round((completedQ / totalQ) * 100) : 0;
 
-  const isCompleted =
-    topic.is_completed || topic.status === 'studied' || topicRecords.length > 0;
+  const isCompleted = Boolean(topic.is_completed);
+  const hasStudiedData = isCompleted || topicRecords.length > 0 || totalQ > 0;
   const hasNotes = !!(topic.notes && topic.notes.replace(/<[^>]*>/g, '').trim().length > 0);
 
   const formatDate = (dateString?: string) => {
@@ -214,22 +233,25 @@ const TopicRow: React.FC<TopicRowProps> = ({
           )}
         </td>
 
-        {/* Bússola Score */}
+        {/* Score & Retenção */}
         <td className="py-3 px-3 text-center whitespace-nowrap">
-          {isCompleted ? (
+          {hasStudiedData ? (
             <button
               type="button"
               onClick={() => onOpenCockpit && onOpenCockpit(subjectName, topic)}
-              className={`inline-flex items-center px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold border transition-transform hover:scale-105 ${
+              className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg text-[11px] font-extrabold border transition-transform hover:scale-105 ${
                 scoreRes.color === 'emerald'
                   ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/30'
                   : scoreRes.color === 'amber'
                   ? 'bg-amber-500/15 text-amber-400 border-amber-500/30'
                   : 'bg-rose-500/15 text-rose-400 border-rose-500/30'
               }`}
-              title="Clique para abrir o Cockpit e ver detalhes do Score"
+              title="Clique para abrir o Cockpit e ver detalhes do Score e Retenção"
             >
-              {scoreRes.currentScore} pts
+              <span>{scoreRes.currentScore} pts</span>
+              <span className="opacity-75 font-semibold text-[10px]">
+                ({scoreRes.retention}% ret.)
+              </span>
             </button>
           ) : (
             <span className="text-xs text-slate-400">—</span>

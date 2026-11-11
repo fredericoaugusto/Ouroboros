@@ -1,7 +1,9 @@
 'use client';
 
 import React, { useState, useMemo } from 'react';
+import Link from 'next/link';
 import { useData, StudyRecord } from '../../context/DataContext';
+import { findTopicNotebookUrl } from '../../lib/scoreEngine';
 import {
   FiPlus,
   FiFilter,
@@ -13,6 +15,7 @@ import {
   FiSearch,
   FiX,
   FiBookOpen,
+  FiExternalLink,
 } from 'react-icons/fi';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
 import FilterModal from '../../components/FilterModal';
@@ -63,8 +66,15 @@ const HistoricoPage = () => {
     updateStudyRecord,
     deleteStudyRecord,
     studyPlans,
+    availablePlans,
+    selectedDataFile,
     stats,
   } = useData();
+  const currentPlanSubjects = useMemo(() => {
+    const idx = availablePlans.indexOf(selectedDataFile);
+    const currentPlan = idx >= 0 && studyPlans[idx] ? studyPlans[idx] : studyPlans[0];
+    return Array.isArray(currentPlan) ? currentPlan : currentPlan?.subjects || [];
+  }, [availablePlans, selectedDataFile, studyPlans]);
 
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
@@ -385,6 +395,11 @@ const HistoricoPage = () => {
                       const qTotal = record.questions?.total || 0;
                       const qCorrect = record.questions?.correct || 0;
                       const qPct = qTotal > 0 ? Math.round((qCorrect / qTotal) * 100) : null;
+                      const notebookUrl = findTopicNotebookUrl(
+                        currentPlanSubjects,
+                        record.subject,
+                        record.topic
+                      );
 
                       return (
                         <div
@@ -401,14 +416,30 @@ const HistoricoPage = () => {
                             />
                             <div className="min-w-0">
                               <div className="flex items-center gap-2 flex-wrap">
-                                <span className="text-sm font-bold text-slate-900 dark:text-white truncate">
+                                <Link
+                                  href={`/materias/${encodeURIComponent(record.subject)}`}
+                                  className="text-sm font-bold text-slate-900 dark:text-white hover:text-emerald-600 dark:hover:text-emerald-400 hover:underline transition-colors truncate"
+                                  title="Ir para a disciplina"
+                                >
                                   {record.subject}
-                                </span>
+                                </Link>
                                 <span
                                   className={`px-2 py-0.5 text-[10px] font-bold rounded-md border ${catInfo.badgeClass}`}
                                 >
                                   {catInfo.label}
                                 </span>
+                                {notebookUrl && (
+                                  <a
+                                    href={notebookUrl}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 text-[10px] font-bold transition-colors"
+                                    title="Abrir Caderno de Questões"
+                                  >
+                                    <FiExternalLink className="w-2.5 h-2.5" />
+                                    Caderno
+                                  </a>
+                                )}
                               </div>
                               <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5 line-clamp-1">
                                 {record.topic || 'Tópico geral'}

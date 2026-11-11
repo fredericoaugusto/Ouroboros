@@ -23,11 +23,17 @@ import {
   BookOpen,
   BarChart2,
   RefreshCw,
+  Pencil,
+  ExternalLink,
 } from 'lucide-react';
 import CycleCreationModal from '../../components/CycleCreationModal';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
-import StopwatchModal from '../../components/StopwatchModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
+import TopicQueueSelectorModal, {
+  getSubjectTopicOverride,
+} from '../../components/TopicQueueSelectorModal';
+import { findTopicNotebookUrl } from '../../lib/scoreEngine';
+import { startGlobalTimerSession } from '../../lib/timerStore';
 import {
   DndContext,
   closestCenter,
@@ -263,6 +269,7 @@ const MultiRingDonutChart = ({
 interface SortableItemProps {
   session: StudySession;
   suggestedTopic: string;
+  notebookUrl?: string | null;
   showSuggestedTopic: boolean;
   hoveredSession: UniqueIdentifier | null;
   setHoveredSession: (id: UniqueIdentifier | null) => void;
@@ -270,6 +277,7 @@ interface SortableItemProps {
   formatMinutesToHoursMinutes: (minutes: number) => string;
   onStartTimer: (session: StudySession, topic: string) => void;
   onManualRegister: (session: StudySession, topic: string) => void;
+  onOpenTopicSelector: (subjectName: string, subjectColor?: string) => void;
   isEditMode: boolean;
   onDelete: (id: string) => void;
   onDuplicate: (session: StudySession) => void;
@@ -279,6 +287,7 @@ interface SortableItemProps {
 const SortableItem = ({
   session,
   suggestedTopic,
+  notebookUrl,
   showSuggestedTopic,
   hoveredSession,
   setHoveredSession,
@@ -286,6 +295,7 @@ const SortableItem = ({
   formatMinutesToHoursMinutes,
   onStartTimer,
   onManualRegister,
+  onOpenTopicSelector,
   isEditMode,
   onDelete,
   onDuplicate,
@@ -333,18 +343,24 @@ const SortableItem = ({
           </button>
         )}
 
-        <div
-          className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold shrink-0 shadow-sm"
+        <Link
+          href={`/materias/${encodeURIComponent(session.subject)}`}
+          title={`Ir para ${session.subject}`}
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold shrink-0 shadow-sm hover:scale-105 transition-transform"
           style={{ backgroundColor: session.color || '#10b981' }}
         >
           <BookOpen className="w-4 h-4" />
-        </div>
+        </Link>
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
-            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
+            <Link
+              href={`/materias/${encodeURIComponent(session.subject)}`}
+              className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white hover:text-emerald-500 transition-colors truncate"
+              title={`Abrir disciplina ${session.subject}`}
+            >
               {session.subject}
-            </h4>
+            </Link>
             {currentProgress > 0 && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                 Faltam {formatMinutesToHoursMinutes(remainingMinutes)} (
@@ -355,9 +371,32 @@ const SortableItem = ({
           </div>
 
           {showSuggestedTopic && suggestedTopic && (
-            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
-              {suggestedTopic}
-            </p>
+            <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+              <button
+                type="button"
+                onClick={() => onOpenTopicSelector(session.subject, session.color)}
+                title="Sugerido a partir do seu edital, na ordem dele. Toque para escolher outro."
+                className="text-xs text-slate-500 dark:text-slate-400 hover:text-emerald-500 border-b border-dashed border-slate-400/40 hover:border-emerald-500 truncate inline-flex items-center gap-1 max-w-full text-left transition-colors"
+              >
+                <span className="truncate">{suggestedTopic}</span>
+                <Pencil className="w-3 h-3 shrink-0 opacity-65" />
+              </button>
+              {notebookUrl && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const url = notebookUrl.startsWith('http')
+                      ? notebookUrl
+                      : `https://${notebookUrl}`;
+                    window.open(url, '_blank', 'noopener,noreferrer');
+                  }}
+                  title="Abrir Caderno de Questões deste tópico"
+                  className="p-0.5 rounded text-indigo-500 hover:text-indigo-400 shrink-0"
+                >
+                  <ExternalLink className="w-3 h-3" />
+                </button>
+              )}
+            </div>
           )}
 
           {progressPercentage > 0 && (
@@ -452,9 +491,8 @@ export default function Planejamento() {
     setCurrentStudySession,
     initialStudyRecord,
     setInitialStudyRecord,
-    stopwatchTargetDuration,
+    setIsStopwatchModalOpen,
     setStopwatchTargetDuration,
-    stopwatchModalSubject,
     setStopwatchModalSubject,
     studyHours,
     weeklyQuestionsGoal,
@@ -466,8 +504,6 @@ export default function Planejamento() {
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isRegisterModalOpen, setIsRegisterModalOpen] = useState(false);
-  const [isStopwatchModalOpen, setIsStopwatchModalOpen] = useState(false);
-  const [stopwatchInitialTopic, setStopwatchInitialTopic] = useState<string>('');
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [selectedSubjects] = useState<string[]>([]);
@@ -478,6 +514,19 @@ export default function Planejamento() {
   >(null);
   const [hoveredSession, setHoveredSession] = useState<UniqueIdentifier | null>(null);
   const [showCompletedSection, setShowCompletedSection] = useState(false);
+  const [overrideVersion, setOverrideVersion] = useState(0);
+  const [topicModalTarget, setTopicModalTarget] = useState<{
+    subjectName: string;
+    subjectColor: string;
+    topics: any[];
+    currentTopic: string;
+  } | null>(null);
+
+  useEffect(() => {
+    const handler = () => setOverrideVersion((v) => v + 1);
+    window.addEventListener('krono:topic-override-changed', handler);
+    return () => window.removeEventListener('krono:topic-override-changed', handler);
+  }, []);
   const [isClient, setIsClient] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [subjectToAdd, setSubjectToAdd] = useState<string>('');
@@ -602,9 +651,13 @@ export default function Planejamento() {
     ? subjectBreakdownList
     : subjectBreakdownList.slice(0, 7);
 
-  // Busca o próximo tópico pendente no edital da disciplina
+  // Busca o próximo tópico pendente no edital da disciplina (ou o escolhido pelo usuário)
   const getSuggestedTopicForSubject = useCallback(
     (subjectName: string): string => {
+      void overrideVersion;
+      const manualChoice = getSubjectTopicOverride(subjectName);
+      if (manualChoice) return manualChoice;
+
       const subj = subjects.find(
         (s) => s.subject?.toLowerCase() === subjectName?.toLowerCase()
       );
@@ -635,7 +688,22 @@ export default function Planejamento() {
       }
       return subj?.topics?.[0]?.topic_text || '';
     },
-    [getRecommendedSession, subjects, studyRecords]
+    [getRecommendedSession, subjects, studyRecords, overrideVersion]
+  );
+
+  const openTopicSelectorForSubject = useCallback(
+    (subjectName: string, subjectColor?: string) => {
+      const subj = subjects.find(
+        (s) => s.subject?.toLowerCase() === subjectName?.toLowerCase()
+      );
+      setTopicModalTarget({
+        subjectName,
+        subjectColor: subjectColor || subj?.color || '#10b981',
+        topics: subj?.topics || [],
+        currentTopic: getSuggestedTopicForSubject(subjectName),
+      });
+    },
+    [subjects, getSuggestedTopicForSubject]
   );
 
   const sensors = useSensors(
@@ -705,8 +773,14 @@ export default function Planejamento() {
     const remainingMin = Math.max(1, Math.round(session.duration - prog));
     setStopwatchTargetDuration(remainingMin);
     setStopwatchModalSubject(session.subject);
-    setStopwatchInitialTopic(autoSuggestTopics ? topic : '');
     setCurrentStudySession(session);
+    startGlobalTimerSession({
+      subject: session.subject,
+      topic: autoSuggestTopics ? topic : '',
+      subjectColor: session.color || '#10b981',
+      targetDurationMinutes: remainingMin,
+      autoStart: true,
+    });
     setIsStopwatchModalOpen(true);
   };
 
@@ -1013,12 +1087,14 @@ export default function Planejamento() {
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                     <div className="flex items-start gap-3.5 min-w-0 flex-1">
-                      <div
-                        className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shrink-0 shadow-md mt-0.5"
+                      <Link
+                        href={`/materias/${encodeURIComponent(nextHighlightSession.subject)}`}
+                        title={`Ir para ${nextHighlightSession.subject}`}
+                        className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shrink-0 shadow-md mt-0.5 hover:scale-105 transition-transform"
                         style={{ backgroundColor: nextHighlightSession.color || '#10b981' }}
                       >
                         <BookOpen className="w-5 h-5" />
-                      </div>
+                      </Link>
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-slate-900/80 text-emerald-400">
@@ -1030,13 +1106,54 @@ export default function Planejamento() {
                             </span>
                           )}
                         </div>
-                        <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
+                        <Link
+                          href={`/materias/${encodeURIComponent(nextHighlightSession.subject)}`}
+                          className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white hover:text-emerald-500 transition-colors truncate block"
+                          title={`Abrir página da disciplina ${nextHighlightSession.subject}`}
+                        >
                           {nextHighlightSession.subject}
-                        </h2>
+                        </Link>
                         {autoSuggestTopics && nextSuggestedTopic && (
-                          <p className="text-xs font-medium text-slate-600 dark:text-slate-200 mt-0.5 truncate border-b border-dashed border-slate-400/30 pb-0.5 inline-block max-w-full">
-                            {nextSuggestedTopic}
-                          </p>
+                          <div className="relative group/topic inline-flex items-center gap-1.5 max-w-full mt-0.5">
+                            <button
+                              type="button"
+                              onClick={() =>
+                                openTopicSelectorForSubject(
+                                  nextHighlightSession.subject,
+                                  nextHighlightSession.color
+                                )
+                              }
+                              className="text-xs font-medium text-slate-700 dark:text-slate-200 hover:text-emerald-500 border-b border-dashed border-slate-400/50 hover:border-emerald-500 pb-0.5 truncate inline-flex items-center gap-1.5 max-w-full text-left transition-colors"
+                            >
+                              <span className="truncate">{nextSuggestedTopic}</span>
+                              <Pencil className="w-3 h-3 shrink-0 opacity-75" />
+                            </button>
+                            {(() => {
+                              const nbUrl = findTopicNotebookUrl(
+                                subjects,
+                                nextHighlightSession.subject,
+                                nextSuggestedTopic
+                              );
+                              return nbUrl ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const url = nbUrl.startsWith('http')
+                                      ? nbUrl
+                                      : `https://${nbUrl}`;
+                                    window.open(url, '_blank', 'noopener,noreferrer');
+                                  }}
+                                  title="Abrir Caderno de Questões deste tópico"
+                                  className="p-1 rounded-lg bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 hover:bg-indigo-500 hover:text-white transition-colors shrink-0"
+                                >
+                                  <ExternalLink className="w-3.5 h-3.5" />
+                                </button>
+                              ) : null;
+                            })()}
+                            <div className="pointer-events-none opacity-0 group-hover/topic:opacity-100 transition-opacity duration-200 absolute bottom-full left-0 mb-2 w-60 p-2.5 rounded-xl bg-slate-900 text-white text-[11px] font-medium text-center shadow-xl z-30">
+                              Sugerido a partir do seu edital, na ordem dele. Toque para escolher outro.
+                            </div>
+                          </div>
                         )}
                         <div className="flex items-center gap-2 mt-2">
                           <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-900/50 text-white">
@@ -1104,24 +1221,34 @@ export default function Planejamento() {
                       strategy={verticalListSortingStrategy}
                     >
                       {upcomingQueueSessions.length > 0 ? (
-                        upcomingQueueSessions.map((session) => (
-                          <SortableItem
-                            key={session.id}
-                            session={session}
-                            suggestedTopic={getSuggestedTopicForSubject(session.subject)}
-                            showSuggestedTopic={autoSuggestTopics}
-                            hoveredSession={hoveredSession}
-                            setHoveredSession={setHoveredSession}
-                            sessionProgressMap={sessionProgressMap}
-                            formatMinutesToHoursMinutes={formatMinutesToHoursMinutes}
-                            onStartTimer={handleStartTimerForSession}
-                            onManualRegister={handleManualRegisterForSession}
-                            isEditMode={isEditMode}
-                            onDelete={handleDeleteSession}
-                            onDuplicate={handleDuplicateSession}
-                            onDurationChange={handleDurationChange}
-                          />
-                        ))
+                        upcomingQueueSessions.map((session) => {
+                          const sTopic = getSuggestedTopicForSubject(session.subject);
+                          const sNotebookUrl = findTopicNotebookUrl(
+                            subjects,
+                            session.subject,
+                            sTopic
+                          );
+                          return (
+                            <SortableItem
+                              key={session.id}
+                              session={session}
+                              suggestedTopic={sTopic}
+                              notebookUrl={sNotebookUrl}
+                              showSuggestedTopic={autoSuggestTopics}
+                              hoveredSession={hoveredSession}
+                              setHoveredSession={setHoveredSession}
+                              sessionProgressMap={sessionProgressMap}
+                              formatMinutesToHoursMinutes={formatMinutesToHoursMinutes}
+                              onStartTimer={handleStartTimerForSession}
+                              onManualRegister={handleManualRegisterForSession}
+                              onOpenTopicSelector={openTopicSelectorForSubject}
+                              isEditMode={isEditMode}
+                              onDelete={handleDeleteSession}
+                              onDuplicate={handleDuplicateSession}
+                              onDurationChange={handleDurationChange}
+                            />
+                          );
+                        })
                       ) : pendingSessions.length === 0 ? (
                         <div className="p-8 text-center text-sm text-emerald-500 font-semibold bg-emerald-500/5 rounded-xl border border-emerald-500/20 space-y-3">
                           <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
@@ -1287,7 +1414,7 @@ export default function Planejamento() {
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
             Defina suas disciplinas, horas semanais, nível de domínio e peso na prova. O
-            Alexandria organiza seus blocos e sugere automaticamente qual tópico do edital
+            Krono organiza seus blocos e sugere automaticamente qual tópico do edital
             estudar em seguida.
           </p>
           <button
@@ -1321,37 +1448,6 @@ export default function Planejamento() {
         initialRecord={initialStudyRecord}
         justification={recommendationJustification}
         showDeleteButton={!!initialStudyRecord?.id}
-      />
-
-      <StopwatchModal
-        isOpen={isStopwatchModalOpen}
-        onClose={() => setIsStopwatchModalOpen(false)}
-        onSaveAndClose={async (time, subject, topic) => {
-          const now = new Date();
-          const todayLocal = `${now.getFullYear()}-${String(
-            now.getMonth() + 1
-          ).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-          const newRecord: Partial<StudyRecord> = {
-            date: todayLocal,
-            subject: subject || '',
-            topic: topic || stopwatchInitialTopic || '',
-            studyTime: time,
-            questions: { correct: 0, total: 0 },
-            category: 'teoria',
-            notes: '',
-            reviewPeriods: [],
-            teoriaFinalizada: false,
-            countInPlanning: true,
-            pages: [],
-            videos: [],
-          };
-          setInitialStudyRecord(newRecord);
-          setIsStopwatchModalOpen(false);
-          setIsRegisterModalOpen(true);
-        }}
-        targetDuration={stopwatchTargetDuration}
-        subject={stopwatchModalSubject}
-        initialTopic={stopwatchInitialTopic}
       />
 
       <CycleCreationModal
@@ -1398,6 +1494,25 @@ export default function Planejamento() {
         confirmText="Sim, excluir planejamento"
         cancelText="Cancelar"
       />
+
+      {topicModalTarget && (
+        <TopicQueueSelectorModal
+          isOpen={!!topicModalTarget}
+          onClose={() => setTopicModalTarget(null)}
+          subjectName={topicModalTarget.subjectName}
+          subjectColor={topicModalTarget.subjectColor}
+          topics={topicModalTarget.topics}
+          completedTopicNames={
+            new Set(
+              studyRecords
+                .filter((r) => r.subject === topicModalTarget.subjectName && r.teoriaFinalizada)
+                .map((r) => r.topic)
+            )
+          }
+          currentSelectedTopic={topicModalTarget.currentTopic}
+          onSelectTopic={() => setOverrideVersion((v) => v + 1)}
+        />
+      )}
     </div>
   );
 }

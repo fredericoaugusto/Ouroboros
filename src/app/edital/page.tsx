@@ -22,6 +22,7 @@ import TopicCockpitModal, { TopicMetadata } from '../../components/TopicCockpitM
 import ImportEditalModal from '../../components/ImportEditalModal';
 import TopicRow from '../../components/TopicRow';
 import { updateTopicDetailsAction } from '../actions';
+import { computeSubjectScore } from '../../lib/scoreEngine';
 
 const SUBJECT_PALETTE = [
   '#10b981',
@@ -39,6 +40,7 @@ const EditalPage = () => {
     addStudyRecord,
     updateStudyRecord,
     studyRecords,
+    simuladoRecords,
     selectedDataFile,
     stats,
     loading,
@@ -93,31 +95,97 @@ const EditalPage = () => {
   };
 
   const handleToggleCompletion = async (subjectText: string, topicText: string) => {
-    const recordToUpdate = studyRecords.find(
-      (record) => record.subject === subjectText && record.topic === topicText
+    const subjObj = stats.editalData.find((s) => s.subject === subjectText);
+    const subjectId = subjObj?.id || '';
+
+    // Localiza o nó clicado na árvore do edital para saber se está concluído e se possui subtópicos
+    const findNode = (list: Topic[]): Topic | null => {
+      for (const t of list || []) {
+        if (t.topic_text === topicText) return t;
+        if (t.sub_topics && t.sub_topics.length > 0) {
+          const found = findNode(t.sub_topics);
+          if (found) return found;
+        }
+      }
+      return null;
+    };
+
+    const targetNode = subjObj ? findNode(subjObj.topics) : null;
+    const isCurrentlyCompleted = Boolean(targetNode?.is_completed);
+    const nextCompletedState = !isCurrentlyCompleted;
+
+    // Coleta o próprio tópico e eventuais subtópicos folhas
+    const leafTopicNames: string[] = [];
+    const allTopicNames: string[] = [];
+    const collectTopics = (node: Topic | null) => {
+      if (!node) return;
+      allTopicNames.push(node.topic_text);
+      if (!node.sub_topics || node.sub_topics.length === 0) {
+        leafTopicNames.push(node.topic_text);
+      } else {
+        node.sub_topics.forEach(collectTopics);
+      }
+    };
+    if (targetNode) {
+      collectTopics(targetNode);
+    } else {
+      leafTopicNames.push(topicText);
+      allTopicNames.push(topicText);
+    }
+
+    // Atualiza todos os registros de estudo correspondentes
+    const matchingRecords = studyRecords.filter(
+      (record) => record.subject === subjectText && allTopicNames.includes(record.topic)
     );
 
-    if (recordToUpdate) {
-      const updatedRecord = {
-        ...recordToUpdate,
-        teoriaFinalizada: !recordToUpdate.teoriaFinalizada,
-      };
-      await updateStudyRecord(updatedRecord);
+    if (nextCompletedState) {
+      // Marcar como concluído
+      for (const leafName of leafTopicNames) {
+        const recsForLeaf = studyRecords.filter(
+          (r) => r.subject === subjectText && r.topic === leafName
+        );
+        if (recsForLeaf.length > 0) {
+          for (const rec of recsForLeaf) {
+            if (!rec.teoriaFinalizada) {
+              await updateStudyRecord({ ...rec, teoriaFinalizada: true });
+            }
+          }
+        } else {
+          const newRecord: Omit<StudyRecord, 'id'> = {
+            date: new Date().toISOString().split('T')[0],
+            subjectId,
+            subject: subjectText,
+            topic: leafName,
+            studyTime: 0,
+            questions: { correct: 0, total: 0 },
+            pages: [],
+            videos: [],
+            notes: '',
+            category: 'teoria',
+            teoriaFinalizada: true,
+            countInPlanning: false,
+          };
+          await addStudyRecord(newRecord);
+        }
+      }
     } else {
-      const newRecord: Omit<StudyRecord, 'id'> = {
-        date: new Date().toISOString().split('T')[0],
-        subject: subjectText,
-        topic: topicText,
-        studyTime: 0,
-        questions: { correct: 0, total: 0 },
-        pages: [],
-        videos: [],
-        notes: '',
-        category: 'teoria',
-        teoriaFinalizada: true,
-        countInPlanning: false,
-      };
-      await addStudyRecord(newRecord);
+      // Desmarcar como concluído
+      for (const rec of matchingRecords) {
+        if (rec.teoriaFinalizada) {
+          await updateStudyRecord({ ...rec, teoriaFinalizada: false });
+        }
+      }
+    }
+
+    // Também sincroniza o status no arquivo JSON do plano caso tenha sido marcado pelo Cockpit
+    if (selectedDataFile) {
+      for (const tName of allTopicNames) {
+        await updateTopicDetailsAction(selectedDataFile, subjectText, tName, {
+          is_completed: nextCompletedState,
+          status: nextCompletedState ? 'completed' : 'not_started',
+        });
+      }
+      await refreshPlans();
     }
   };
 
@@ -178,12 +246,12 @@ const EditalPage = () => {
     let correctQuestions = 0;
 
     for (const topic of topics) {
-      total++;
-      if (topic.is_completed) completed++;
-      totalQuestions += (topic.completed || 0) + (topic.reviewed || 0);
-      correctQuestions += topic.completed || 0;
-
-      if (topic.sub_topics && topic.sub_topics.length > 0) {
+      if (!topic.sub_topics || topic.sub_topics.length === 0) {
+        total++;
+        if (topic.is_completed) completed++;
+        totalQuestions += (topic.completed || 0) + (topic.reviewed || 0);
+        correctQuestions += topic.completed || 0;
+      } else {
         const subCounts = countTopicsRecursively(topic.sub_topics);
         total += subCounts.total;
         completed += subCounts.completed;
@@ -321,6 +389,12 @@ const EditalPage = () => {
               totalSubjectQuestions > 0
                 ? Math.round((totalSubjectCompleted / totalSubjectQuestions) * 100)
                 : 0;
+            const subjScoreObj = computeSubjectScore({
+              subjectName: subject.subject,
+              topics: subject.topics || [],
+              studyRecords: studyRecords || [],
+              simuladoRecords: simuladoRecords || [],
+            });
             const isExpanded = !!expandedSubjects[subjectIndex];
 
             return (
@@ -339,9 +413,17 @@ const EditalPage = () => {
                       style={{ backgroundColor: subjectColor }}
                     />
                     <div className="min-w-0">
-                      <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">
-                        {subject.subject}
-                      </h2>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h2 className="text-base font-bold text-slate-900 dark:text-white truncate">
+                          {subject.subject}
+                        </h2>
+                        {subjScoreObj.topicsEvaluated > 0 && (
+                          <span className="px-2 py-0.5 rounded-lg text-[10px] font-extrabold bg-emerald-500/10 text-emerald-500 border border-emerald-500/25">
+                            Score: {subjScoreObj.subjectScore} pts • Retenção:{' '}
+                            {subjScoreObj.subjectRetention}%
+                          </span>
+                        )}
+                      </div>
                       <p className="text-xs text-slate-400">
                         {completedSubjectTopics} de {totalSubjectTopics} tópicos concluídos (
                         {subjectCompletionPercentage}%)

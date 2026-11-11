@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 import { useData } from '../context/DataContext';
 import { useSidebar } from '../context/SidebarContext';
@@ -13,8 +13,15 @@ import {
   Clock,
   Maximize2,
   Minimize2,
-  Sparkles,
 } from 'lucide-react';
+import StopwatchModal from './StopwatchModal';
+import {
+  useGlobalTimer,
+  toggleGlobalTimer,
+  resetGlobalTimer,
+  syncGlobalTimerMetadata,
+} from '../lib/timerStore';
+import { getSubjectTopicOverride } from './TopicQueueSelectorModal';
 
 export default function GlobalFooterTimer() {
   const pathname = usePathname();
@@ -23,42 +30,17 @@ export default function GlobalFooterTimer() {
     currentStudySession,
     setIsRegisterModalOpen,
     setInitialStudyRecord,
+    isStopwatchModalOpen,
+    setIsStopwatchModalOpen,
+    stopwatchTargetDuration,
+    stopwatchModalSubject,
     stats,
     studyCycle,
     sessionProgressMap,
     studyRecords,
   } = useData();
 
-  const [seconds, setSeconds] = useState(0);
-  const [pausedSeconds, setPausedSeconds] = useState(0);
-  const [isRunning, setIsRunning] = useState(false);
-  const [isFocusFullscreen, setIsFocusFullscreen] = useState(false);
-
-  // Cronômetro principal de estudo
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null;
-    if (isRunning) {
-      interval = setInterval(() => {
-        setSeconds((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isRunning]);
-
-  // Cronômetro de tempo em pausa (ativa quando o timer já iniciou mas está pausado)
-  useEffect(() => {
-    let pauseInterval: NodeJS.Timeout | null = null;
-    if (!isRunning && seconds > 0) {
-      pauseInterval = setInterval(() => {
-        setPausedSeconds((prev) => prev + 1);
-      }, 1000);
-    }
-    return () => {
-      if (pauseInterval) clearInterval(pauseInterval);
-    };
-  }, [isRunning, seconds]);
+  const timerState = useGlobalTimer();
 
   // Encontra exatamente o próximo bloco pendente na fila do ciclo
   const activePlanningSession = useMemo(() => {
@@ -75,9 +57,9 @@ export default function GlobalFooterTimer() {
     );
   }, [currentStudySession, studyCycle, sessionProgressMap]);
 
-  const currentSubjectName =
+  const plannedSubjectName =
     activePlanningSession?.subject || 'Selecione uma matéria';
-  const currentSubjectColor =
+  const plannedSubjectColor =
     activePlanningSession?.color || '#10b981';
 
   const remainingBlockMinutes = useMemo(() => {
@@ -88,15 +70,22 @@ export default function GlobalFooterTimer() {
 
   // Encontra o próximo tópico sugerido do edital para a matéria atual
   const suggestedTopic = useMemo(() => {
-    if (!currentSubjectName || currentSubjectName === 'Selecione uma matéria') return '';
+    const subjName = timerState.hasStarted && timerState.subject
+      ? timerState.subject
+      : plannedSubjectName;
+    if (!subjName || subjName === 'Selecione uma matéria') return '';
+
+    const manualOverride = getSubjectTopicOverride(subjName);
+    if (manualOverride) return manualOverride;
+
     const subjData = stats?.editalData?.find(
-      (s) => s.subject?.toLowerCase() === currentSubjectName?.toLowerCase()
+      (s) => s.subject?.toLowerCase() === subjName?.toLowerCase()
     );
     if (!subjData || !subjData.topics) return '';
 
     const completedSet = new Set(
       (studyRecords || [])
-        .filter((r) => r.subject === currentSubjectName && r.teoriaFinalizada)
+        .filter((r) => r.subject === subjName && r.teoriaFinalizada)
         .map((r) => r.topic)
     );
 
@@ -113,13 +102,26 @@ export default function GlobalFooterTimer() {
     };
 
     return findNext(subjData.topics);
-  }, [currentSubjectName, stats?.editalData, studyRecords]);
+  }, [timerState.hasStarted, timerState.subject, plannedSubjectName, stats?.editalData, studyRecords]);
+
+  // Mantém os metadados do timer sincronizados com o bloco atual do planejamento quando o timer está parado
+  useEffect(() => {
+    if (plannedSubjectName && plannedSubjectName !== 'Selecione uma matéria') {
+      syncGlobalTimerMetadata({
+        subject: plannedSubjectName,
+        topic: suggestedTopic,
+        subjectColor: plannedSubjectColor,
+        targetDurationMinutes: remainingBlockMinutes || undefined,
+      });
+    }
+  }, [plannedSubjectName, suggestedTopic, plannedSubjectColor, remainingBlockMinutes]);
 
   if (['/login', '/register'].includes(pathname)) {
     return null;
   }
 
-  const formatTime = (totalSec: number) => {
+  const formatTimeMs = (ms: number) => {
+    const totalSec = Math.max(0, Math.floor(ms / 1000));
     const hrs = Math.floor(totalSec / 3600);
     const mins = Math.floor((totalSec % 3600) / 60);
     const secs = totalSec % 60;
@@ -127,6 +129,25 @@ export default function GlobalFooterTimer() {
       secs
     ).padStart(2, '0')}`;
   };
+
+  // Exibe na barra inferior exatamente o mesmo relógio do Modo Foco (regressivo se estiver em modo timer ativo, ou progressivo)
+  const displayMs =
+    timerState.mode === 'timer' && timerState.targetDurationMs > 0 && timerState.hasStarted
+      ? Math.max(0, timerState.targetDurationMs - timerState.elapsedMs)
+      : timerState.elapsedMs;
+
+  const currentSubjectName =
+    timerState.hasStarted && timerState.subject
+      ? timerState.subject
+      : plannedSubjectName;
+  const currentSubjectColor =
+    timerState.hasStarted && timerState.subjectColor
+      ? timerState.subjectColor
+      : plannedSubjectColor;
+  const currentTopicName =
+    timerState.hasStarted && timerState.topic
+      ? timerState.topic
+      : suggestedTopic;
 
   // Calcula o tempo estudado hoje (data local YYYY-MM-DD)
   const now = new Date();
@@ -140,138 +161,44 @@ export default function GlobalFooterTimer() {
   const todayHours = Math.floor(todayTotalStudyMinutes / 60);
   const todayMins = todayTotalStudyMinutes % 60;
 
-  const handleToggleTimer = () => {
-    setIsRunning((prev) => !prev);
-  };
+  const handleOpenRegister = (customElapsedMs?: number, customSubj?: string, customTop?: string) => {
+    const elapsedMs =
+      customElapsedMs !== undefined ? customElapsedMs : Math.max(0, timerState.elapsedMs);
+    const finalSubj =
+      customSubj ||
+      (currentSubjectName !== 'Selecione uma matéria' ? currentSubjectName : '');
+    const finalTopic = customTop || currentTopicName || '';
 
-  const handleResetTimer = () => {
-    setIsRunning(false);
-    setSeconds(0);
-    setPausedSeconds(0);
-  };
+    resetGlobalTimer();
+    setIsStopwatchModalOpen(false);
 
-  const handleOpenRegister = () => {
-    setIsRunning(false);
-    setIsFocusFullscreen(false);
-    const elapsedMs = seconds > 0 ? seconds * 1000 : 0;
     if (setInitialStudyRecord) {
       setInitialStudyRecord({
         subjectId: activePlanningSession?.subjectId || '',
-        subject: currentSubjectName !== 'Selecione uma matéria' ? currentSubjectName : '',
-        topic: suggestedTopic || '',
+        subject: finalSubj,
+        topic: finalTopic,
         studyTime: elapsedMs,
         date: todayStr,
         category: 'teoria',
         countInPlanning: true,
       });
     }
-    setSeconds(0);
-    setPausedSeconds(0);
     setIsRegisterModalOpen(true);
   };
 
   return (
     <>
-      {/* Modo Foco em Tela Cheia */}
-      {isFocusFullscreen && (
-        <div className="fixed inset-0 z-50 bg-[#f8fafc] dark:bg-[#0b1320] flex flex-col justify-between p-6 sm:p-10 animate-fadeIn">
-          {/* Topo Modo Foco */}
-          <div className="max-w-5xl w-full mx-auto flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md"
-                style={{ backgroundColor: currentSubjectColor }}
-              >
-                <BookOpen size={18} />
-              </div>
-              <div>
-                <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-500 block">
-                  Modo Foco • Tela Cheia
-                </span>
-                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white">
-                  {currentSubjectName}
-                </h2>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setIsFocusFullscreen(false)}
-              className="flex items-center gap-2 px-4 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-bold text-slate-700 dark:text-slate-200 hover:border-emerald-500 transition-colors"
-            >
-              <Minimize2 size={15} />
-              Minimizar para Barra
-            </button>
-          </div>
-
-          {/* Centro: Relógio Gigante */}
-          <div className="max-w-3xl w-full mx-auto text-center space-y-6 my-auto">
-            {suggestedTopic && (
-              <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/25 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
-                <Sparkles size={14} />
-                <span>Tópico sugerido: {suggestedTopic}</span>
-              </div>
-            )}
-
-            <div className="py-12 px-8 rounded-3xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] shadow-2xl relative overflow-hidden">
-              <div className="text-6xl sm:text-8xl font-mono font-black tracking-wider text-slate-900 dark:text-emerald-400">
-                {formatTime(seconds)}
-              </div>
-
-              <div className="mt-4 flex items-center justify-center gap-4 flex-wrap">
-                {remainingBlockMinutes !== null && (
-                  <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">
-                    Meta restante do bloco: <strong>{remainingBlockMinutes} min</strong>
-                  </span>
-                )}
-                {!isRunning && seconds > 0 && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-mono font-bold animate-pulse">
-                    Pausado há {formatTime(pausedSeconds)}
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Controles Principais */}
-            <div className="flex items-center justify-center gap-4">
-              <button
-                onClick={handleToggleTimer}
-                className={`inline-flex items-center gap-2.5 px-8 py-4 rounded-2xl text-sm font-extrabold shadow-lg transition-all ${
-                  isRunning
-                    ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 shadow-amber-500/20'
-                    : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-emerald-500/25'
-                }`}
-              >
-                {isRunning ? <Pause size={20} /> : <Play size={20} />}
-                {isRunning ? 'Pausar Cronômetro' : seconds > 0 ? 'Retomar Estudo' : 'Iniciar Estudo'}
-              </button>
-
-              {seconds > 0 && (
-                <button
-                  onClick={handleResetTimer}
-                  className="p-4 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-slate-500 hover:text-rose-500 transition-colors"
-                  title="Zerar cronômetro"
-                >
-                  <RotateCcw size={18} />
-                </button>
-              )}
-
-              <button
-                onClick={handleOpenRegister}
-                className="inline-flex items-center gap-2 px-6 py-4 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-extrabold shadow-lg shadow-indigo-500/25 transition-all"
-              >
-                <CheckCircle2 size={18} />
-                Concluir e Registrar Estudo
-              </button>
-            </div>
-          </div>
-
-          {/* Rodapé Modo Foco */}
-          <div className="max-w-5xl w-full mx-auto flex items-center justify-between text-xs text-slate-400">
-            <span>Acumulado hoje: {todayHours}h{todayMins > 0 ? `${todayMins}m` : '00m'}</span>
-            <span>Pressione Minimizar para continuar navegando com o timer no rodapé</span>
-          </div>
-        </div>
-      )}
+      {/* Modo Foco Sincronizado (StopwatchModal Global) */}
+      <StopwatchModal
+        isOpen={isStopwatchModalOpen}
+        onClose={() => setIsStopwatchModalOpen(false)}
+        onSaveAndClose={(time, subject, topic) => {
+          handleOpenRegister(time, subject, topic);
+        }}
+        targetDuration={stopwatchTargetDuration || remainingBlockMinutes || 45}
+        subject={stopwatchModalSubject || (currentSubjectName !== 'Selecione uma matéria' ? currentSubjectName : '')}
+        initialTopic={currentTopicName}
+      />
 
       {/* Barra Persistente no Rodapé */}
       <footer
@@ -280,7 +207,7 @@ export default function GlobalFooterTimer() {
         } z-40 bg-white/95 dark:bg-[#0c1421]/95 backdrop-blur-md border-t border-slate-200 dark:border-[#1a293e] px-4 py-2.5 shadow-lg transition-all duration-300`}
       >
         <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
-          {/* Lado Esquerdo: Disciplina sugerida pelo Planejamento */}
+          {/* Lado Esquerdo: Disciplina sugerida pelo Planejamento / em estudo */}
           <div className="flex items-center gap-3 min-w-0">
             <div
               className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold text-xs shadow-sm flex-shrink-0"
@@ -291,7 +218,7 @@ export default function GlobalFooterTimer() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold tracking-wider text-emerald-600 dark:text-emerald-400 uppercase">
-                  Pelo Planejamento
+                  {timerState.hasStarted ? 'Em Estudo' : 'Pelo Planejamento'}
                 </span>
                 {remainingBlockMinutes !== null && (
                   <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
@@ -305,37 +232,41 @@ export default function GlobalFooterTimer() {
             </div>
           </div>
 
-          {/* Centro: Relógio, Tempo em Pausa e Controles */}
+          {/* Centro: Relógio Sincronizado, Tempo em Pausa e Controles */}
           <div className="flex items-center gap-2 sm:gap-3">
             <div className="font-mono text-lg sm:text-2xl font-bold tracking-wider text-slate-900 dark:text-emerald-400 bg-slate-100 dark:bg-[#131f33] px-3 py-1 rounded-lg border border-slate-200 dark:border-[#1f304a] shadow-inner">
-              {formatTime(seconds)}
+              {formatTimeMs(displayMs)}
             </div>
 
-            {!isRunning && seconds > 0 && (
+            {!timerState.isRunning && timerState.hasStarted && timerState.elapsedMs > 0 && (
               <div
                 className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-mono font-bold"
                 title="Tempo em pausa"
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
-                Pausa: {formatTime(pausedSeconds)}
+                Pausa: {formatTimeMs(timerState.pausedMs)}
               </div>
             )}
 
             <button
-              onClick={handleToggleTimer}
+              onClick={toggleGlobalTimer}
               className={`p-2.5 rounded-full transition-all shadow-md flex items-center justify-center ${
-                isRunning
+                timerState.isRunning
                   ? 'bg-amber-500 hover:bg-amber-600 text-slate-950'
                   : 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 hover:scale-105'
               }`}
-              title={isRunning ? 'Pausar' : 'Iniciar'}
+              title={timerState.isRunning ? 'Pausar' : 'Iniciar'}
             >
-              {isRunning ? <Pause size={18} /> : <Play size={18} className="translate-x-0.5" />}
+              {timerState.isRunning ? (
+                <Pause size={18} />
+              ) : (
+                <Play size={18} className="translate-x-0.5" />
+              )}
             </button>
 
-            {seconds > 0 && (
+            {timerState.elapsedMs > 0 && (
               <button
-                onClick={handleResetTimer}
+                onClick={resetGlobalTimer}
                 className="p-2 text-slate-400 hover:text-rose-500 dark:text-slate-400 dark:hover:text-rose-400 transition-colors"
                 title="Zerar cronômetro"
               >
@@ -344,15 +275,19 @@ export default function GlobalFooterTimer() {
             )}
 
             <button
-              onClick={() => setIsFocusFullscreen(true)}
+              onClick={() => setIsStopwatchModalOpen(!isStopwatchModalOpen)}
               className="p-2 rounded-xl bg-slate-100 dark:bg-[#131f33] hover:bg-emerald-500/15 text-slate-600 dark:text-slate-300 hover:text-emerald-500 border border-slate-200 dark:border-[#1f304a] transition-colors"
-              title="Expandir Cronômetro em Tela Cheia (Modo Foco)"
+              title={
+                isStopwatchModalOpen
+                  ? 'Minimizar Modo Foco'
+                  : 'Abrir Cronômetro em Modo Foco'
+              }
             >
-              <Maximize2 size={15} />
+              {isStopwatchModalOpen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
 
             <button
-              onClick={handleOpenRegister}
+              onClick={() => handleOpenRegister()}
               className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500 text-emerald-600 dark:text-emerald-400 hover:text-slate-950 border border-emerald-500/30 text-xs font-bold transition-all"
             >
               <CheckCircle2 size={15} />

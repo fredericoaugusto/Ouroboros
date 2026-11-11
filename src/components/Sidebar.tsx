@@ -67,7 +67,7 @@ const Sidebar = () => {
           isSidebarExpanded ? 'translate-x-0' : '-translate-x-full'
         } bg-white dark:bg-[#0c1421] text-slate-700 dark:text-slate-200 w-64 border-r border-slate-200 dark:border-[#1a293e] transition-transform duration-300 ease-in-out z-50 flex flex-col shadow-xl`}
       >
-        {/* Cabeçalho da Sidebar: Alexandria */}
+        {/* Cabeçalho da Sidebar: Krono */}
         <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-[#1a293e]">
           <Link href="/dashboard" onClick={handleNavClick} className="flex items-center gap-2.5 group">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md shadow-emerald-500/20 group-hover:scale-105 transition-transform">
@@ -85,10 +85,10 @@ const Sidebar = () => {
             </div>
             <div>
               <span className="font-extrabold text-base tracking-tight text-slate-900 dark:text-white block leading-tight">
-                Alexandria
+                Krono
               </span>
               <span className="text-[10px] font-semibold text-emerald-600 dark:text-emerald-400 tracking-wider uppercase">
-                Acervo & Estudos
+                Ciclos & Estudos
               </span>
             </div>
           </Link>
