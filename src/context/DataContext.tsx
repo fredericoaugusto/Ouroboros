@@ -490,38 +490,67 @@ const calculateStats = async (
   });
 
   let totalDaysSinceFirstRecord = 0, failedStudyDays = 0, studyConsistencyPercentage = 0;
-  const allStudiedDays = new Set(studyRecords.map(r => r.date));
+  const MIN_DAILY_STUDY_MS = 30 * 60 * 1000; // Mínimo de 30 minutos por dia para contabilizar na constância
+  const totalMsByDate: { [dateStr: string]: number } = {};
+  studyRecords.forEach(r => {
+    if (r.date) {
+      totalMsByDate[r.date] = (totalMsByDate[r.date] || 0) + (r.studyTime || 0);
+    }
+  });
+  const allStudiedDays = new Set(
+    Object.keys(totalMsByDate).filter(dateStr => totalMsByDate[dateStr] >= MIN_DAILY_STUDY_MS)
+  );
+
+  const parseLocalDate = (dateStr: string) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(y, (m || 1) - 1, d || 1, 0, 0, 0, 0);
+  };
+
+  const formatLocalDate = (d: Date) => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
 
   if (allStudiedDays.size > 0) {
-    const sortedDates = Array.from(allStudiedDays).map(d => new Date(d)).sort((a, b) => a.getTime() - b.getTime());
+    const sortedDates = Array.from(allStudiedDays).map(parseLocalDate).sort((a, b) => a.getTime() - b.getTime());
     const firstDay = sortedDates[0];
     const lastDay = new Date();
     lastDay.setHours(0, 0, 0, 0);
     if (lastDay >= firstDay) {
-      totalDaysSinceFirstRecord = Math.ceil((lastDay.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+      totalDaysSinceFirstRecord = Math.round((lastDay.getTime() - firstDay.getTime()) / (1000 * 60 * 60 * 24)) + 1;
       let missedStudyDays = 0;
       const dayNameToNum: { [key: string]: number } = { 'Domingo': 0, 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 };
       const studyDayNums = new Set(studyDays.map(d => dayNameToNum[d]));
+      const todayStr = formatLocalDate(lastDay);
       for (let d = new Date(firstDay); d <= lastDay; d.setDate(d.getDate() + 1)) {
-        const year = d.getFullYear();
-        const month = String(d.getMonth() + 1).padStart(2, '0');
-        const day = String(d.getDate()).padStart(2, '0');
-        const dateStr = `${year}-${month}-${day}`;
-        if (studyDayNums.has(d.getDay()) && !allStudiedDays.has(dateStr)) missedStudyDays++;
+        const dateStr = formatLocalDate(d);
+        // Não penaliza o dia de hoje enquanto ainda está em andamento
+        if (dateStr !== todayStr && studyDayNums.has(d.getDay()) && !allStudiedDays.has(dateStr)) {
+          missedStudyDays++;
+        }
       }
       failedStudyDays = missedStudyDays;
       if (totalDaysSinceFirstRecord > 0) {
         const totalScheduledDays = Array.from({ length: totalDaysSinceFirstRecord }, (_, i) => {
           const d = new Date(firstDay); d.setDate(d.getDate() + i); return d;
         }).filter(d => studyDayNums.has(d.getDay())).length;
-        studyConsistencyPercentage = totalScheduledDays > 0 ? (allStudiedDays.size / totalScheduledDays) * 100 : 100;
+        studyConsistencyPercentage = totalScheduledDays > 0 ? Math.min(100, (allStudiedDays.size / totalScheduledDays) * 100) : 100;
       }
     }
   }
 
-  const dates = studyRecords.map(r => new Date(r.date));
-  const firstStudyDate = dates.length > 0 ? new Date(Math.min.apply(null, dates.map(d => d.getTime()))) : null;
-  const today = new Date();
+  const allRecordDates = studyRecords.filter(r => r.date).map(r => parseLocalDate(r.date));
+  const firstStudyDate = allRecordDates.length > 0 ? new Date(Math.min(...allRecordDates.map(d => d.getTime()))) : null;
+  const validStudiedDates = Array.from(allStudiedDays).map(parseLocalDate);
+  const firstValidStudyDate = validStudiedDates.length > 0 ? new Date(Math.min(...validStudiedDates.map(d => d.getTime()))) : firstStudyDate;
+
+  const todayReal = new Date();
+  todayReal.setHours(0, 0, 0, 0);
+  const todayRealStr = formatLocalDate(todayReal);
+
+  const today = new Date(todayReal);
   today.setDate(today.getDate() - (consistencyOffset * 30));
   const consistencyEndDate = new Date(today);
   const consistencyStartDate = new Date(today);
@@ -529,35 +558,58 @@ const calculateStats = async (
 
   const consistencyDaysData: any[] = [];
   let consecutiveDays = 0;
-  if (firstStudyDate) {
-    const dayNameToNum: { [key: string]: number } = { 'Domingo': 0, 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 };
-    const studyDayNums = new Set(studyDays.map(d => dayNameToNum[d]));
-    if (consistencyOffset === 0) {
-      for (let i = 0; i < 30; i++) {
-        const d = new Date(); d.setDate(d.getDate() - i); d.setHours(0, 0, 0, 0);
-        if (d < firstStudyDate) break;
-        const dateStr = d.toISOString().split('T')[0];
-        if (studyDayNums.has(d.getDay())) {
-          if (allStudiedDays.has(dateStr)) consecutiveDays++;
-          else break;
-        } else consecutiveDays++;
+  const dayNameToNum: { [key: string]: number } = { 'Domingo': 0, 'Segunda': 1, 'Terça': 2, 'Quarta': 3, 'Quinta': 4, 'Sexta': 5, 'Sábado': 6 };
+  const studyDayNums = new Set(studyDays.map(d => dayNameToNum[d]));
+
+  if (firstValidStudyDate && allStudiedDays.size > 0) {
+    // Calcula dias seguidos preservando a ofensiva de ontem caso hoje ainda não tenha atingido 30m
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(todayReal);
+      d.setDate(todayReal.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      const dateStr = formatLocalDate(d);
+
+      if (allStudiedDays.has(dateStr)) {
+        consecutiveDays++;
+      } else if (i === 0) {
+        // Hoje ainda não atingiu 30 minutos: não zera a ofensiva acumulada até ontem
+        continue;
+      } else {
+        if (d < firstValidStudyDate) break;
+        if (!studyDayNums.has(d.getDay())) {
+          // Dia de descanso configurado: não quebra a ofensiva, mas não soma dia falso
+          continue;
+        }
+        // Dia de estudo passado sem atingir 30 minutos: encerra a contagem da ofensiva
+        break;
       }
     }
-    for (let i = 29; i >= 0; i--) {
-      const d = new Date(today); d.setDate(today.getDate() - i); d.setHours(0, 0, 0, 0);
-      const isActive = d >= firstStudyDate;
-      
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const dateStr = `${year}-${month}-${day}`;
+  }
 
-      const isStudyDay = studyDayNums.has(d.getDay());
-      const studied = allStudiedDays.has(dateStr);
-      let status = 'inactive';
-      if (isActive) status = isStudyDay ? (studied ? 'studied' : 'failed') : 'rest';
-      consistencyDaysData.push({ date: dateStr, status, active: isActive });
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(today.getDate() - i);
+    d.setHours(0, 0, 0, 0);
+    const dateStr = formatLocalDate(d);
+    const dayMs = totalMsByDate[dateStr] || 0;
+    const isActive = firstStudyDate ? d >= firstStudyDate : dayMs > 0;
+    const isStudyDay = studyDayNums.has(d.getDay());
+    const studied = allStudiedDays.has(dateStr);
+
+    let status = 'inactive';
+    if (studied) {
+      status = 'studied';
+    } else if (dateStr === todayRealStr) {
+      status = dayMs > 0 ? 'partial' : 'pending_today';
+    } else if (isActive) {
+      status = isStudyDay ? 'failed' : 'rest';
     }
+    consistencyDaysData.push({
+      date: dateStr,
+      status,
+      active: isActive || studied || dateStr === todayRealStr,
+      minutesStudied: Math.floor(dayMs / 60000),
+    });
   }
   const isConsistencyPrevDisabled = !firstStudyDate || consistencyStartDate <= firstStudyDate;
   const isConsistencyNextDisabled = consistencyOffset === 0;
@@ -646,6 +698,7 @@ interface DataContextType {
   setStudyCycle: React.Dispatch<React.SetStateAction<StudySession[] | null>>;
   generateStudyCycle: (settings: any) => void;
   resetStudyCycle: () => void;
+  restartStudyCycle: () => void;
   loading: boolean;
   sessionProgressMap: { [key: string]: number };
   setSessionProgressMap: React.Dispatch<React.SetStateAction<{ [key: string]: number }>>;
@@ -1139,22 +1192,22 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
 
     const { numCompletedCycles, progressInCurrentCycle, newSessionProgressMap } = calculateProgressValues(recordsToConsider, studyCycle);
 
-    if (numCompletedCycles > completedCycles) {
+    if (numCompletedCycles > 0) {
       setIsAnimatingCompletion(true);
     } else {
-      // Normal update
-      if (numCompletedCycles < completedCycles) {
-        setCompletedCycles(numCompletedCycles);
-      }
       setCurrentProgressMinutes(progressInCurrentCycle);
       setSessionProgressMap(newSessionProgressMap);
+      const nextIncomplete = studyCycle.find(
+        s => (newSessionProgressMap[s.id as string] || 0) < s.duration
+      ) || null;
+      setCurrentStudySession(nextIncomplete);
     }
   }, [studyRecords, studyCycle, completedCycles, isAnimatingCompletion, cycleGenerationTimestamp]);
 
   // Animation useEffect
   useEffect(() => {
     if (isAnimatingCompletion) {
-      const { numCompletedCycles, progressInCurrentCycle, newSessionProgressMap, totalCycleDuration } = calculateProgressValues(studyRecords, studyCycle);
+      const { totalCycleDuration } = calculateProgressValues(studyRecords, studyCycle);
       
       // 1. Set to 100% and show notification
       setCurrentProgressMinutes(totalCycleDuration);
@@ -1167,13 +1220,14 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       setSessionProgressMap(fullSessionMap);
       showNotification('Parabéns! Você concluiu um ciclo de estudos completo!', 'success');
 
-      // 2. Set timer to end animation and trigger final update
+      // 2. Set timer to end animation and start fresh cycle
       const timer = setTimeout(() => {
-        setCompletedCycles(numCompletedCycles);
-        setCurrentProgressMinutes(progressInCurrentCycle);
-        setSessionProgressMap(newSessionProgressMap);
+        setCompletedCycles(prev => prev + 1);
+        setCycleGenerationTimestamp(Date.now());
+        setCurrentProgressMinutes(0);
+        setSessionProgressMap({});
         setIsAnimatingCompletion(false);
-      }, 2000);
+      }, 1500);
 
       return () => clearTimeout(timer);
     }
@@ -1460,10 +1514,21 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     setSessionProgressMap({});
     setCurrentProgressMinutes(0);
     setCompletedCycles(0);
-    setCycleGenerationTimestamp(null); // Adicionado para limpar o timestamp
+    setCycleGenerationTimestamp(null);
     setStudyDays(['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta']);
     showNotification('Planejamento removido. Você pode criar um novo ciclo.', 'success');
   }, [selectedDataFile, showNotification]);
+
+  const restartStudyCycle = useCallback(() => {
+    setCompletedCycles(prev => prev + 1);
+    setCycleGenerationTimestamp(Date.now());
+    setSessionProgressMap({});
+    setCurrentProgressMinutes(0);
+    if (studyCycle && studyCycle.length > 0) {
+      setCurrentStudySession(studyCycle[0]);
+    }
+    showNotification('Ciclo reiniciado! Contabilizado +1 em Ciclos Completos.', 'success');
+  }, [studyCycle, showNotification]);
 
   const handleConsistencyNav = useCallback((direction: number) => {
     setConsistencyOffset(prev => prev + direction);
@@ -1770,7 +1835,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       studyRecords, reviewRecords, simuladoRecords, stats, addStudyRecord,
       addSimuladoRecord, updateStudyRecord, deleteStudyRecord, updateReviewRecord,
       updateSimuladoRecord, deleteSimuladoRecord, applyFilters, studyCycle,
-      setStudyCycle, generateStudyCycle, resetStudyCycle, handleConsistencyNav,
+      setStudyCycle, generateStudyCycle, resetStudyCycle, restartStudyCycle, handleConsistencyNav,
       loading, sessionProgressMap, setSessionProgressMap, completedCycles,
       setCompletedCycles, currentProgressMinutes, setCurrentProgressMinutes,
       currentStudySession, setCurrentStudySession, isRegisterModalOpen,

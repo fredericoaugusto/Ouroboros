@@ -53,16 +53,20 @@ const StudyConsistencyTracker = ({
   };
 
   const getTooltipText = (day: any) => {
-    const date = new Date(day.date);
-    date.setDate(date.getDate() + 1);
+    const [y, m, d] = (day.date || '').split('-').map(Number);
+    const date = y ? new Date(y, m - 1, d) : new Date(day.date);
     const formattedDate = date.toLocaleDateString('pt-BR', {
       weekday: 'short',
       day: 'numeric',
       month: 'short',
     });
-    let statusText = 'Não estudado';
-    if (day.status === 'studied') statusText = 'Estudado';
-    if (day.status === 'rest') statusText = 'Dia de folga';
+    const mins = day.minutesStudied || 0;
+    let statusText = 'Não estudado (mín. 30min)';
+    if (day.status === 'studied') statusText = `Estudado (${mins}min)`;
+    else if (day.status === 'partial') statusText = `Em andamento: ${mins}min / 30min mínimos`;
+    else if (day.status === 'pending_today') statusText = 'Hoje (mín. 30min para validar)';
+    else if (day.status === 'rest') statusText = 'Dia de folga';
+    else if (day.status === 'failed' && mins > 0) statusText = `Incompleto (${mins}min / 30min)`;
     return `${formattedDate}: ${statusText}`;
   };
 
@@ -70,12 +74,20 @@ const StudyConsistencyTracker = ({
     <div className="bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl p-5 shadow-sm">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-4">
         <div>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
-            Constância nos Estudos
-          </h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+              Constância nos Estudos
+            </h2>
+            <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 dark:bg-[#0c1421] text-slate-500 dark:text-slate-400 border border-slate-200 dark:border-[#1f304a]">
+              mín. 30min/dia
+            </span>
+          </div>
           <p className="text-xs text-slate-600 dark:text-slate-300 mt-1 flex items-center gap-1.5">
             <Flame size={15} className="text-amber-500 fill-amber-500" />
-            <strong className="text-emerald-500 font-bold">{consecutiveDays || 0} dias seguidos.</strong> Continue firme na rotina!
+            <strong className="text-emerald-500 font-bold">
+              {consecutiveDays || 0} {consecutiveDays === 1 ? 'dia seguido.' : 'dias seguidos.'}
+            </strong>{' '}
+            Continue firme na rotina!
           </p>
         </div>
 
@@ -102,20 +114,24 @@ const StudyConsistencyTracker = ({
 
       <div className="grid grid-cols-10 sm:grid-cols-15 gap-2">
         {daysData.map((day: any, index: number) => {
-          const isStudied = day.active && day.status === 'studied';
+          const isStudied = day.status === 'studied';
+          const isPartial = day.status === 'partial';
           const isFailed = day.active && day.status === 'failed';
           return (
             <div key={index} className="relative group flex justify-center">
               <div
                 className={`w-full h-8 rounded-lg flex items-center justify-center border transition-all ${
                   isStudied
-                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-500'
+                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-500 shadow-sm shadow-emerald-500/5'
+                    : isPartial
+                    ? 'bg-emerald-500/5 border-emerald-500/30 border-dashed text-emerald-500/70'
                     : isFailed
                     ? 'bg-rose-500/10 border-rose-500/25 text-rose-400'
                     : 'bg-slate-100 dark:bg-[#0c1421] border-slate-200 dark:border-[#1a293e] text-slate-400'
                 }`}
               >
                 {isStudied && <Check size={14} strokeWidth={3} />}
+                {isPartial && <span className="text-[9px] font-bold">{day.minutesStudied}m</span>}
               </div>
               <div className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 w-max px-2.5 py-1 bg-slate-900 text-white text-[11px] rounded-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-20 shadow-lg">
                 {getTooltipText(day)}
@@ -213,6 +229,7 @@ export default function DashboardPage() {
     weeklyQuestionsGoal,
     isRegisterModalOpen,
     setIsRegisterModalOpen,
+    setInitialStudyRecord,
   } = useData();
 
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -257,7 +274,10 @@ export default function DashboardPage() {
             Importar Edital IA
           </button>
           <button
-            onClick={() => setIsRegisterModalOpen(true)}
+            onClick={() => {
+              setInitialStudyRecord(null);
+              setIsRegisterModalOpen(true);
+            }}
             className="flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shadow-lg shadow-emerald-500/20 transition-all"
           >
             <Plus size={15} strokeWidth={2.5} />
@@ -462,14 +482,7 @@ export default function DashboardPage() {
         </div>
       </div>
 
-      {/* Modais */}
-      <StudyRegisterModal
-        isOpen={isRegisterModalOpen}
-        onClose={() => setIsRegisterModalOpen(false)}
-        onSave={handleSave}
-        showDeleteButton={false}
-      />
-
+      {/* Modal de Importação via IA */}
       <ImportEditalModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}

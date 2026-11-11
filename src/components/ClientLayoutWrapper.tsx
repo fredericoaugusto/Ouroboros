@@ -33,6 +33,7 @@ export default function ClientLayoutWrapper({
   const {
     isRegisterModalOpen,
     setIsRegisterModalOpen,
+    setIsStopwatchModalOpen,
     initialStudyRecord,
     setInitialStudyRecord,
     addStudyRecord,
@@ -53,6 +54,12 @@ export default function ClientLayoutWrapper({
     );
   }, []);
 
+  // Fecha automaticamente overlays full-page ao mudar de rota
+  useEffect(() => {
+    setIsRegisterModalOpen(false);
+    setIsStopwatchModalOpen(false);
+  }, [pathname, setIsRegisterModalOpen, setIsStopwatchModalOpen]);
+
   useEffect(() => {
     const publicPaths = ['/login', '/register'];
     if (status === 'unauthenticated' && !publicPaths.includes(pathname)) {
@@ -69,17 +76,28 @@ export default function ClientLayoutWrapper({
         <div className="flex items-center gap-3 text-emerald-500">
           <div className="w-5 h-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
           <p className="text-sm font-semibold text-slate-700 dark:text-slate-200">
-            Carregando Ouroboros 2.0...
+            Carregando Alexandria...
           </p>
         </div>
       </div>
     );
   }
 
-  if (status === 'authenticated' || ['/login', '/register'].includes(pathname)) {
+  const isAuthPage = ['/login', '/register'].includes(pathname);
+
+  if (status === 'authenticated' || isAuthPage) {
     return (
       <>
-        {children}
+        <div
+          key={pathname}
+          className={
+            isAuthPage
+              ? 'animate-fadeIn'
+              : 'max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 animate-fadeIn'
+          }
+        >
+          {children}
+        </div>
         {isRegisterModalOpen && (
           <StudyRegisterModal
             isOpen={isRegisterModalOpen}
@@ -88,7 +106,7 @@ export default function ClientLayoutWrapper({
               setInitialStudyRecord(null);
             }}
             initialRecord={initialStudyRecord}
-            onSave={record => {
+            onSave={(record) => {
               if (record.id) {
                 updateStudyRecord(record);
               } else {

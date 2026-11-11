@@ -6,7 +6,20 @@
 
 .draggable-region {
   -webkit-app-region: drag;
-  background-color: var(--title-bar-bg);
+  background-color: transparent;
+}
+
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-fadeIn {
+  animation: pageFadeIn 0.22s ease-out forwards;
 }
 
 body {

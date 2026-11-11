@@ -2,7 +2,8 @@
 
 import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
-import { Play, Pause, RotateCcw, CheckCircle2, Sparkles, X, Timer } from 'lucide-react';
+import Breadcrumbs from './Breadcrumbs';
+import { Play, Pause, RotateCcw, CheckCircle2, Sparkles, ArrowLeft, Timer } from 'lucide-react';
 
 interface StopwatchModalProps {
   isOpen: boolean;
@@ -34,6 +35,8 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
     targetDuration > 0 ? 'timer' : 'cronometro'
   );
   const [time, setTime] = useState(0); // ms
+  const [pausedMs, setPausedMs] = useState(0); // ms em pausa
+  const [hasStarted, setHasStarted] = useState(false);
   const [isRunning, setIsRunning] = useState(false);
   const [initialTimerTime, setInitialTimerTime] = useState(0);
   const [selectedSubject, setSelectedSubject] = useState<string>(initialSubject || '');
@@ -69,11 +72,13 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
         setTime(0);
         setInitialTimerTime(0);
       }
+      setPausedMs(0);
+      setHasStarted(false);
       setIsRunning(false);
     }
   }, [isOpen, initialSubject, initialTopic, targetDuration]);
 
-  // Browser & Electron compatible interval
+  // Cronômetro Principal
   useEffect(() => {
     if (!isOpen || !isRunning) return;
 
@@ -94,6 +99,17 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
     return () => clearInterval(interval);
   }, [isOpen, isRunning, mode]);
 
+  // Cronômetro de Pausa
+  useEffect(() => {
+    if (!isOpen || isRunning || !hasStarted) return;
+
+    const pauseInterval = setInterval(() => {
+      setPausedMs((prev) => prev + 1000);
+    }, 1000);
+
+    return () => clearInterval(pauseInterval);
+  }, [isOpen, isRunning, hasStarted]);
+
   const formatTime = (ms: number) => {
     const totalSeconds = Math.max(0, Math.floor(ms / 1000));
     const hours = Math.floor(totalSeconds / 3600);
@@ -107,7 +123,7 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
   const handleSave = () => {
     setIsRunning(false);
     const elapsedMs =
-      mode === 'timer' ? Math.max(60000, initialTimerTime - time) : Math.max(60000, time);
+      mode === 'timer' ? Math.max(0, initialTimerTime - time) : Math.max(0, time);
     onSaveAndClose(elapsedMs, selectedSubject, selectedTopic);
   };
 
@@ -118,6 +134,10 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
       return progress < session.duration;
     });
     if (nextSession) {
+      const remainingMin = Math.max(
+        1,
+        Math.round(nextSession.duration - (sessionProgressMap[nextSession.id as string] || 0))
+      );
       const { recommendedTopic } = getRecommendedSession({
         forceSubject: nextSession.subject,
       });
@@ -126,9 +146,11 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
         setSelectedTopic(recommendedTopic.topic);
       }
       setMode('timer');
-      const ms = nextSession.duration * 60 * 1000;
+      const ms = remainingMin * 60 * 1000;
       setTime(ms);
       setInitialTimerTime(ms);
+      setPausedMs(0);
+      setHasStarted(false);
     }
   };
 
@@ -154,188 +176,220 @@ const StopwatchModal: React.FC<StopwatchModalProps> = ({
       : 100;
 
   return (
-    <div className="fixed inset-0 bg-black/80 backdrop-blur-md flex justify-center items-center z-50 p-4 animate-fadeIn">
-      <div className="w-full max-w-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl shadow-2xl overflow-hidden flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
-              <Timer className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-base font-bold text-slate-900 dark:text-white">
-                Cronômetro de Estudo
-              </h2>
-              <p className="text-xs text-slate-400">
-                Ao finalizar, o tópico sugerido já virá preenchido no registro
-              </p>
-            </div>
-          </div>
-
+    <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-40 overflow-y-auto p-4 sm:p-6 lg:p-8 animate-fadeIn">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-center justify-between mb-4">
+          <Breadcrumbs
+            items={[
+              { label: 'Planejamento', onClick: onClose },
+              ...(selectedSubject ? [{ label: selectedSubject, onClick: onClose }] : []),
+              { label: 'Modo Foco (Cronômetro)' },
+            ]}
+            className="mb-0"
+          />
           <button
             onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-white"
+            className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl border border-slate-200 dark:border-[#1f304a] bg-white dark:bg-[#131f33] text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942] transition-colors"
           >
-            <X className="w-5 h-5" />
+            <ArrowLeft size={14} />
+            Voltar
           </button>
         </div>
 
-        {/* Body */}
-        <div className="p-6 space-y-6">
-          {/* Mode Switcher */}
-          <div className="flex items-center justify-between gap-2">
-            <div className="inline-flex rounded-xl bg-slate-100 dark:bg-[#0b1320] p-1">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRunning(false);
-                  setMode('cronometro');
-                  setTime(0);
-                }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  mode === 'cronometro'
-                    ? 'bg-emerald-500 text-white'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Cronômetro Livre
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsRunning(false);
-                  setMode('timer');
-                  const ms = (targetDuration > 0 ? targetDuration : 45) * 60 * 1000;
-                  setTime(ms);
-                  setInitialTimerTime(ms);
-                }}
-                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
-                  mode === 'timer'
-                    ? 'bg-emerald-500 text-white'
-                    : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
-                }`}
-              >
-                Timer Regressivo
-              </button>
-            </div>
-
-            <button
-              type="button"
-              onClick={handleSuggestNext}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              Sugerir do Ciclo
-            </button>
-          </div>
-
-          {/* Subject & Topic Selectors */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Disciplina
-              </label>
-              <select
-                value={selectedSubject}
-                onChange={(e) => {
-                  setSelectedSubject(e.target.value);
-                  setSelectedTopic('');
-                }}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-semibold text-slate-900 dark:text-white"
-              >
-                <option value="">Selecione a disciplina...</option>
-                {subjects.map((s: string) => (
-                  <option key={s} value={s}>
-                    {s}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
-                Tópico / Assunto
-              </label>
-              <select
-                value={selectedTopic}
-                onChange={(e) => setSelectedTopic(e.target.value)}
-                disabled={!selectedSubject}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-semibold text-slate-900 dark:text-white disabled:opacity-50"
-              >
-                <option value="">Selecione o tópico...</option>
-                {flatTopicOptions.map((t, i) => (
-                  <option key={`${t}-${i}`} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          {/* Giant Clock Display */}
-          <div className="py-8 rounded-2xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/80 dark:border-[#1f304a] text-center relative overflow-hidden">
-            <div className="text-6xl sm:text-7xl font-mono font-extrabold tracking-wider text-emerald-500">
-              {formatTime(time)}
-            </div>
-            {selectedTopic && (
-              <p className="text-xs text-slate-400 mt-2 px-4 truncate">
-                Estudando: <strong className="text-slate-700 dark:text-slate-200">{selectedTopic}</strong>
-              </p>
-            )}
-            {mode === 'timer' && (
-              <div className="w-full h-1.5 bg-slate-200 dark:bg-[#1a2942] absolute bottom-0 left-0">
-                <div
-                  className="h-full bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${timerProgress}%` }}
-                />
+        <div className="w-full bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl shadow-sm overflow-hidden flex flex-col">
+          {/* Header */}
+          <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 dark:border-[#1f304a] bg-slate-50/50 dark:bg-[#0f1929]/50">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-500">
+                <Timer className="w-5 h-5" />
               </div>
-            )}
+              <div>
+                <h2 className="text-base font-bold text-slate-900 dark:text-white">
+                  Modo Foco • Cronômetro de Estudo
+                </h2>
+                <p className="text-xs text-slate-400">
+                  O tempo exato estudado será enviado automaticamente para o Registro de Estudo
+                </p>
+              </div>
+            </div>
           </div>
 
-          {/* Controls */}
-          <div className="flex items-center justify-center gap-4">
-            <button
-              type="button"
-              onClick={() => setIsRunning(!isRunning)}
-              className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white shadow-lg transition-all ${
-                isRunning
-                  ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
-                  : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
-              }`}
-            >
-              {isRunning ? (
-                <>
-                  <Pause className="w-4 h-4 fill-current" />
-                  Pausar
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4 fill-current" />
-                  Iniciar
-                </>
+          {/* Body */}
+          <div className="p-6 space-y-6">
+            {/* Mode Switcher */}
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <div className="inline-flex rounded-xl bg-slate-100 dark:bg-[#0b1320] p-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRunning(false);
+                    setHasStarted(false);
+                    setPausedMs(0);
+                    setMode('cronometro');
+                    setTime(0);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    mode === 'cronometro'
+                      ? 'bg-emerald-500 text-white'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Cronômetro Progressivo
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsRunning(false);
+                    setHasStarted(false);
+                    setPausedMs(0);
+                    setMode('timer');
+                    const ms = (targetDuration > 0 ? targetDuration : 45) * 60 * 1000;
+                    setTime(ms);
+                    setInitialTimerTime(ms);
+                  }}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-colors ${
+                    mode === 'timer'
+                      ? 'bg-emerald-500 text-white'
+                      : 'text-slate-500 hover:text-slate-800 dark:hover:text-slate-200'
+                  }`}
+                >
+                  Timer Regressivo
+                </button>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSuggestNext}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/10 text-emerald-500 hover:bg-emerald-500/20 border border-emerald-500/20"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Sincronizar com Próximo Bloco
+              </button>
+            </div>
+
+            {/* Subject & Topic Selectors */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Disciplina
+                </label>
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => {
+                    setSelectedSubject(e.target.value);
+                    setSelectedTopic('');
+                  }}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-semibold text-slate-900 dark:text-white"
+                >
+                  <option value="">Selecione a disciplina...</option>
+                  {subjects.map((s: string) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-1">
+                  Tópico / Assunto
+                </label>
+                <select
+                  value={selectedTopic}
+                  onChange={(e) => setSelectedTopic(e.target.value)}
+                  disabled={!selectedSubject}
+                  className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#243552] text-xs font-semibold text-slate-900 dark:text-white disabled:opacity-50"
+                >
+                  <option value="">Selecione o tópico...</option>
+                  {flatTopicOptions.map((t, i) => (
+                    <option key={`${t}-${i}`} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {/* Giant Clock Display */}
+            <div className="py-10 rounded-2xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/80 dark:border-[#1f304a] text-center relative overflow-hidden">
+              <div className="text-6xl sm:text-7xl font-mono font-extrabold tracking-wider text-emerald-500">
+                {formatTime(time)}
+              </div>
+              {selectedTopic && (
+                <p className="text-xs text-slate-400 mt-2 px-4 truncate">
+                  Estudando:{' '}
+                  <strong className="text-slate-700 dark:text-slate-200">{selectedTopic}</strong>
+                </p>
               )}
-            </button>
 
-            <button
-              type="button"
-              onClick={() => {
-                setIsRunning(false);
-                setTime(mode === 'timer' ? initialTimerTime : 0);
-              }}
-              className="p-3 rounded-xl bg-slate-100 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors"
-              title="Reiniciar"
-            >
-              <RotateCcw className="w-4 h-4" />
-            </button>
+              {/* Contador de Tempo em Pausa */}
+              {!isRunning && hasStarted && (
+                <div className="mt-4 inline-flex items-center gap-2 px-3.5 py-1 rounded-full bg-amber-500/15 border border-amber-500/30 text-amber-600 dark:text-amber-400 text-xs font-mono font-bold">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-ping" />
+                  Tempo em pausa: {formatTime(pausedMs)}
+                </div>
+              )}
 
-            <button
-              type="button"
-              onClick={handleSave}
-              className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              Finalizar e Registrar
-            </button>
+              {mode === 'timer' && (
+                <div className="w-full h-1.5 bg-slate-200 dark:bg-[#1a2942] absolute bottom-0 left-0">
+                  <div
+                    className="h-full bg-emerald-500 transition-all duration-500"
+                    style={{ width: `${timerProgress}%` }}
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Controls */}
+            <div className="flex items-center justify-center gap-4 flex-wrap">
+              <button
+                type="button"
+                onClick={() => {
+                  setHasStarted(true);
+                  setIsRunning(!isRunning);
+                }}
+                className={`inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-bold text-white shadow-lg transition-all ${
+                  isRunning
+                    ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
+                    : 'bg-emerald-500 hover:bg-emerald-600 shadow-emerald-500/20'
+                }`}
+              >
+                {isRunning ? (
+                  <>
+                    <Pause className="w-4 h-4 fill-current" />
+                    Pausar
+                  </>
+                ) : (
+                  <>
+                    <Play className="w-4 h-4 fill-current" />
+                    {hasStarted ? 'Retomar' : 'Iniciar'}
+                  </>
+                )}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsRunning(false);
+                  setHasStarted(false);
+                  setPausedMs(0);
+                  setTime(mode === 'timer' ? initialTimerTime : 0);
+                }}
+                className="p-3 rounded-xl bg-slate-100 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300 hover:text-rose-500 transition-colors"
+                title="Reiniciar"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSave}
+                className="inline-flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/20 transition-all"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                Finalizar e Registrar
+              </button>
+            </div>
           </div>
         </div>
       </div>

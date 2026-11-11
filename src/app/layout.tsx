@@ -11,10 +11,10 @@ import { Providers } from "./providers";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Ouroboros",
-  description: "Gerencie seus estudos de forma eficiente",
+  title: "Alexandria • Estudos & Alta Performance",
+  description: "Plataforma inteligente de gestão de estudos, editais e revisões adaptativas",
   icons: {
-    icon: '/icon.svg?v=1',
+    icon: '/icon.svg?v=2',
   },
 };
 
@@ -24,11 +24,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="pt-BR">
       <body
-        className="antialiased"
+        className="antialiased bg-[#f8fafc] dark:bg-[#0b1320]"
       >
-        <div className="h-8 w-full draggable-region" />
         <Providers>
           <SidebarProvider>
             <NotificationProvider>

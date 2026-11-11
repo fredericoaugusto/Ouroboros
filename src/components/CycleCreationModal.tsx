@@ -4,6 +4,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import { updateAllTopicWeightsAction } from '../app/actions';
 import { useNotification } from '../context/NotificationContext';
+import { useSidebar } from '../context/SidebarContext';
 import {
   Wand2,
   Sliders,
@@ -105,6 +106,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
   } = useData();
 
   const { showNotification } = useNotification();
+  const { isSidebarExpanded } = useSidebar();
   const [modalStep, setModalStep] = useState(0);
   const [wizardMode, setWizardMode] = useState<'simple' | 'detailed' | 'manual'>('detailed');
   const [topicSuggestionMode, setTopicSuggestionMode] = useState<'auto' | 'manual'>('auto');
@@ -324,7 +326,11 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
   );
 
   return (
-    <div className="fixed inset-0 lg:left-64 bottom-14 bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8">
+    <div
+      className={`fixed top-0 right-0 bottom-14 ${
+        isSidebarExpanded ? 'lg:left-64 left-0' : 'left-0'
+      } bg-[#f8fafc] dark:bg-[#0b1320] z-30 overflow-y-auto p-4 sm:p-6 lg:p-8 animate-fadeIn transition-all duration-300`}
+    >
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-4">
           <Breadcrumbs
@@ -450,7 +456,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
                   Como você quer montar seu planejamento?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Nos dois caminhos o Ouroboros monta a rotina ideal para você.
+                  Nos dois caminhos o Alexandria monta a rotina ideal para você.
                 </p>
               </div>
 

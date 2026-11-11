@@ -15,9 +15,11 @@ import {
   Sliders,
   Sparkles,
   Clock,
+  HelpCircle,
 } from 'lucide-react';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
 import TopicCockpitModal, { TopicMetadata } from '../../components/TopicCockpitModal';
+import ScoreTutorialModal from '../../components/ScoreTutorialModal';
 import { computeTopicScore, TopicScoreResult } from '../../lib/scoreEngine';
 import { updateTopicDetailsAction } from '../actions';
 import { useNotification } from '../../context/NotificationContext';
@@ -45,6 +47,7 @@ export default function Revisao() {
   const { showNotification } = useNotification();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isTutorialOpen, setIsTutorialOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<StudyRecord | null>(null);
   const [activeTab, setActiveTab] = useState<
     'due' | 'upcoming' | 'all_scores' | 'manual_completed'
@@ -247,16 +250,27 @@ export default function Revisao() {
           </p>
         </div>
 
-        <button
-          onClick={() => {
-            setEditingRecord(null);
-            setIsModalOpen(true);
-          }}
-          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all self-start sm:self-center"
-        >
-          <Plus className="w-4 h-4" />
-          Registrar Revisão Avulsa
-        </button>
+        <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-center">
+          <button
+            type="button"
+            onClick={() => setIsTutorialOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-slate-700 dark:text-slate-200 hover:border-emerald-500/50 hover:text-emerald-500 transition-all shadow-sm"
+          >
+            <HelpCircle className="w-4 h-4 text-emerald-500" />
+            Como funciona o Score?
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingRecord(null);
+              setIsModalOpen(true);
+            }}
+            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500 hover:bg-emerald-600 text-white shadow-lg shadow-emerald-500/20 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            Registrar Revisão Avulsa
+          </button>
+        </div>
       </div>
 
       {/* Summary KPI Cards */}
@@ -577,6 +591,11 @@ export default function Revisao() {
           parentBreadcrumbHref="/revisoes"
         />
       )}
+
+      <ScoreTutorialModal
+        isOpen={isTutorialOpen}
+        onClose={() => setIsTutorialOpen(false)}
+      />
     </div>
   );
 }

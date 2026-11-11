@@ -3,7 +3,16 @@
 import React, { useMemo } from 'react';
 import { useData } from '../context/DataContext';
 import Link from 'next/link';
-import { Play, Clock, Sparkles, ChevronRight, Calendar, BookOpen, CheckCircle2 } from 'lucide-react';
+import {
+  Play,
+  Clock,
+  Sparkles,
+  ChevronRight,
+  Calendar,
+  BookOpen,
+  CheckCircle2,
+  Plus,
+} from 'lucide-react';
 
 const PlanningSection = () => {
   const {
@@ -38,37 +47,59 @@ const PlanningSection = () => {
     return findFirstUncompleted(foundSubject.topics) || 'Todos os tópicos concluídos (Revisão)';
   };
 
-  const { uncompletedSessions, completedCount, totalCount } = useMemo(() => {
+  const { uncompletedSessions, cyclePercentage, totalCount } = useMemo(() => {
     if (!studyCycle || studyCycle.length === 0) {
-      return { uncompletedSessions: [], completedCount: 0, totalCount: 0 };
+      return { uncompletedSessions: [], cyclePercentage: 0, totalCount: 0 };
     }
     const uncompleted = studyCycle.filter((session) => {
       const progress = sessionProgressMap[session.id as string] || 0;
       return progress < session.duration;
     });
+    const totalDuration = studyCycle.reduce((acc, s) => acc + s.duration, 0);
+    const totalStudied = studyCycle.reduce(
+      (acc, s) => acc + Math.min(s.duration, sessionProgressMap[s.id as string] || 0),
+      0
+    );
+    const pct = totalDuration > 0 ? Math.min(100, Math.round((totalStudied / totalDuration) * 100)) : 0;
+
     return {
       uncompletedSessions: uncompleted,
-      completedCount: studyCycle.length - uncompleted.length,
+      cyclePercentage: pct,
       totalCount: studyCycle.length,
     };
   }, [studyCycle, sessionProgressMap]);
 
   const nextSession = uncompletedSessions[0] || null;
   const upcomingQueue = uncompletedSessions.slice(1, 4);
-  const cyclePercentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
 
-  const handleStartStudy = (session: any) => {
+  const nextSessionProgress = nextSession
+    ? Math.round(sessionProgressMap[nextSession.id as string] || 0)
+    : 0;
+  const nextSessionRemaining = nextSession
+    ? Math.max(1, Math.round(nextSession.duration - nextSessionProgress))
+    : 0;
+  const nextSessionPct =
+    nextSession && nextSession.duration > 0
+      ? Math.min(100, Math.round((nextSessionProgress / nextSession.duration) * 100))
+      : 0;
+
+  const handleOpenManualRegister = (session: any) => {
     const suggestedTopic = getSuggestedTopicForSubject(session.subject);
     if (setCurrentStudySession) {
       setCurrentStudySession(session);
     }
+    const now = new Date();
+    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+      2,
+      '0'
+    )}-${String(now.getDate()).padStart(2, '0')}`;
     if (setInitialStudyRecord) {
       setInitialStudyRecord({
         subjectId: session.subjectId,
         subject: session.subject,
         topic: suggestedTopic,
-        studyTime: session.duration * 60,
-        date: new Date().toISOString().split('T')[0],
+        studyTime: 0, // Inicia vazio com placeholder 00:00:00
+        date: todayLocal,
         category: 'teoria',
         countInPlanning: true,
       });
@@ -85,7 +116,12 @@ const PlanningSection = () => {
             Planejamento do Dia
           </h2>
           <span className="text-xs text-slate-400 dark:text-slate-500 hidden sm:inline">
-            • {new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })}
+            •{' '}
+            {new Date().toLocaleDateString('pt-BR', {
+              weekday: 'long',
+              day: 'numeric',
+              month: 'long',
+            })}
           </span>
         </div>
         {totalCount > 0 && (
@@ -103,37 +139,67 @@ const PlanningSection = () => {
           <div className="space-y-4">
             {/* Card Principal Destacado (Estilo Estudei) */}
             <div className="p-4 sm:p-5 rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-slate-500/5 border border-emerald-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-              <div className="flex items-start gap-3.5 min-w-0">
+              <div className="flex items-start gap-3.5 min-w-0 flex-1">
                 <div
                   className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shadow-md flex-shrink-0 mt-0.5"
                   style={{ backgroundColor: nextSession.color || '#10b981' }}
                 >
                   <BookOpen size={20} />
                 </div>
-                <div className="min-w-0">
-                  <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900/80 text-emerald-400 mb-1">
-                    Próximo Estudo
-                  </span>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900/80 text-emerald-400">
+                      Próximo Estudo
+                    </span>
+                    {nextSessionProgress > 0 && (
+                      <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                        Em andamento ({nextSessionPct}%)
+                      </span>
+                    )}
+                  </div>
                   <h3 className="text-base font-extrabold text-slate-900 dark:text-white truncate">
                     {nextSession.subject}
                   </h3>
                   <p className="text-xs text-slate-600 dark:text-slate-300 truncate mt-0.5">
-                    Sugestão: <span className="font-medium">{getSuggestedTopicForSubject(nextSession.subject)}</span>
+                    Sugestão:{' '}
+                    <span className="font-medium">
+                      {getSuggestedTopicForSubject(nextSession.subject)}
+                    </span>
                   </p>
-                  <div className="flex items-center gap-1.5 text-xs text-slate-500 dark:text-slate-400 mt-2">
-                    <Clock size={13} className="text-emerald-500" />
-                    <span>{nextSession.duration} min planejados</span>
+                  <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-2">
+                    <Clock size={13} className="text-emerald-500 shrink-0" />
+                    {nextSessionProgress > 0 ? (
+                      <span>
+                        Faltam{' '}
+                        <strong className="text-emerald-600 dark:text-emerald-400">
+                          {nextSessionRemaining} min
+                        </strong>{' '}
+                        ({nextSessionProgress}min / {nextSession.duration}min concluídos)
+                      </span>
+                    ) : (
+                      <span>{nextSession.duration} min planejados</span>
+                    )}
                   </div>
+                  {nextSessionProgress > 0 && (
+                    <div className="w-full max-w-xs h-1.5 rounded-full bg-slate-200 dark:bg-[#0c1421] mt-2 overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-emerald-500 transition-all duration-300"
+                        style={{ width: `${nextSessionPct}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <button
-                onClick={() => handleStartStudy(nextSession)}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition-all flex-shrink-0"
-              >
-                <Play size={14} className="fill-current" />
-                Iniciar Estudo
-              </button>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <button
+                  onClick={() => handleOpenManualRegister(nextSession)}
+                  className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition-all"
+                >
+                  <Play size={14} className="fill-current" />
+                  Registrar Estudo
+                </button>
+              </div>
             </div>
 
             {/* Fila dos Próximos Estudos */}
@@ -152,29 +218,33 @@ const PlanningSection = () => {
                 </div>
 
                 <div className="divide-y divide-slate-100 dark:divide-[#1a293e]">
-                  {upcomingQueue.map((session, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between gap-3">
-                      <div className="flex items-center gap-3 min-w-0">
-                        <div
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
-                          style={{ backgroundColor: session.color || '#6366f1' }}
-                        >
-                          <BookOpen size={14} />
+                  {upcomingQueue.map((session, idx) => {
+                    const prog = Math.round(sessionProgressMap[session.id as string] || 0);
+                    const rem = Math.max(1, Math.round(session.duration - prog));
+                    return (
+                      <div key={idx} className="py-2.5 flex items-center justify-between gap-3">
+                        <div className="flex items-center gap-3 min-w-0">
+                          <div
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-white text-xs font-bold flex-shrink-0"
+                            style={{ backgroundColor: session.color || '#6366f1' }}
+                          >
+                            <BookOpen size={14} />
+                          </div>
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
+                              {session.subject}
+                            </p>
+                            <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
+                              {getSuggestedTopicForSubject(session.subject)}
+                            </p>
+                          </div>
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-bold text-slate-800 dark:text-slate-200 truncate">
-                            {session.subject}
-                          </p>
-                          <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                            {getSuggestedTopicForSubject(session.subject)}
-                          </p>
-                        </div>
+                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 flex-shrink-0">
+                          <Clock size={12} /> {prog > 0 ? `${rem}m restantes` : `${session.duration}m`}
+                        </span>
                       </div>
-                      <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 flex-shrink-0">
-                        <Clock size={12} /> {session.duration}m
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
             )}

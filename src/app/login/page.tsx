@@ -42,15 +42,25 @@ export default function LoginPage() {
       <div className="w-full max-w-md bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl shadow-2xl p-8 relative z-10">
         {/* Logo Header */}
         <div className="flex flex-col items-center text-center mb-8">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-500 text-white flex items-center justify-center shadow-lg shadow-emerald-500/25 font-black text-xl mb-3">
-            O
+          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/25 mb-3">
+            <svg className="w-7 h-7" viewBox="0 0 24 24" fill="none">
+              <path
+                d="M12 3L13.6 7.4L18 9L13.6 10.6L12 15L10.4 10.6L6 9L10.4 7.4L12 3Z"
+                fill="currentColor"
+              />
+              <path
+                d="M4 16.5C6.8 15.5 9.5 16.2 12 18C14.5 16.2 17.2 15.5 20 16.5V20.5C17.2 19.5 14.5 20.2 12 22C9.5 20.2 6.8 19.5 4 20.5V16.5Z"
+                fill="currentColor"
+                fillOpacity="0.9"
+              />
+            </svg>
           </div>
           <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Bem-vindo de volta
+            Alexandria
           </h1>
           <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 flex items-center gap-1.5">
             <Sparkles size={13} className="text-emerald-500" />
-            Ouroboros 2.0 • Alta Performance nos Estudos
+            Acervo & Alta Performance nos Estudos
           </p>
         </div>
 

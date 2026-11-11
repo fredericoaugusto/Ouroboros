@@ -5,6 +5,7 @@ import { computeTopicScore, TopicScoreResult } from '../lib/scoreEngine';
 import TopicNotesEditor from './TopicNotesEditor';
 import Breadcrumbs, { BreadcrumbItem } from './Breadcrumbs';
 import { useNotification } from '../context/NotificationContext';
+import { useSidebar } from '../context/SidebarContext';
 import {
   ExternalLink,
   ChevronLeft,
@@ -64,6 +65,7 @@ export default function TopicCockpitModal({
   parentBreadcrumbHref = '/materias',
 }: TopicCockpitModalProps) {
   const { showNotification } = useNotification();
+  const { isSidebarExpanded } = useSidebar();
 
   const normalizeStatus = (t: TopicData | null): 'not_started' | 'studying' | 'completed' => {
     if (!t) return 'not_started';
@@ -169,7 +171,11 @@ export default function TopicCockpitModal({
   const weightCalculated = ((relevance + difficulty) / 2).toFixed(1);
 
   return (
-    <div className="fixed inset-0 lg:left-64 bottom-14 z-30 bg-[#f8fafc] dark:bg-[#0b1320] overflow-y-auto p-4 sm:p-6 lg:p-8">
+    <div
+      className={`fixed top-0 right-0 bottom-14 ${
+        isSidebarExpanded ? 'lg:left-64 left-0' : 'left-0'
+      } z-30 bg-[#f8fafc] dark:bg-[#0b1320] overflow-y-auto p-4 sm:p-6 lg:p-8 animate-fadeIn transition-all duration-300`}
+    >
       <div className="max-w-7xl mx-auto flex flex-col min-h-full">
         {/* Top Breadcrumbs + Quick Back & Navigation */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">

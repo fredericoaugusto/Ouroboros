@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useData, StudyRecord, StudySession } from '../../context/DataContext';
 import { getJsonContent } from '../actions';
 import Link from 'next/link';
@@ -18,13 +18,16 @@ import {
   ChevronDown,
   ChevronUp,
   GripVertical,
-  History,
   Compass,
+  MoreVertical,
+  BookOpen,
+  BarChart2,
+  RefreshCw,
 } from 'lucide-react';
 import CycleCreationModal from '../../components/CycleCreationModal';
-import ConfirmationModal from '../../components/ConfirmationModal';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
 import StopwatchModal from '../../components/StopwatchModal';
+import ConfirmationModal from '../../components/ConfirmationModal';
 import {
   DndContext,
   closestCenter,
@@ -61,137 +64,196 @@ interface SubjectSettings {
   [key: string]: { importance: number; knowledge: number };
 }
 
-interface DonutChartProps {
+// Utilitário geométrico para desenhar arcos anulares (fatias do Donut estilo Estudei)
+function polarToCartesian(cx: number, cy: number, r: number, angleInDegrees: number) {
+  const angleInRadians = ((angleInDegrees - 90) * Math.PI) / 180.0;
+  return {
+    x: cx + r * Math.cos(angleInRadians),
+    y: cy + r * Math.sin(angleInRadians),
+  };
+}
+
+function createAnnularSectorPath(
+  cx: number,
+  cy: number,
+  innerRadius: number,
+  outerRadius: number,
+  startAngle: number,
+  endAngle: number
+) {
+  const startOuter = polarToCartesian(cx, cy, outerRadius, endAngle);
+  const endOuter = polarToCartesian(cx, cy, outerRadius, startAngle);
+  const startInner = polarToCartesian(cx, cy, innerRadius, endAngle);
+  const endInner = polarToCartesian(cx, cy, innerRadius, startAngle);
+  const largeArcFlag = endAngle - startAngle <= 180 ? '0' : '1';
+
+  return [
+    'M',
+    startOuter.x,
+    startOuter.y,
+    'A',
+    outerRadius,
+    outerRadius,
+    0,
+    largeArcFlag,
+    0,
+    endOuter.x,
+    endOuter.y,
+    'L',
+    endInner.x,
+    endInner.y,
+    'A',
+    innerRadius,
+    innerRadius,
+    0,
+    largeArcFlag,
+    1,
+    startInner.x,
+    startInner.y,
+    'Z',
+  ].join(' ');
+}
+
+interface MultiRingDonutChartProps {
   cycle: StudySession[];
   size?: number;
-  remainingMinutes: number;
+  completionPct: number;
+  studiedMinutes: number;
+  totalMinutes: number;
   hoveredSession: UniqueIdentifier | null;
   setHoveredSession: (id: UniqueIdentifier | null) => void;
   sessionProgressMap: { [key: string]: number };
+  formatMinutesToHoursMinutes: (minutes: number) => string;
 }
 
-const DonutChart = ({
+const MultiRingDonutChart = ({
   cycle,
-  size = 240,
-  remainingMinutes,
+  size = 260,
+  completionPct,
+  studiedMinutes,
+  totalMinutes,
   hoveredSession,
   setHoveredSession,
   sessionProgressMap,
-}: DonutChartProps) => {
-  const strokeWidth = 28;
-  const gap = 4;
-  const mainRingRadius = size / 2 - strokeWidth - gap;
-  const progressRingRadius = size / 2 - strokeWidth / 2;
+  formatMinutesToHoursMinutes,
+}: MultiRingDonutChartProps) => {
+  const cx = size / 2;
+  const cy = size / 2;
 
-  const mainCircumference = 2 * Math.PI * mainRingRadius;
-  const progressCircumference = 2 * Math.PI * progressRingRadius;
-
-  const formatMinutesToHoursMinutes = (minutes: number) => {
-    if (minutes <= 0) return '0h00min';
-    const h = Math.floor(minutes / 60);
-    const m = Math.round(minutes % 60);
-    return `${h}h${String(m).padStart(2, '0')}min`;
-  };
+  // Anel externo (status de conclusão do bloco) e anel interno (cor da disciplina do bloco)
+  const outerRingOuterR = size / 2 - 6;
+  const outerRingInnerR = size / 2 - 24;
+  const innerRingOuterR = size / 2 - 28;
+  const innerRingInnerR = size / 2 - 68;
 
   const segments = useMemo(() => {
     if (!cycle || cycle.length === 0) return [];
-    const totalSessions = cycle.length;
-    const mainSegmentLength = mainCircumference / totalSessions;
-    const progressSegmentLength = progressCircumference / totalSessions;
-    let offset = 0;
+    const n = cycle.length;
+    const stepAngle = 360 / n;
+    const gapDegrees = n > 1 ? Math.min(3.2, 45 / n) : 0;
 
-    return cycle.map((session) => {
+    return cycle.map((session, idx) => {
+      const startAngle = idx * stepAngle + gapDegrees / 2;
+      const endAngle = (idx + 1) * stepAngle - gapDegrees / 2;
       const progress = sessionProgressMap[session.id as string] || 0;
       const isCompleted = progress >= session.duration;
-      const mainOffset = -offset * (mainCircumference / progressCircumference);
-      const progressOffset = -offset;
-      offset += progressSegmentLength;
+      const isPartial = progress > 0 && progress < session.duration;
 
       return {
         ...session,
         isCompleted,
-        main: {
-          key: `main-${session.id}`,
-          strokeDasharray: `${Math.max(1, mainSegmentLength - 2)} ${mainCircumference}`,
-          strokeDashoffset: mainOffset,
-          color: isCompleted ? 'transparent' : session.color || '#10b981',
-        },
-        progress: {
-          key: `progress-${session.id}`,
-          strokeDasharray: `${Math.max(1, progressSegmentLength - 2)} ${progressCircumference}`,
-          strokeDashoffset: progressOffset,
-          color: isCompleted ? '#10b981' : 'transparent',
-        },
+        isPartial,
+        outerPath: createAnnularSectorPath(
+          cx,
+          cy,
+          outerRingInnerR,
+          outerRingOuterR,
+          startAngle,
+          endAngle
+        ),
+        innerPath: createAnnularSectorPath(
+          cx,
+          cy,
+          innerRingInnerR,
+          innerRingOuterR,
+          startAngle,
+          endAngle
+        ),
       };
     });
-  }, [cycle, mainCircumference, progressCircumference, sessionProgressMap]);
+  }, [
+    cycle,
+    cx,
+    cy,
+    outerRingInnerR,
+    outerRingOuterR,
+    innerRingInnerR,
+    innerRingOuterR,
+    sessionProgressMap,
+  ]);
 
   return (
-    <div className="relative flex items-center justify-center">
-      <svg
-        width={size}
-        height={size}
-        viewBox={`0 0 ${size} ${size}`}
-        className="transform -rotate-90"
-      >
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={progressRingRadius}
-          fill="transparent"
-          strokeWidth={strokeWidth / 2}
-          className="stroke-slate-100 dark:stroke-[#0b1320]"
-        />
-        <circle
-          cx={size / 2}
-          cy={size / 2}
-          r={mainRingRadius}
-          fill="transparent"
-          strokeWidth={strokeWidth}
-          className="stroke-slate-100 dark:stroke-[#0b1320]"
-        />
+    <div className="relative flex items-center justify-center my-2">
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+        {/* Anel Externo: colorido quando concluído/parcial, cinza/slate escuro quando pendente */}
+        {segments.map((seg) => {
+          const isHovered = hoveredSession === seg.id;
+          return (
+            <path
+              key={`outer-${seg.id}`}
+              d={seg.outerPath}
+              fill={
+                seg.isCompleted || seg.isPartial
+                  ? seg.color || '#10b981'
+                  : 'currentColor'
+              }
+              fillOpacity={seg.isCompleted ? 1 : seg.isPartial ? 0.55 : 1}
+              className={
+                seg.isCompleted || seg.isPartial
+                  ? 'transition-all duration-200'
+                  : 'text-slate-200 dark:text-[#243247] transition-all duration-200'
+              }
+              strokeLinejoin="round"
+              style={{
+                transformOrigin: `${cx}px ${cy}px`,
+                transform: isHovered ? 'scale(1.02)' : 'scale(1)',
+              }}
+              onMouseEnter={() => setHoveredSession(seg.id)}
+              onMouseLeave={() => setHoveredSession(null)}
+            />
+          );
+        })}
 
-        {segments.map((segment) => (
-          <circle
-            key={segment.progress.key}
-            cx={size / 2}
-            cy={size / 2}
-            r={progressRingRadius}
-            fill="transparent"
-            stroke={segment.progress.color}
-            strokeWidth={strokeWidth / 2}
-            strokeDasharray={segment.progress.strokeDasharray}
-            strokeDashoffset={segment.progress.strokeDashoffset}
-          />
-        ))}
-
-        {segments.map((segment) => (
-          <circle
-            key={segment.main.key}
-            cx={size / 2}
-            cy={size / 2}
-            r={mainRingRadius}
-            fill="transparent"
-            stroke={segment.main.color}
-            strokeWidth={
-              hoveredSession === segment.id && !segment.isCompleted
-                ? strokeWidth + 6
-                : strokeWidth
-            }
-            strokeDasharray={segment.main.strokeDasharray}
-            strokeDashoffset={segment.main.strokeDashoffset}
-            onMouseEnter={() => !segment.isCompleted && setHoveredSession(segment.id)}
-            onMouseLeave={() => setHoveredSession(null)}
-            style={{ transition: 'stroke-width 0.2s ease' }}
-          />
-        ))}
+        {/* Anel Interno: sempre colorido com a cor de cada bloco do ciclo */}
+        {segments.map((seg) => {
+          const isHovered = hoveredSession === seg.id;
+          return (
+            <path
+              key={`inner-${seg.id}`}
+              d={seg.innerPath}
+              fill={seg.color || '#10b981'}
+              fillOpacity={seg.isCompleted ? 0.95 : 0.85}
+              strokeLinejoin="round"
+              className="transition-all duration-200 cursor-pointer"
+              style={{
+                transformOrigin: `${cx}px ${cy}px`,
+                transform: isHovered ? 'scale(1.03)' : 'scale(1)',
+              }}
+              onMouseEnter={() => setHoveredSession(seg.id)}
+              onMouseLeave={() => setHoveredSession(null)}
+            />
+          );
+        })}
       </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-          Restante
+
+      {/* Centro do Donut: % e Tempo Estudado / Previsto */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center px-6">
+        <span className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          {completionPct}%
         </span>
-        <span className="text-lg font-extrabold text-slate-900 dark:text-white">
-          {formatMinutesToHoursMinutes(remainingMinutes)}
+        <span className="text-[11px] font-medium text-slate-500 dark:text-slate-400 mt-0.5">
+          {formatMinutesToHoursMinutes(studiedMinutes)} /{' '}
+          {formatMinutesToHoursMinutes(totalMinutes)}
         </span>
       </div>
     </div>
@@ -201,6 +263,7 @@ const DonutChart = ({
 interface SortableItemProps {
   session: StudySession;
   suggestedTopic: string;
+  showSuggestedTopic: boolean;
   hoveredSession: UniqueIdentifier | null;
   setHoveredSession: (id: UniqueIdentifier | null) => void;
   sessionProgressMap: { [key: string]: number };
@@ -216,6 +279,8 @@ interface SortableItemProps {
 const SortableItem = ({
   session,
   suggestedTopic,
+  showSuggestedTopic,
+  hoveredSession,
   setHoveredSession,
   sessionProgressMap,
   formatMinutesToHoursMinutes,
@@ -226,8 +291,10 @@ const SortableItem = ({
   onDuplicate,
   onDurationChange,
 }: SortableItemProps) => {
+  // Desativa o drag-and-drop quando não está em Modo de Edição
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({
     id: session.id,
+    disabled: !isEditMode,
   });
 
   const style = {
@@ -235,9 +302,11 @@ const SortableItem = ({
     transition,
   };
 
-  const currentProgress = sessionProgressMap[session.id as string] || 0;
+  const currentProgress = Math.round(sessionProgressMap[session.id as string] || 0);
+  const remainingMinutes = Math.max(1, Math.round(session.duration - currentProgress));
   const progressPercentage =
     session.duration > 0 ? Math.min(100, (currentProgress / session.duration) * 100) : 0;
+  const isHovered = hoveredSession === session.id;
 
   return (
     <div
@@ -245,40 +314,49 @@ const SortableItem = ({
       style={style}
       onMouseEnter={() => setHoveredSession(session.id)}
       onMouseLeave={() => setHoveredSession(null)}
-      className="group bg-slate-50/70 dark:bg-[#0b1320]/70 hover:bg-slate-100/80 dark:hover:bg-[#17263f]/70 border border-slate-200/80 dark:border-[#1f304a] rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-all"
+      className={`group rounded-xl p-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3.5 transition-all border ${
+        isHovered
+          ? 'bg-slate-100/90 dark:bg-[#182742] border-emerald-500/40'
+          : 'bg-slate-50/60 dark:bg-[#0f192a]/70 hover:bg-slate-100/70 dark:hover:bg-[#16243d]/70 border-slate-200/70 dark:border-[#1f304a]'
+      }`}
     >
-      <div className="flex items-start sm:items-center gap-3.5 min-w-0 flex-1">
-        <button
-          type="button"
-          {...attributes}
-          {...listeners}
-          className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing shrink-0"
-          title="Arrastar para reordenar"
-        >
-          <GripVertical className="w-4 h-4" />
-        </button>
+      <div className="flex items-start sm:items-center gap-3 min-w-0 flex-1">
+        {isEditMode && (
+          <button
+            type="button"
+            {...attributes}
+            {...listeners}
+            className="p-1 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 cursor-grab active:cursor-grabbing shrink-0"
+            title="Arrastar para reordenar"
+          >
+            <GripVertical className="w-4 h-4" />
+          </button>
+        )}
 
-        <span
-          className="w-2.5 h-9 rounded-full shrink-0"
+        <div
+          className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-bold shrink-0 shadow-sm"
           style={{ backgroundColor: session.color || '#10b981' }}
-        />
+        >
+          <BookOpen className="w-4 h-4" />
+        </div>
 
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <h4 className="text-sm font-bold text-slate-900 dark:text-white truncate">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h4 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white truncate">
               {session.subject}
             </h4>
-            <span className="text-xs text-slate-400 flex items-center gap-1 shrink-0">
-              <Clock className="w-3 h-3" />
-              {formatMinutesToHoursMinutes(currentProgress)} /{' '}
-              {formatMinutesToHoursMinutes(session.duration)}
-            </span>
+            {currentProgress > 0 && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                Faltam {formatMinutesToHoursMinutes(remainingMinutes)} (
+                {formatMinutesToHoursMinutes(currentProgress)} /{' '}
+                {formatMinutesToHoursMinutes(session.duration)})
+              </span>
+            )}
           </div>
 
-          {suggestedTopic && (
-            <p className="text-xs text-emerald-600 dark:text-emerald-400/90 truncate mt-0.5 flex items-center gap-1">
-              <Sparkles className="w-3 h-3 shrink-0" />
-              Sugestão: {suggestedTopic}
+          {showSuggestedTopic && suggestedTopic && (
+            <p className="text-xs text-slate-500 dark:text-slate-400 truncate mt-0.5">
+              {suggestedTopic}
             </p>
           )}
 
@@ -294,7 +372,7 @@ const SortableItem = ({
       </div>
 
       {/* Actions */}
-      <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+      <div className="flex items-center gap-2.5 self-end sm:self-center shrink-0">
         {isEditMode ? (
           <>
             <div className="flex items-center gap-1">
@@ -302,7 +380,7 @@ const SortableItem = ({
                 type="number"
                 value={session.duration}
                 min={15}
-                step={15}
+                step={5}
                 onChange={(e) =>
                   onDurationChange(session.id as string, Math.max(15, Number(e.target.value)))
                 }
@@ -329,18 +407,25 @@ const SortableItem = ({
           </>
         ) : (
           <>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 mr-1">
+              <Clock className="w-3.5 h-3.5" />
+              {currentProgress > 0
+                ? formatMinutesToHoursMinutes(remainingMinutes)
+                : formatMinutesToHoursMinutes(session.duration)}
+            </span>
             <button
               type="button"
               onClick={() => onStartTimer(session, suggestedTopic)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-sm transition-all"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-indigo-600/15 hover:bg-indigo-600 text-indigo-600 dark:text-indigo-300 hover:text-white border border-indigo-500/25 transition-all"
+              title="Abrir Cronômetro em Modo Foco"
             >
-              <Play className="w-3.5 h-3.5 fill-current" />
+              <Play className="w-3 h-3 fill-current" />
               Iniciar
             </button>
             <button
               type="button"
               onClick={() => onManualRegister(session, suggestedTopic)}
-              className="inline-flex items-center gap-1 px-3 py-2 rounded-xl text-xs font-semibold bg-slate-200/70 dark:bg-[#1a2942] text-slate-700 dark:text-slate-200 hover:bg-emerald-500 hover:text-white transition-colors"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-200/70 dark:bg-[#1a2942] text-slate-700 dark:text-slate-200 hover:bg-emerald-500 hover:text-slate-950 transition-colors"
               title="Registrar Estudo Manual"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -359,10 +444,10 @@ export default function Planejamento() {
     addStudyRecord,
     updateStudyRecord,
     resetStudyCycle,
+    restartStudyCycle,
     studyCycle,
     setStudyCycle,
     completedCycles,
-    currentProgressMinutes,
     sessionProgressMap,
     setCurrentStudySession,
     initialStudyRecord,
@@ -376,8 +461,6 @@ export default function Planejamento() {
     studyDays,
     getRecommendedSession,
     studyRecords,
-    deleteStudyRecord,
-    cycleGenerationTimestamp,
   } = useData();
   const { showNotification } = useNotification();
 
@@ -387,22 +470,46 @@ export default function Planejamento() {
   const [stopwatchInitialTopic, setStopwatchInitialTopic] = useState<string>('');
 
   const [subjects, setSubjects] = useState<Subject[]>([]);
-  const [selectedSubjects, setSelectedSubjects] = useState<string[]>([]);
-  const [subjectSettings, setSubjectSettings] = useState<SubjectSettings>({});
+  const [selectedSubjects] = useState<string[]>([]);
+  const [subjectSettings] = useState<SubjectSettings>({});
 
   const [recommendationJustification, setRecommendationJustification] = useState<
     string | null
   >(null);
   const [hoveredSession, setHoveredSession] = useState<UniqueIdentifier | null>(null);
-  const [showCompletedSection, setShowCompletedSection] = useState(true);
+  const [showCompletedSection, setShowCompletedSection] = useState(false);
   const [isClient, setIsClient] = useState(false);
   const [isEditMode, setIsEditMode] = useState(false);
   const [subjectToAdd, setSubjectToAdd] = useState<string>('');
   const [durationToAdd, setDurationToAdd] = useState<number>(60);
-  const [sessionToReset, setSessionToReset] = useState<StudySession | null>(null);
+
+  // Menu de 3 pontos (...), toggle de sugerir tópicos, modais de confirmação e expansão da lista de disciplinas
+  const [isOptionsMenuOpen, setIsOptionsMenuOpen] = useState(false);
+  const [isRestartConfirmOpen, setIsRestartConfirmOpen] = useState(false);
+  const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
+  const [autoSuggestTopics, setAutoSuggestTopics] = useState(true);
+  const [showAllSubjectsInChart, setShowAllSubjectsInChart] = useState(false);
+  const optionsMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setIsClient(true);
+    const savedSuggest = localStorage.getItem('alexandria_auto_suggest_topics');
+    if (savedSuggest !== null) {
+      setAutoSuggestTopics(savedSuggest === 'true');
+    }
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (
+        optionsMenuRef.current &&
+        !optionsMenuRef.current.contains(event.target as Node)
+      ) {
+        setIsOptionsMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
   useEffect(() => {
@@ -434,47 +541,99 @@ export default function Planejamento() {
   }, [studyCycle]);
 
   const totalProgressMinutes = useMemo(() => {
-    if (!sessionProgressMap || Object.keys(sessionProgressMap).length === 0) return 0;
-    return Object.values(sessionProgressMap).reduce((sum, progress) => sum + progress, 0);
-  }, [sessionProgressMap]);
+    if (!studyCycle || !sessionProgressMap) return 0;
+    return studyCycle.reduce(
+      (sum, s) => sum + Math.min(s.duration, sessionProgressMap[s.id as string] || 0),
+      0
+    );
+  }, [studyCycle, sessionProgressMap]);
 
-  const remainingMinutes = Math.max(0, totalCycleDuration - totalProgressMinutes);
   const cycleCompletionPct =
     totalCycleDuration > 0
       ? Math.min(100, Math.round((totalProgressMinutes / totalCycleDuration) * 100))
       : 0;
 
-  const formatMinutesToHoursMinutes = (minutes: number) => {
+  const formatMinutesToHoursMinutes = useCallback((minutes: number) => {
     if (minutes <= 0) return '0min';
     const h = Math.floor(minutes / 60);
     const m = Math.round(minutes % 60);
     return h > 0 ? `${h}h${String(m).padStart(2, '0')}min` : `${m}min`;
-  };
+  }, []);
 
-  // Next unstudied topic sequence finder per subject
+  // Agregação das disciplinas para a lista abaixo do Donut Chart (Estilo Estudei Print 8 & 9)
+  const subjectBreakdownList = useMemo(() => {
+    if (!studyCycle || studyCycle.length === 0) return [];
+    const map = new Map<
+      string,
+      {
+        subject: string;
+        color: string;
+        count: number;
+        plannedMinutes: number;
+        studiedMinutes: number;
+      }
+    >();
+
+    for (const session of studyCycle) {
+      const key = session.subject;
+      const studied = Math.min(
+        session.duration,
+        Math.round(sessionProgressMap[session.id as string] || 0)
+      );
+      if (!map.has(key)) {
+        map.set(key, {
+          subject: session.subject,
+          color: session.color || '#10b981',
+          count: 1,
+          plannedMinutes: session.duration,
+          studiedMinutes: studied,
+        });
+      } else {
+        const entry = map.get(key)!;
+        entry.count += 1;
+        entry.plannedMinutes += session.duration;
+        entry.studiedMinutes += studied;
+      }
+    }
+    return Array.from(map.values());
+  }, [studyCycle, sessionProgressMap]);
+
+  const visibleSubjectsInChart = showAllSubjectsInChart
+    ? subjectBreakdownList
+    : subjectBreakdownList.slice(0, 7);
+
+  // Busca o próximo tópico pendente no edital da disciplina
   const getSuggestedTopicForSubject = useCallback(
     (subjectName: string): string => {
+      const subj = subjects.find(
+        (s) => s.subject?.toLowerCase() === subjectName?.toLowerCase()
+      );
+      if (subj && subj.topics && subj.topics.length > 0) {
+        const completedSet = new Set(
+          studyRecords
+            .filter((r) => r.subject === subjectName && r.teoriaFinalizada)
+            .map((r) => r.topic)
+        );
+        const findFirstUncompleted = (list: Topic[]): string => {
+          for (const t of list) {
+            if (t.sub_topics && t.sub_topics.length > 0) {
+              const sub = findFirstUncompleted(t.sub_topics);
+              if (sub) return sub;
+            } else if (!t.is_completed && !completedSet.has(t.topic_text)) {
+              return t.topic_text;
+            }
+          }
+          return '';
+        };
+        const nextInSequence = findFirstUncompleted(subj.topics);
+        if (nextInSequence) return nextInSequence;
+      }
+
       const rec = getRecommendedSession({ forceSubject: subjectName });
       if (rec?.recommendedTopic?.topic) {
         return rec.recommendedTopic.topic;
       }
-      const subj = subjects.find((s) => s.subject === subjectName);
-      if (!subj || !subj.topics) return '';
-      const studiedSet = new Set(
-        studyRecords.filter((r) => r.subject === subjectName).map((r) => r.topic)
-      );
-      const findFirstUnstudied = (list: Topic[]): string => {
-        for (const t of list) {
-          if (t.sub_topics && t.sub_topics.length > 0) {
-            const sub = findFirstUnstudied(t.sub_topics);
-            if (sub) return sub;
-          } else if (!t.is_completed && !studiedSet.has(t.topic_text)) {
-            return t.topic_text;
-          }
-        }
-        return '';
-      };
-      return findFirstUnstudied(subj.topics) || subj.topics[0]?.topic_text || '';
+      return subj?.topics?.[0]?.topic_text || '';
     },
     [getRecommendedSession, subjects, studyRecords]
   );
@@ -485,6 +644,7 @@ export default function Planejamento() {
   );
 
   const handleDragEnd = (event: DragEndEvent) => {
+    if (!isEditMode) return;
     const { active, over } = event;
     if (active.id !== over?.id && studyCycle) {
       const oldIndex = studyCycle.findIndex((item) => item.id === active.id);
@@ -497,7 +657,9 @@ export default function Planejamento() {
 
   const handleDeleteSession = (id: string) => {
     if (!studyCycle) return;
-    setStudyCycle((prevCycle) => (prevCycle ? prevCycle.filter((s) => s.id !== id) : null));
+    setStudyCycle((prevCycle) =>
+      prevCycle ? prevCycle.filter((s) => s.id !== id) : null
+    );
   };
 
   const handleDuplicateSession = (session: StudySession) => {
@@ -539,20 +701,29 @@ export default function Planejamento() {
   };
 
   const handleStartTimerForSession = (session: StudySession, topic: string) => {
-    setStopwatchTargetDuration(session.duration);
+    const prog = Math.round(sessionProgressMap[session.id as string] || 0);
+    const remainingMin = Math.max(1, Math.round(session.duration - prog));
+    setStopwatchTargetDuration(remainingMin);
     setStopwatchModalSubject(session.subject);
-    setStopwatchInitialTopic(topic);
+    setStopwatchInitialTopic(autoSuggestTopics ? topic : '');
     setCurrentStudySession(session);
     setIsStopwatchModalOpen(true);
   };
 
   const handleManualRegisterForSession = (session: StudySession, topic: string) => {
+    const now = new Date();
+    const todayLocal = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(
+      2,
+      '0'
+    )}-${String(now.getDate()).padStart(2, '0')}`;
     const prefilledRecord: Partial<StudyRecord> = {
+      subjectId: session.subjectId,
       subject: session.subject,
-      topic: topic || '',
+      topic: autoSuggestTopics ? topic || '' : '',
       category: 'teoria',
       countInPlanning: true,
-      studyTime: session.duration * 60 * 1000,
+      date: todayLocal,
+      studyTime: 0, // Vazio com placeholder 00:00:00
     };
     setInitialStudyRecord(prefilledRecord);
     setCurrentStudySession(session);
@@ -569,13 +740,12 @@ export default function Planejamento() {
         }
         setIsRegisterModalOpen(false);
         setInitialStudyRecord(null);
-        setCurrentStudySession(null);
         setRecommendationJustification(null);
       } catch (error) {
         showNotification('Erro ao salvar registro de estudo.', 'error');
       }
     },
-    [updateStudyRecord, addStudyRecord, showNotification, setCurrentStudySession, setInitialStudyRecord]
+    [updateStudyRecord, addStudyRecord, showNotification, setInitialStudyRecord]
   );
 
   const pendingSessions = useMemo(
@@ -595,9 +765,21 @@ export default function Planejamento() {
   );
 
   const nextHighlightSession = pendingSessions[0] || null;
+  const upcomingQueueSessions = isEditMode ? pendingSessions : pendingSessions.slice(1);
   const nextSuggestedTopic = nextHighlightSession
     ? getSuggestedTopicForSubject(nextHighlightSession.subject)
     : '';
+
+  const nextHighlightProgress = nextHighlightSession
+    ? Math.round(sessionProgressMap[nextHighlightSession.id as string] || 0)
+    : 0;
+  const nextHighlightRemaining = nextHighlightSession
+    ? Math.max(1, Math.round(nextHighlightSession.duration - nextHighlightProgress))
+    : 0;
+  const nextHighlightPct =
+    nextHighlightSession && nextHighlightSession.duration > 0
+      ? Math.min(100, Math.round((nextHighlightProgress / nextHighlightSession.duration) * 100))
+      : 0;
 
   if (!isClient) return null;
 
@@ -606,123 +788,187 @@ export default function Planejamento() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+          <h1 className="text-2xl font-extrabold text-slate-900 dark:text-white tracking-tight">
             Planejamento
           </h1>
-          <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Siga a sequência inteligente do seu ciclo com sugestão automática do próximo tópico
+          <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+            Organize sua rotina de estudos e acompanhe o avanço de cada bloco do ciclo
           </p>
         </div>
-
-        {studyCycle && (
-          <div className="flex flex-wrap items-center gap-2.5">
-            <button
-              onClick={() => setIsModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-700 dark:text-slate-200 hover:bg-emerald-500 hover:text-white transition-colors"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              Replanejar Ciclo
-            </button>
-
-            <button
-              onClick={() => setIsEditMode((prev) => !prev)}
-              className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-semibold transition-colors ${
-                isEditMode
-                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20'
-                  : 'bg-slate-100 dark:bg-[#1a2942] text-slate-700 dark:text-slate-200 hover:bg-indigo-500 hover:text-white'
-              }`}
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              {isEditMode ? 'Concluir Edição' : 'Editar Ciclo'}
-            </button>
-
-            <button
-              onClick={resetStudyCycle}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-semibold text-rose-500 bg-rose-500/10 hover:bg-rose-500 hover:text-white transition-colors"
-            >
-              <Trash2 className="w-3.5 h-3.5" />
-              Remover
-            </button>
-          </div>
-        )}
       </div>
 
       {studyCycle ? (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-          {/* Left Column (8 cols): Next Study Highlight + Sequence */}
-          <div className="lg:col-span-8 space-y-6">
-            {/* Highlighted NEXT STUDY Card (Estudei Print 6) */}
-            {nextHighlightSession && (
-              <div className="rounded-2xl bg-gradient-to-r from-emerald-500/15 via-teal-500/10 to-indigo-500/10 border border-emerald-500/30 p-5 sm:p-6 shadow-sm">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-start gap-4 min-w-0">
-                    <div
-                      className="w-12 h-12 rounded-2xl flex items-center justify-center text-white font-bold shrink-0 shadow-md"
-                      style={{ backgroundColor: nextHighlightSession.color || '#10b981' }}
-                    >
-                      <Compass className="w-6 h-6" />
-                    </div>
-                    <div className="min-w-0">
-                      <span className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-emerald-500 text-white mb-1">
-                        PRÓXIMO ESTUDO DA FILA
-                      </span>
-                      <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 dark:text-white truncate">
-                        {nextHighlightSession.subject}
-                      </h2>
-                      {nextSuggestedTopic && (
-                        <p className="text-xs font-medium text-emerald-600 dark:text-emerald-300 mt-0.5 flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 shrink-0" />
-                          <span>Sugestão do Edital: {nextSuggestedTopic}</span>
-                        </p>
-                      )}
-                      <div className="flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400 mt-2">
-                        <span className="inline-flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5" />
-                          Bloco de {formatMinutesToHoursMinutes(nextHighlightSession.duration)}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-                    <button
-                      onClick={() =>
-                        handleStartTimerForSession(nextHighlightSession, nextSuggestedTopic)
-                      }
-                      className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition-all"
-                    >
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                      Iniciar Estudo
-                    </button>
-                    <button
-                      onClick={() =>
-                        handleManualRegisterForSession(nextHighlightSession, nextSuggestedTopic)
-                      }
-                      className="px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-white/80 dark:bg-[#131f33] text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-[#243552] hover:border-emerald-500 transition-colors"
-                    >
-                      Registrar Manual
-                    </button>
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          {/* Coluna Esquerda (7 cols): Cards de Topo + Sequência dos Estudos */}
+          <div className="lg:col-span-7 space-y-6">
+            {/* Linha Superior: 2 Cards KPI (Ciclos Completos & Progresso do Ciclo - Estilo Estudei Print 6 & 8) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Card 1: Ciclos Completos */}
+              <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-5 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Ciclos Completos
+                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <RefreshCw size={15} />
                   </div>
                 </div>
-              </div>
-            )}
-
-            {/* Study Sequence Card */}
-            <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm space-y-5">
-              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">
-                    Sequência dos Estudos ({pendingSessions.length} blocos restantes)
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    {isEditMode
-                      ? 'Modo Edição ativo: arraste os blocos, altere os minutos, duplique ou adicione novas disciplinas'
-                      : 'Arraste os blocos para reorganizar sua fila a qualquer momento'}
+                  <div className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                    {completedCycles}
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">
+                    desde o início do planejamento
                   </p>
                 </div>
               </div>
 
-              {/* Add session bar in Edit Mode */}
+              {/* Card 2: Progresso do Ciclo */}
+              <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-5 shadow-sm flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                    Progresso do Ciclo
+                  </span>
+                  <div className="w-8 h-8 rounded-lg bg-emerald-500/10 text-emerald-500 flex items-center justify-center">
+                    <BarChart2 size={16} />
+                  </div>
+                </div>
+                <div>
+                  <div className="text-2xl font-extrabold text-slate-900 dark:text-white">
+                    {cycleCompletionPct}%
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-[#0b1320] overflow-hidden my-2">
+                    <div
+                      className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                      style={{ width: `${cycleCompletionPct}%` }}
+                    />
+                  </div>
+                  <p className="text-xs text-slate-400">
+                    {formatMinutesToHoursMinutes(totalProgressMinutes)} de{' '}
+                    {formatMinutesToHoursMinutes(totalCycleDuration)}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Card Principal: Sequência dos Estudos */}
+            <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-5 sm:p-6 shadow-sm space-y-5">
+              {/* Cabeçalho com Botões Editar Ciclo, Replanejar e Menu (...) */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+                    Sequência dos Estudos
+                  </h3>
+                  {isEditMode && (
+                    <p className="text-[11px] text-emerald-500 font-semibold mt-0.5">
+                      Modo de edição ativo: arraste para reordenar ou ajuste os tempos
+                    </p>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsEditMode((prev) => !prev)}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold border transition-all ${
+                      isEditMode
+                        ? 'bg-emerald-500 border-emerald-500 text-slate-950 font-bold shadow-md shadow-emerald-500/20'
+                        : 'bg-slate-50 dark:bg-[#0f192a] border-slate-200 dark:border-[#243552] text-slate-700 dark:text-slate-200 hover:border-emerald-500/50'
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    {isEditMode ? 'Concluir edição' : 'Editar ciclo'}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setIsModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-[#0f192a] border border-slate-200 dark:border-[#243552] text-slate-700 dark:text-slate-200 hover:border-emerald-500/50 transition-all"
+                  >
+                    <Sparkles className="w-3.5 h-3.5 text-emerald-500" />
+                    Replanejar
+                  </button>
+
+                  {/* Botão 3 Pontinhos (...) Estilo Estudei Print 6 */}
+                  <div className="relative" ref={optionsMenuRef}>
+                    <button
+                      type="button"
+                      onClick={() => setIsOptionsMenuOpen((prev) => !prev)}
+                      className={`p-2 rounded-xl border transition-all ${
+                        isOptionsMenuOpen
+                          ? 'border-emerald-500 bg-emerald-500/10 text-emerald-500'
+                          : 'border-slate-200 dark:border-[#243552] bg-slate-50 dark:bg-[#0f192a] text-slate-500 dark:text-slate-300 hover:border-emerald-500/50'
+                      }`}
+                      title="Mais opções do ciclo"
+                    >
+                      <MoreVertical className="w-4 h-4" />
+                    </button>
+
+                    {isOptionsMenuOpen && (
+                      <div className="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white dark:bg-[#1a2639] border border-slate-200 dark:border-[#2a3c58] shadow-2xl py-2 z-40 animate-fadeIn divide-y divide-slate-100 dark:divide-[#243552]">
+                        {/* Opção 1: Toggle Sugerir tópicos automaticamente */}
+                        <div className="px-4 py-2.5 flex items-center justify-between gap-3">
+                          <span className="text-xs font-semibold text-slate-700 dark:text-slate-200">
+                            Sugerir tópicos automaticamente
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = !autoSuggestTopics;
+                              setAutoSuggestTopics(next);
+                              localStorage.setItem(
+                                'alexandria_auto_suggest_topics',
+                                String(next)
+                              );
+                            }}
+                            className={`w-9 h-5 rounded-full transition-colors relative shrink-0 ${
+                              autoSuggestTopics
+                                ? 'bg-emerald-500'
+                                : 'bg-slate-300 dark:bg-slate-600'
+                            }`}
+                          >
+                            <span
+                              className={`w-3.5 h-3.5 rounded-full bg-white absolute top-0.5 transition-transform ${
+                                autoSuggestTopics ? 'translate-x-4' : 'translate-x-0.5'
+                              }`}
+                            />
+                          </button>
+                        </div>
+
+                        {/* Opção 2: Recomeçar Ciclo */}
+                        <div className="py-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsOptionsMenuOpen(false);
+                              setIsRestartConfirmOpen(true);
+                            }}
+                            className="w-full px-4 py-2.5 text-left text-xs font-semibold text-slate-700 dark:text-slate-200 hover:bg-emerald-500/10 hover:text-emerald-500 flex items-center justify-between transition-colors"
+                          >
+                            <span>Recomeçar ciclo</span>
+                            <RotateCcw className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Opção 3: Excluir Planejamento */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsOptionsMenuOpen(false);
+                              setIsDeleteConfirmOpen(true);
+                            }}
+                            className="w-full px-4 py-2.5 text-left text-xs font-semibold text-rose-500 hover:bg-rose-500/10 flex items-center justify-between transition-colors"
+                          >
+                            <span>Excluir planejamento</span>
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Barra para Adicionar Disciplina no Modo Edição */}
               {isEditMode && (
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-emerald-500/30 flex flex-col sm:flex-row items-center gap-3">
                   <select
@@ -743,14 +989,14 @@ export default function Planejamento() {
                       value={durationToAdd}
                       onChange={(e) => setDurationToAdd(Number(e.target.value))}
                       min={15}
-                      step={15}
+                      step={5}
                       className="w-24 px-3 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-xs font-bold text-slate-900 dark:text-white"
                     />
                     <span className="text-xs text-slate-400">min</span>
                     <button
                       type="button"
                       onClick={handleAddSession}
-                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-xs font-bold shrink-0"
+                      className="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-xs font-bold shrink-0"
                     >
                       + Adicionar
                     </button>
@@ -758,47 +1004,146 @@ export default function Planejamento() {
                 </div>
               )}
 
-              {/* Pending Sortable List */}
-              <div className="space-y-2.5 max-h-[480px] overflow-y-auto pr-1">
-                <DndContext
-                  sensors={sensors}
-                  collisionDetection={closestCenter}
-                  onDragEnd={handleDragEnd}
+              {/* Card Destacado: PRÓXIMO ESTUDO (Quando fora do modo de edição) */}
+              {!isEditMode && nextHighlightSession && (
+                <div
+                  onMouseEnter={() => setHoveredSession(nextHighlightSession.id)}
+                  onMouseLeave={() => setHoveredSession(null)}
+                  className="rounded-2xl bg-gradient-to-r from-emerald-600/20 via-teal-600/15 to-emerald-500/10 border border-emerald-500/35 p-5 transition-all"
                 >
-                  <SortableContext
-                    items={studyCycle}
-                    strategy={verticalListSortingStrategy}
-                  >
-                    {pendingSessions.length > 0 ? (
-                      pendingSessions.map((session) => (
-                        <SortableItem
-                          key={session.id}
-                          session={session}
-                          suggestedTopic={getSuggestedTopicForSubject(session.subject)}
-                          hoveredSession={hoveredSession}
-                          setHoveredSession={setHoveredSession}
-                          sessionProgressMap={sessionProgressMap}
-                          formatMinutesToHoursMinutes={formatMinutesToHoursMinutes}
-                          onStartTimer={handleStartTimerForSession}
-                          onManualRegister={handleManualRegisterForSession}
-                          isEditMode={isEditMode}
-                          onDelete={handleDeleteSession}
-                          onDuplicate={handleDuplicateSession}
-                          onDurationChange={handleDurationChange}
-                        />
-                      ))
-                    ) : (
-                      <div className="p-8 text-center text-sm text-emerald-500 font-semibold bg-emerald-500/5 rounded-xl border border-emerald-500/20">
-                        Parabéns! Você concluiu todos os blocos deste ciclo!
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                    <div className="flex items-start gap-3.5 min-w-0 flex-1">
+                      <div
+                        className="w-11 h-11 rounded-xl flex items-center justify-center text-white font-bold shrink-0 shadow-md mt-0.5"
+                        style={{ backgroundColor: nextHighlightSession.color || '#10b981' }}
+                      >
+                        <BookOpen className="w-5 h-5" />
                       </div>
-                    )}
-                  </SortableContext>
-                </DndContext>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-slate-900/80 text-emerald-400">
+                            PRÓXIMO
+                          </span>
+                          {nextHighlightProgress > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-500 border border-amber-500/30">
+                              Em andamento ({nextHighlightPct}%)
+                            </span>
+                          )}
+                        </div>
+                        <h2 className="text-base sm:text-lg font-extrabold text-slate-900 dark:text-white truncate">
+                          {nextHighlightSession.subject}
+                        </h2>
+                        {autoSuggestTopics && nextSuggestedTopic && (
+                          <p className="text-xs font-medium text-slate-600 dark:text-slate-200 mt-0.5 truncate border-b border-dashed border-slate-400/30 pb-0.5 inline-block max-w-full">
+                            {nextSuggestedTopic}
+                          </p>
+                        )}
+                        <div className="flex items-center gap-2 mt-2">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-900/50 text-white">
+                            <Clock className="w-3 h-3 text-emerald-400" />
+                            {nextHighlightProgress > 0
+                              ? `Faltam ${formatMinutesToHoursMinutes(
+                                  nextHighlightRemaining
+                                )} (${formatMinutesToHoursMinutes(
+                                  nextHighlightProgress
+                                )} / ${formatMinutesToHoursMinutes(
+                                  nextHighlightSession.duration
+                                )})`
+                              : formatMinutesToHoursMinutes(nextHighlightSession.duration)}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      <button
+                        onClick={() =>
+                          handleStartTimerForSession(
+                            nextHighlightSession,
+                            nextSuggestedTopic
+                          )
+                        }
+                        className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition-all"
+                      >
+                        <Play className="w-3.5 h-3.5 fill-current" />
+                        Iniciar estudo
+                      </button>
+                      <button
+                        onClick={() =>
+                          handleManualRegisterForSession(
+                            nextHighlightSession,
+                            nextSuggestedTopic
+                          )
+                        }
+                        className="px-3 py-2.5 rounded-xl text-xs font-semibold bg-white/80 dark:bg-[#131f33] text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-[#243552] hover:border-emerald-500 transition-colors"
+                        title="Registrar Estudo Manual"
+                      >
+                        + Manual
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Lista: PRÓXIMOS ESTUDOS */}
+              <div className="space-y-2.5">
+                {!isEditMode && upcomingQueueSessions.length > 0 && (
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block pt-1">
+                    Próximos Estudos
+                  </span>
+                )}
+
+                <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
+                    <SortableContext
+                      items={studyCycle}
+                      strategy={verticalListSortingStrategy}
+                    >
+                      {upcomingQueueSessions.length > 0 ? (
+                        upcomingQueueSessions.map((session) => (
+                          <SortableItem
+                            key={session.id}
+                            session={session}
+                            suggestedTopic={getSuggestedTopicForSubject(session.subject)}
+                            showSuggestedTopic={autoSuggestTopics}
+                            hoveredSession={hoveredSession}
+                            setHoveredSession={setHoveredSession}
+                            sessionProgressMap={sessionProgressMap}
+                            formatMinutesToHoursMinutes={formatMinutesToHoursMinutes}
+                            onStartTimer={handleStartTimerForSession}
+                            onManualRegister={handleManualRegisterForSession}
+                            isEditMode={isEditMode}
+                            onDelete={handleDeleteSession}
+                            onDuplicate={handleDuplicateSession}
+                            onDurationChange={handleDurationChange}
+                          />
+                        ))
+                      ) : pendingSessions.length === 0 ? (
+                        <div className="p-8 text-center text-sm text-emerald-500 font-semibold bg-emerald-500/5 rounded-xl border border-emerald-500/20 space-y-3">
+                          <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                          <p>Parabéns! Você concluiu todos os blocos deste ciclo!</p>
+                          <button
+                            type="button"
+                            onClick={restartStudyCycle}
+                            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 text-xs font-bold"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            Iniciar Novo Ciclo (+1 Ciclo Completo)
+                          </button>
+                        </div>
+                      ) : null}
+                    </SortableContext>
+                  </DndContext>
+                </div>
               </div>
 
-              {/* Completed Blocks Collapsible Section (Estudei Print 6) */}
+              {/* Estudos Concluídos no Ciclo (Colapsável) */}
               {completedSessions.length > 0 && (
-                <div className="pt-4 border-t border-slate-100 dark:border-[#1f304a]">
+                <div className="pt-3 border-t border-slate-100 dark:border-[#1f304a]">
                   <button
                     type="button"
                     onClick={() => setShowCompletedSection((prev) => !prev)}
@@ -806,7 +1151,7 @@ export default function Planejamento() {
                   >
                     <span className="flex items-center gap-2">
                       <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                      Estudos Concluídos no Ciclo ({completedSessions.length})
+                      Concluídos neste ciclo ({completedSessions.length})
                     </span>
                     {showCompletedSection ? (
                       <ChevronUp className="w-4 h-4" />
@@ -816,7 +1161,7 @@ export default function Planejamento() {
                   </button>
 
                   {showCompletedSection && (
-                    <div className="space-y-2 mt-3">
+                    <div className="space-y-2 mt-2">
                       {completedSessions.map((session) => {
                         const lastRec = studyRecords
                           .filter((r) => r.subject === session.subject)
@@ -824,7 +1169,7 @@ export default function Planejamento() {
                         return (
                           <div
                             key={session.id}
-                            className="p-3.5 rounded-xl bg-emerald-500/[0.04] border border-emerald-500/20 flex items-center justify-between gap-4"
+                            className="p-3 rounded-xl bg-emerald-500/[0.04] border border-emerald-500/20 flex items-center justify-between gap-4"
                           >
                             <div className="flex items-center gap-3 min-w-0">
                               <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
@@ -853,55 +1198,81 @@ export default function Planejamento() {
             </div>
           </div>
 
-          {/* Right Column (4 cols): Progress & Donut Chart */}
-          <div className="lg:col-span-4 space-y-6">
-            {/* Cycle Progress KPI Card */}
-            <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm space-y-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                    Progresso do Ciclo
-                  </span>
-                  <div className="text-2xl font-extrabold text-slate-900 dark:text-white mt-0.5">
-                    {cycleCompletionPct}%
-                  </div>
-                </div>
-                <div className="text-right">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Ciclos Completos
-                  </span>
-                  <span className="text-2xl font-extrabold text-emerald-500">
-                    {completedCycles}
-                  </span>
-                </div>
-              </div>
+          {/* Coluna Direita (5 cols): Card Único "Distribuição do Ciclo" com Donut Duplo + Lista de Disciplinas (Estilo Estudei Print 8 & 9) */}
+          <div className="lg:col-span-5">
+            <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm flex flex-col">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3">
+                Distribuição do Ciclo
+              </h3>
 
-              <div className="w-full h-2.5 rounded-full bg-slate-100 dark:bg-[#0b1320] overflow-hidden">
-                <div
-                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
-                  style={{ width: `${cycleCompletionPct}%` }}
+              <div className="flex justify-center">
+                <MultiRingDonutChart
+                  cycle={studyCycle}
+                  size={260}
+                  completionPct={cycleCompletionPct}
+                  studiedMinutes={totalProgressMinutes}
+                  totalMinutes={totalCycleDuration}
+                  hoveredSession={hoveredSession}
+                  setHoveredSession={setHoveredSession}
+                  sessionProgressMap={sessionProgressMap}
+                  formatMinutesToHoursMinutes={formatMinutesToHoursMinutes}
                 />
               </div>
 
-              <div className="flex justify-between text-xs text-slate-400">
-                <span>Estudado: {formatMinutesToHoursMinutes(totalProgressMinutes)}</span>
-                <span>Total: {formatMinutesToHoursMinutes(totalCycleDuration)}</span>
-              </div>
-            </div>
+              {/* Lista de Disciplinas do Ciclo (Estilo Estudei Print 9) */}
+              <div className="mt-5 pt-4 border-t border-slate-100 dark:border-[#1f304a] space-y-2.5">
+                {visibleSubjectsInChart.map((item) => (
+                  <div
+                    key={item.subject}
+                    className="flex items-center justify-between gap-3 text-xs"
+                  >
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <span
+                        className="w-3 h-3 rounded-[4px] shrink-0"
+                        style={{ backgroundColor: item.color }}
+                      />
+                      <span className="font-medium text-slate-700 dark:text-slate-200 truncate">
+                        {item.subject}
+                      </span>
+                      {item.count > 1 && (
+                        <span className="text-[11px] font-semibold text-slate-400 shrink-0">
+                          {item.count}×
+                        </span>
+                      )}
+                    </div>
 
-            {/* Donut Chart Card */}
-            <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm flex flex-col items-center">
-              <h3 className="text-sm font-bold text-slate-900 dark:text-white self-start mb-4">
-                Distribuição do Ciclo
-              </h3>
-              <DonutChart
-                cycle={studyCycle}
-                size={230}
-                remainingMinutes={remainingMinutes}
-                hoveredSession={hoveredSession}
-                setHoveredSession={setHoveredSession}
-                sessionProgressMap={sessionProgressMap}
-              />
+                    <span className="font-semibold text-slate-500 dark:text-slate-400 shrink-0">
+                      {item.studiedMinutes > 0
+                        ? `${formatMinutesToHoursMinutes(
+                            item.studiedMinutes
+                          )} / ${formatMinutesToHoursMinutes(item.plannedMinutes)}`
+                        : formatMinutesToHoursMinutes(item.plannedMinutes)}
+                    </span>
+                  </div>
+                ))}
+
+                {subjectBreakdownList.length > 7 && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllSubjectsInChart((prev) => !prev)}
+                    className="pt-2 inline-flex items-center gap-1 text-xs font-semibold text-slate-400 hover:text-emerald-500 transition-colors"
+                  >
+                    {showAllSubjectsInChart ? (
+                      <>
+                        <span>Ver menos</span>
+                        <ChevronUp className="w-3.5 h-3.5" />
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          Ver todas as {subjectBreakdownList.length} disciplinas
+                        </span>
+                        <ChevronDown className="w-3.5 h-3.5" />
+                      </>
+                    )}
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -915,11 +1286,13 @@ export default function Planejamento() {
             Monte seu Ciclo de Estudos Inteligente
           </h2>
           <p className="text-sm text-slate-500 dark:text-slate-400 mb-6 leading-relaxed">
-            Defina suas disciplinas, horas semanais, nível de domínio e peso na prova. O Ouroboros organiza seus blocos e sugere automaticamente qual tópico do edital estudar em seguida.
+            Defina suas disciplinas, horas semanais, nível de domínio e peso na prova. O
+            Alexandria organiza seus blocos e sugere automaticamente qual tópico do edital
+            estudar em seguida.
           </p>
           <button
             onClick={() => setIsModalOpen(true)}
-            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all"
+            className="inline-flex items-center gap-2 px-6 py-3 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-slate-950 text-sm font-bold shadow-lg shadow-emerald-500/20 transition-all"
           >
             <Sparkles className="w-4 h-4" />
             Criar Planejamento Agora
@@ -942,7 +1315,6 @@ export default function Planejamento() {
         onClose={() => {
           setIsRegisterModalOpen(false);
           setInitialStudyRecord(null);
-          setCurrentStudySession(null);
           setRecommendationJustification(null);
         }}
         onSave={handleSaveRecord}
@@ -955,13 +1327,16 @@ export default function Planejamento() {
         isOpen={isStopwatchModalOpen}
         onClose={() => setIsStopwatchModalOpen(false)}
         onSaveAndClose={async (time, subject, topic) => {
+          const now = new Date();
+          const todayLocal = `${now.getFullYear()}-${String(
+            now.getMonth() + 1
+          ).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
           const newRecord: Partial<StudyRecord> = {
-            date: new Date().toISOString().split('T')[0],
+            date: todayLocal,
             subject: subject || '',
             topic: topic || stopwatchInitialTopic || '',
             studyTime: time,
             questions: { correct: 0, total: 0 },
-            material: '',
             category: 'teoria',
             notes: '',
             reviewPeriods: [],
@@ -996,6 +1371,32 @@ export default function Planejamento() {
               }
             : undefined
         }
+      />
+
+      <ConfirmationModal
+        isOpen={isRestartConfirmOpen}
+        onClose={() => setIsRestartConfirmOpen(false)}
+        onConfirm={() => {
+          restartStudyCycle();
+          showNotification('Ciclo de estudos reiniciado com sucesso!', 'success');
+        }}
+        title="Recomeçar Ciclo Atual?"
+        message="Tem certeza que deseja zerar o progresso dos blocos atuais e recomeçar a fila deste ciclo do início? (Seus registros de estudo no histórico serão preservados)."
+        confirmText="Sim, recomeçar ciclo"
+        cancelText="Cancelar"
+      />
+
+      <ConfirmationModal
+        isOpen={isDeleteConfirmOpen}
+        onClose={() => setIsDeleteConfirmOpen(false)}
+        onConfirm={() => {
+          resetStudyCycle();
+          showNotification('Planejamento excluído com sucesso.', 'info');
+        }}
+        title="Excluir Planejamento?"
+        message="Tem certeza que deseja excluir todo o planejamento de ciclo atual? Você poderá criar um novo planejamento quando quiser (seu histórico de estudos e edital continuarão salvos)."
+        confirmText="Sim, excluir planejamento"
+        cancelText="Cancelar"
       />
     </div>
   );

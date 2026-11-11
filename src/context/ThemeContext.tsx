@@ -36,20 +36,20 @@ export const ThemeProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   useEffect(() => {
-    // Sincroniza a cor da barra de título do Electron com o tema
-    const lightBg = '#f59e0b';
-    const darkBg = '#1F2937';
+    // Sincroniza a cor da barra de título com o tema Clean Light / Dark Slate
+    const lightBg = '#f8fafc';
+    const darkBg = '#0b1320';
     const titleBarBg = theme === 'light' ? lightBg : darkBg;
     document.documentElement.style.setProperty('--title-bar-bg', titleBarBg);
 
     if (typeof window !== 'undefined' && (window as any).electronAPI) {
       const colors = theme === 'light'
-        ? { background: lightBg, symbols: '#FFFFFF' }       // Cores do modo claro
-        : { background: darkBg, symbols: '#F3F4F6' };      // Cores do modo escuro
+        ? { background: lightBg, symbols: '#0f172a' }
+        : { background: darkBg, symbols: '#f8fafc' };
       
       (window as any).electronAPI.updateTitlebarColor(colors);
     }
-  }, [theme]); // Executa sempre que o tema muda
+  }, [theme]);
 
   const toggleTheme = () => {
     const newTheme = theme === 'light' ? 'dark' : 'light';
