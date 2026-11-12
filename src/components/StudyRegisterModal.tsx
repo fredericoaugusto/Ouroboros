@@ -242,6 +242,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   const [reviewPeriods, setReviewPeriods] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(getLocalYYYYMMDD());
   const [questions, setQuestions] = useState<QuestionInput[]>([{ correct: '', incorrect: '' }]);
+  const [selectedErrorReasons, setSelectedErrorReasons] = useState<string[]>([]);
   const [pages, setPages] = useState<PageInput[]>([{ start: '', end: '' }]);
   const [videos, setVideos] = useState<VideoInput[]>([{ title: '', start: '', end: '' }]);
   const [material, setMaterial] = useState('');
@@ -352,6 +353,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
       allStudyRecords: allRecs,
       simuladoRecords: simuladoRecords || [],
       subjectName: selectedSubject,
+      topicName: selectedTopic,
     });
   }, [
     questions,
@@ -489,14 +491,19 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
             : [{ title: '', start: '', end: '' }]
         );
         setComments(effectiveRecord.notes || '');
+        setSelectedErrorReasons(effectiveRecord.errorReasons || []);
       } else if (initialTopicData) {
+        setSelectedErrorReasons([]);
         setSelectedSubject(initialTopicData.subject);
         setSelectedTopic(initialTopicData.topic.topic_text);
         setStudyTime(
           initialStudyTime && initialStudyTime > 0 ? formatTimeFromMs(initialStudyTime) : ''
         );
       } else if (initialStudyTime && initialStudyTime > 0) {
+        setSelectedErrorReasons([]);
         setStudyTime(formatTimeFromMs(initialStudyTime));
+      } else {
+        setSelectedErrorReasons([]);
       }
     }
   }, [isOpen, initialRecord, contextInitialRecord, initialTopicData, initialStudyTime]);
@@ -572,6 +579,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
       reviewPeriods: finalReviewPeriods,
       teoriaFinalizada: isTeoriaFinalizada,
       countInPlanning: countInPlanning,
+      errorReasons: incNum > 0 ? selectedErrorReasons : [],
       pages: pages
         .map((p) => ({
           start: parseInt(p.start || '0', 10) || 0,
@@ -1250,7 +1258,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
                       if (val) setIsReviewSchedulingEnabled(false);
                     }}
                     label="Revisão inteligente pelo Score"
-                    badge={`+${estimatedAutoReviewDays}d • ${smartReviewEstimate.tierLabel}`}
+                    badge={`+${estimatedAutoReviewDays || 7}d • ${smartReviewEstimate?.tierLabel || 'Consolidação'}`}
                   />
                   <button
                     type="button"
@@ -1278,9 +1286,9 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
                     <Info size={14} className="text-emerald-500 shrink-0 mt-0.5 sm:mt-0" />
                     <span>
                       <strong className="text-emerald-600 dark:text-emerald-400">
-                        Por que +{estimatedAutoReviewDays} dias ({smartReviewEstimate.tierLabel})?
+                        Por que +{estimatedAutoReviewDays || 7} dias ({smartReviewEstimate?.tierLabel || 'Consolidação'})?
                       </strong>{' '}
-                      {smartReviewEstimate.reason}
+                      {smartReviewEstimate?.reason || 'Calculado pelo algoritmo com base no seu histórico e curva de esquecimento.'}
                     </span>
                   </div>
                   <button
@@ -1360,6 +1368,43 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
                       />
                     </div>
                   ))}
+
+                  {/* Diagnóstico de Erros (aparece se houver questões erradas) */}
+                  {parseInt(questions[0]?.incorrect || '0', 10) > 0 && (
+                    <div className="pt-2 border-t border-slate-200 dark:border-[#1f304a] space-y-1.5 animate-fadeIn">
+                      <p className="text-[10px] font-bold uppercase tracking-wider text-rose-500 dark:text-rose-400">
+                        Motivo do Erro:
+                      </p>
+                      <div className="flex flex-wrap gap-1">
+                        {[
+                          { id: 'teoria', label: '📚 Teoria' },
+                          { id: 'letra_lei', label: '⚖️ Lei Seca' },
+                          { id: 'jurisprudencia', label: '🏛️ Juris' },
+                          { id: 'atencao', label: '⚡ Atenção' },
+                        ].map((chip) => {
+                          const isSel = selectedErrorReasons.includes(chip.id);
+                          return (
+                            <button
+                              key={chip.id}
+                              type="button"
+                              onClick={() =>
+                                setSelectedErrorReasons((prev) =>
+                                  isSel ? prev.filter((r) => r !== chip.id) : [...prev, chip.id]
+                                )
+                              }
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-semibold border transition-all ${
+                                isSel
+                                  ? 'bg-rose-500 text-white border-rose-500 shadow-sm'
+                                  : 'bg-white dark:bg-[#131f33] text-slate-600 dark:text-slate-300 border-slate-200 dark:border-[#243552] hover:border-rose-400'
+                              }`}
+                            >
+                              {chip.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Card Páginas (3 cols) */}

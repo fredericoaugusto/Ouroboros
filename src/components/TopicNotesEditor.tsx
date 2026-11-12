@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState, useRef } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
+import { Mark, mergeAttributes } from '@tiptap/core';
 import StarterKit from '@tiptap/starter-kit';
 import Underline from '@tiptap/extension-underline';
 import Highlight from '@tiptap/extension-highlight';
@@ -28,7 +29,52 @@ import {
   Save,
   Eraser,
   Check,
+  EyeOff,
 } from 'lucide-react';
+
+export const ClozeExtension = Mark.create({
+  name: 'cloze',
+
+  addOptions() {
+    return {
+      HTMLAttributes: {},
+    };
+  },
+
+  parseHTML() {
+    return [
+      { tag: 'span[data-cloze]' },
+      { tag: 'span.krono-cloze' },
+    ];
+  },
+
+  renderHTML({ HTMLAttributes }) {
+    return [
+      'span',
+      mergeAttributes(this.options.HTMLAttributes, HTMLAttributes, {
+        'data-cloze': 'true',
+        class: 'krono-cloze',
+        title: 'Passe o mouse ou toque para revelar (Active Recall)',
+      }),
+      0,
+    ];
+  },
+
+  addCommands() {
+    return {
+      toggleCloze:
+        () =>
+        ({ commands }: any) => {
+          return commands.toggleMark(this.name);
+        },
+      unsetCloze:
+        () =>
+        ({ commands }: any) => {
+          return commands.unsetMark(this.name);
+        },
+    };
+  },
+});
 
 interface TopicNotesEditorProps {
   initialContent?: string;
@@ -74,6 +120,7 @@ export default function TopicNotesEditor({
         allowBase64: true,
         inline: true,
       }),
+      ClozeExtension,
     ],
     content: initialContent || '',
     onUpdate: ({ editor }) => {
@@ -370,6 +417,23 @@ export default function TopicNotesEditor({
           title="Inserir imagem (ou cole com Ctrl+V)"
         >
           <ImagePlus size={15} />
+        </button>
+
+        <div className="w-px h-4 bg-slate-200 dark:bg-[#1f304a] mx-1" />
+
+        {/* Cloze / Ocultar para Active Recall */}
+        <button
+          type="button"
+          onClick={() => (editor.commands as any).toggleCloze()}
+          className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+            editor.isActive('cloze')
+              ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/50'
+              : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
+          }`}
+          title="Ocultar termo selecionado (Active Recall / Cloze). Passe o mouse ou toque para revelar e testar a memória!"
+        >
+          <EyeOff size={13} />
+          <span>Ocultar (Cloze)</span>
         </button>
 
         <div className="flex-grow" />

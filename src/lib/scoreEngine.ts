@@ -16,17 +16,25 @@ export interface ScientificReviewTip {
 
 export interface TopicScoreResult {
   score: number; // 0 - 100 (Score Atual combinando Base + Retenção)
+  currentScore: number; // alias para score (0 a 100)
   baseScore: number; // 0 - 100 (Força de Armazenamento / Qualidade de Aprendizagem antes do decaimento)
   retention: number; // 0 - 100 (%) - Probabilidade estimada de recordação hoje (FSRS-4.5)
   priorityROI: number; // 0 - 100 - Krono Priority Engine: Retorno sobre Investimento de estudar este tópico agora
-  level: 'strong' | 'medium' | 'weak' | 'unstarted';
+  level: 'strong' | 'medium' | 'weak' | 'unstarted' | 'high' | 'low';
+  color: 'emerald' | 'amber' | 'rose';
+  statusColor: 'green' | 'yellow' | 'red';
   nextReviewDays: number; // Dias recomendados a partir do último estudo (inversão analítica exata FSRS-4.5)
+  reviewIntervalDays: number; // alias
   nextReviewDate: string | null; // YYYY-MM-DD
+  daysUntilReview: number;
+  isDueForReview: boolean;
+  forgettingPenalty: number;
   daysSinceLastStudy: number;
   distinctStudyDays: number;
   totalQuestions: number;
   correctQuestions: number;
   rawAccuracy: number | null;
+  lastStudyDate: string | null;
   smoothedAccuracy: number;
   lastSessionAccuracy: number | null;
   totalHours: number;
@@ -43,6 +51,17 @@ export interface TopicScoreResult {
   scientificReviewTip: ScientificReviewTip; // Recomendação baseada em ciência cognitiva de como revisar
 }
 
+export interface SmartSessionReviewEstimate {
+  days: number;
+  tierLabel: string;
+  tierColor: 'rose' | 'amber' | 'emerald' | 'indigo';
+  reason: string;
+  sessionAccuracyPct: number | null;
+  baseScore: number;
+  finalScore: number;
+  explanation: string;
+}
+
 export interface SubjectScoreResult {
   subjectScore: number;
   subjectRetention: number;
@@ -53,6 +72,7 @@ export interface SubjectScoreResult {
   simuladoQuestionsTotal: number;
   simuladoQuestionsCorrect: number;
   combinedAccuracy: number | null;
+  combinedAccuracyPct: number | null;
   daysSinceLastStudy: number;
   explanation: string;
 }
@@ -198,36 +218,112 @@ export function computeSubjectQuestionPace(
  * - Etapa 4: Agendamento Analítico FSRS-4.5 + Censura por Data da Prova
  * - Etapa 5: Krono Priority Engine (ROI de Pontos na Prova) + Árvore de Decisão Completa
  */
-export function computeTopicScore(params: {
-  topic: EditalTopic | any;
-  subjectName: string;
-  studyRecords: StudyRecord[];
-  simuladoRecords?: SimuladoRecord[];
-  subjectTopicsCount?: number;
-  userRetentionMultiplier?: number;
-  examDate?: string | null;
-}): TopicScoreResult {
-  const {
-    topic,
-    subjectName,
-    studyRecords,
-    simuladoRecords = [],
-    subjectTopicsCount = 10,
-    userRetentionMultiplier = 1.0,
-    examDate = null,
-  } = params;
+export function computeTopicScore(
+  inputOrParams: any,
+  relevanceArg?: number,
+  difficultyArg?: number,
+  masteryArg?: number,
+  extraArg?: any
+): TopicScoreResult {
+  let topic: any = null;
+  let subjectName = '';
+  let topicRecords: StudyRecord[] = [];
+  let simuladoRecords: SimuladoRecord[] = [];
+  let subjectTopicsCount = 10;
+  let userRetentionMultiplier = 1.0;
+  let examDate: string | null = null;
+  let isCompletedFlag = false;
+  let hasSavedNotes = false;
 
-  const topicText = topic?.topic_text || '';
+  if (Array.isArray(inputOrParams)) {
+    // Chamada posicional com array de registros já pertencentes a este tópico
+    topicRecords = inputOrParams;
+    const importance = clamp(Number(relevanceArg ?? 3), 0, 5);
+    const difficulty = clamp(Number(difficultyArg ?? 3), 0, 5);
+    const mastery = clamp(Number(masteryArg ?? 3), 0, 5);
+    subjectName = extraArg?.subjectName || topicRecords[0]?.subject || '';
+    simuladoRecords = extraArg?.simuladoRecords || [];
+    hasSavedNotes = Boolean(extraArg?.hasNotes);
+    isCompletedFlag = Boolean(extraArg?.isCompleted);
+
+    topic = {
+      topic_text: extraArg?.topicText || topicRecords[0]?.topic || 'Tópico',
+      importance,
+      difficulty,
+      mastery,
+      userWeight: importance,
+      is_completed: isCompletedFlag,
+      notes: hasSavedNotes ? 'Anotações salvas' : undefined,
+    };
+  } else if (inputOrParams && (inputOrParams.topic || inputOrParams.studyRecords)) {
+    // Chamada por objeto de parâmetros
+    topic = inputOrParams.topic;
+    subjectName = inputOrParams.subjectName || topic?.subject || '';
+    const allRecords: StudyRecord[] = inputOrParams.studyRecords || [];
+    simuladoRecords = inputOrParams.simuladoRecords || [];
+    subjectTopicsCount = inputOrParams.subjectTopicsCount || 10;
+    userRetentionMultiplier = inputOrParams.userRetentionMultiplier || 1.0;
+    examDate = inputOrParams.examDate || null;
+    isCompletedFlag = Boolean(
+      topic?.is_completed || topic?.status === 'completed' || topic?.status === 'studied'
+    );
+    hasSavedNotes = Boolean(
+      topic?.notes && String(topic.notes).replace(/<[^>]*>/g, '').trim().length > 15
+    );
+
+    const topicText = (topic?.topic_text || '').trim().toLowerCase();
+    const cleanSubj = (subjectName || '').trim().toLowerCase();
+    topicRecords = allRecords.filter((r) => {
+      const rSubj = (r.subject || '').trim().toLowerCase();
+      const rTopic = (r.topic || '').trim().toLowerCase();
+      const subjMatch = !cleanSubj || rSubj === cleanSubj;
+      const topicMatch =
+        rTopic === topicText ||
+        (rTopic.length > 5 && (rTopic.endsWith(topicText) || topicText.endsWith(rTopic))) ||
+        (rTopic.length > 8 && (rTopic.includes(topicText) || topicText.includes(rTopic)));
+      return subjMatch && topicMatch;
+    });
+  } else if (inputOrParams) {
+    // Objeto simples do tipo TopicScoreInput
+    const inp = inputOrParams;
+    const importance = clamp(Number(inp.relevance ?? 3), 0, 5);
+    const difficulty = clamp(Number(inp.difficulty ?? 3), 0, 5);
+    const mastery = clamp(Number(inp.perceivedMastery ?? 3), 0, 5);
+    subjectName = inp.subject || '';
+    topic = {
+      topic_text: inp.topic || 'Tópico',
+      importance,
+      difficulty,
+      mastery,
+      userWeight: importance,
+    };
+    if (inp.questionsTotal !== undefined) {
+      topicRecords = [
+        {
+          id: 'single-input',
+          date: inp.lastStudiedDate || formatYMD(new Date()),
+          subjectId: '',
+          subject: subjectName,
+          topic: topic.topic_text,
+          studyTime: 3600000,
+          questions: {
+            correct: inp.questionsCorrect || 0,
+            total: inp.questionsTotal || 0,
+          },
+          pages: [],
+          videos: [],
+          notes: '',
+          category: 'questoes',
+          teoriaFinalizada: false,
+          countInPlanning: true,
+        },
+      ];
+    }
+  }
+
   const importance = clamp(Number(topic?.importance ?? topic?.userWeight ?? 3), 0, 5);
   const difficulty = clamp(Number(topic?.difficulty ?? 3), 0, 5);
   const mastery = clamp(Number(topic?.mastery ?? 3), 0, 5);
-  const hasSavedNotes = Boolean(
-    topic?.notes && String(topic.notes).replace(/<[^>]*>/g, '').trim().length > 15
-  );
-
-  const topicRecords = (studyRecords || []).filter(
-    (r) => r.subject === subjectName && r.topic === topicText
-  );
 
   // Questões de simulados da disciplina (ponderadas proporcionalmente por tópico)
   let simQuestionsForTopic = 0;
@@ -242,10 +338,6 @@ export function computeTopicScore(params: {
       }
     }
   }
-
-  const isCompletedFlag = Boolean(
-    topic?.is_completed || topic?.status === 'completed' || topic?.status === 'studied'
-  );
 
   // Caso Tópico Não Iniciado
   if (topicRecords.length === 0 && !isCompletedFlag) {
@@ -263,17 +355,25 @@ export function computeTopicScore(params: {
 
     return {
       score: 0,
+      currentScore: 0,
       baseScore: subjPrior,
       retention: 0,
       priorityROI: unstartedROI,
       level: 'unstarted',
+      color: 'amber',
+      statusColor: 'yellow',
       nextReviewDays: 0,
+      reviewIntervalDays: 0,
       nextReviewDate: null,
+      daysUntilReview: 0,
+      isDueForReview: false,
+      forgettingPenalty: 0,
       daysSinceLastStudy: 0,
       distinctStudyDays: 0,
       totalQuestions: 0,
       correctQuestions: 0,
       rawAccuracy: null,
+      lastStudyDate: null,
       smoothedAccuracy: 60,
       lastSessionAccuracy: null,
       totalHours: 0,
@@ -653,19 +753,32 @@ export function computeTopicScore(params: {
     };
   }
 
+  const statusColor: 'green' | 'yellow' | 'red' =
+    currentScore >= 70 ? 'green' : currentScore >= 50 ? 'yellow' : 'red';
+  const color: 'emerald' | 'amber' | 'rose' =
+    currentScore >= 70 ? 'emerald' : currentScore >= 50 ? 'amber' : 'rose';
+
   return {
     score: currentScore,
+    currentScore,
     baseScore,
     retention,
     priorityROI,
     level,
+    color,
+    statusColor,
     nextReviewDays,
+    reviewIntervalDays: nextReviewDays,
     nextReviewDate,
+    daysUntilReview: nextReviewDays - daysSinceLastStudy,
+    isDueForReview: daysSinceLastStudy >= nextReviewDays || currentScore < 50,
+    forgettingPenalty: Math.max(0, baseScore - currentScore),
     daysSinceLastStudy,
     distinctStudyDays,
     totalQuestions: studyQTotal,
     correctQuestions: studyQCorrect,
     rawAccuracy,
+    lastStudyDate: sortedRecords.length > 0 ? formatYMD(lastStudyDate) : (topic?.last_study || null),
     smoothedAccuracy: Math.round(blendedAccuracy),
     lastSessionAccuracy: lastSessionAccuracy !== null ? Math.round(lastSessionAccuracy) : null,
     totalHours,
@@ -688,19 +801,22 @@ export function computeTopicScore(params: {
  * integrando todos os tópicos estudados + todos os Simulados cadastrados.
  */
 export function computeSubjectScore(params: {
-  subject: EditalSubject | any;
+  subject?: EditalSubject | any;
+  subjectName?: string;
+  topics?: any[];
   studyRecords: StudyRecord[];
   simuladoRecords?: SimuladoRecord[];
   userRetentionMultiplier?: number;
 }): SubjectScoreResult {
   const {
     subject,
-    studyRecords,
+    studyRecords = [],
     simuladoRecords = [],
     userRetentionMultiplier = 1.0,
   } = params;
 
-  const subjectName = subject?.subject || '';
+  const subjectName = subject?.subject || params.subjectName || '';
+  const rawTopics = subject?.topics || params.topics || [];
 
   const flattenLeaves = (topics: any[]): any[] => {
     let leaves: any[] = [];
@@ -714,7 +830,7 @@ export function computeSubjectScore(params: {
     return leaves;
   };
 
-  const leafTopics = flattenLeaves(subject?.topics || []);
+  const leafTopics = flattenLeaves(rawTopics);
   const totalTopics = leafTopics.length;
 
   let weightedScoreSum = 0;
@@ -740,7 +856,10 @@ export function computeSubjectScore(params: {
     }
   }
 
-  const subjectRecords = (studyRecords || []).filter((r) => r.subject === subjectName);
+  const cleanSubjName = (subjectName || '').trim().toLowerCase();
+  const subjectRecords = (studyRecords || []).filter(
+    (r) => (r.subject || '').trim().toLowerCase() === cleanSubjName
+  );
   let studyQTotal = 0;
   let studyQCorrect = 0;
   let latestStudyMs = 0;
@@ -756,7 +875,7 @@ export function computeSubjectScore(params: {
   let simQCorrect = 0;
   for (const sim of simuladoRecords || []) {
     for (const sSub of sim.subjects || []) {
-      if (sSub.subjectName?.toLowerCase() === subjectName?.toLowerCase()) {
+      if ((sSub.subjectName || '').trim().toLowerCase() === cleanSubjName) {
         simQTotal += sSub.totalQuestions || 0;
         simQCorrect += sSub.correct || 0;
         const tMs = parseLocalDate(sim.date).getTime();
@@ -776,7 +895,20 @@ export function computeSubjectScore(params: {
       : 0;
 
   let avgTopicScore = weightTotal > 0 ? weightedScoreSum / weightTotal : 0;
-  const avgTopicRetention = weightTotal > 0 ? weightedRetentionSum / weightTotal : 0;
+  let avgTopicRetention = weightTotal > 0 ? weightedRetentionSum / weightTotal : 0;
+
+  // Fallback inteligente: se houver histórico de estudos na disciplina mas os tópicos avaliados foram 0
+  if (topicsEvaluated === 0 && subjectRecords.length > 0) {
+    const totalTimeHours =
+      subjectRecords.reduce((acc, r) => acc + (r.studyTime || 0), 0) / (1000 * 60 * 60);
+    const acc = studyQTotal > 0 ? (studyQCorrect / studyQTotal) * 100 : 60;
+    const hoursEffort = Math.min(1, Math.sqrt(totalTimeHours / 3.5)) * 30;
+    const qEffort = Math.min(1, Math.sqrt(studyQTotal / 35)) * 30;
+    avgTopicScore = clamp(acc * 0.4 + hoursEffort + qEffort, 25, 88);
+    avgTopicRetention = Math.round(
+      clamp(Math.pow(1 + (19 / 81) * (daysSinceLastStudy / 12), -0.5) * 100, 20, 95)
+    );
+  }
 
   if (simQTotal > 0) {
     const simAcc = (simQCorrect / simQTotal) * 100;
@@ -815,6 +947,7 @@ export function computeSubjectScore(params: {
     simuladoQuestionsTotal: simQTotal,
     simuladoQuestionsCorrect: simQCorrect,
     combinedAccuracy,
+    combinedAccuracyPct: combinedAccuracy ?? 0,
     daysSinceLastStudy,
     explanation,
   };
@@ -862,4 +995,137 @@ export function findTopicNotebookUrl(
   return rawUrl.startsWith('http://') || rawUrl.startsWith('https://')
     ? rawUrl
     : `https://${rawUrl}`;
+}
+
+export interface UserMemoryProfile {
+  personalRetentionFactor: number;
+  summaryText: string;
+}
+
+export function computeUserMemoryProfile(
+  studyRecords: StudyRecord[],
+  simuladoRecords?: SimuladoRecord[]
+): UserMemoryProfile {
+  const factor = Number(computeUserRetentionMultiplier(studyRecords).toFixed(2));
+  let summaryText = '';
+  if (factor >= 1.15) {
+    summaryText = `Seu histórico mostra excelente taxa de retenção (+${Math.round(
+      (factor - 1) * 100
+    )}% acima da média). O algoritmo calibrou o fator α = ${factor}x, aumentando os intervalos entre revisões para você não perder tempo.`;
+  } else if (factor <= 0.88) {
+    summaryText = `O algoritmo detectou que o esquecimento em baterias recentes ocorreu antes do previsto (-${Math.round(
+      (1 - factor) * 100
+    )}%). O fator pessoal α = ${factor}x antecipa suas próximas revisões para blindar o conteúdo.`;
+  } else {
+    summaryText = `Seu ritmo de fixação está em perfeito equilíbrio com o modelo cognitivo padrão (Fator α = ${factor}x). Conforme você acumula mais sessões e simulados, o sistema continuará refinando este valor.`;
+  }
+  return { personalRetentionFactor: factor, summaryText };
+}
+
+export function calculateSmartSessionReview(params: {
+  sessionCorrect: number;
+  sessionIncorrect: number;
+  previousSessionsCount?: number;
+  relevance?: number;
+  difficulty?: number;
+  perceivedMastery?: number;
+  topicRecords?: StudyRecord[];
+  subjectRecords?: StudyRecord[];
+  allStudyRecords?: StudyRecord[];
+  simuladoRecords?: SimuladoRecord[];
+  subjectName?: string;
+  topicName?: string;
+}): SmartSessionReviewEstimate {
+  const {
+    sessionCorrect = 0,
+    sessionIncorrect = 0,
+    relevance = 3,
+    difficulty = 3,
+    perceivedMastery = 3,
+    topicRecords = [],
+    allStudyRecords = [],
+    simuladoRecords = [],
+    subjectName = '',
+    topicName = 'Tópico Atual',
+  } = params;
+
+  const simulatedRecord: StudyRecord = {
+    id: 'simulated-session',
+    date: formatYMD(new Date()),
+    subjectId: '',
+    subject: subjectName,
+    topic: topicName,
+    studyTime: 45 * 60 * 1000,
+    questions: {
+      correct: sessionCorrect,
+      total: sessionCorrect + sessionIncorrect,
+    },
+    pages: [],
+    videos: [],
+    notes: '',
+    category: sessionCorrect + sessionIncorrect > 0 ? 'questoes' : 'teoria',
+    teoriaFinalizada: false,
+    countInPlanning: true,
+  };
+
+  const combinedRecords = [...topicRecords, simulatedRecord];
+  const userMult = computeUserRetentionMultiplier(allStudyRecords);
+
+  // Executa computeTopicScore com o array de registros já consolidados
+  const res = computeTopicScore(
+    combinedRecords,
+    relevance,
+    difficulty,
+    perceivedMastery,
+    {
+      subjectName,
+      topicText: topicName,
+      simuladoRecords,
+      userRetentionMultiplier: userMult,
+      isCompleted: true,
+    }
+  );
+
+  const qTotal = sessionCorrect + sessionIncorrect;
+  const days = Math.max(1, res.nextReviewDays);
+  let tierLabel = 'Consolidação';
+  let tierColor: 'rose' | 'amber' | 'emerald' | 'indigo' = 'emerald';
+  let reason = '';
+  let sessionAccuracyPct: number | null = null;
+
+  if (qTotal === 0) {
+    tierLabel = 'Fixação Teórica';
+    tierColor = 'indigo';
+    reason = `Sessão sem questões. O intervalo de ${days} dias foi calculado pelo modelo de memória para consolidar os conceitos teóricos antes da queda acentuada da curva de esquecimento.`;
+  } else {
+    sessionAccuracyPct = Math.round((sessionCorrect / qTotal) * 100);
+    if (sessionAccuracyPct >= 80) {
+      tierLabel = 'Excelente';
+      tierColor = 'emerald';
+      reason = `Excelente aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). O algoritmo FSRS expandiu a estabilidade para revisão em +${days} dias para manutenção de longo prazo.`;
+    } else if (sessionAccuracyPct >= 65) {
+      tierLabel = 'Bom Rendimento';
+      tierColor = 'emerald';
+      reason = `Aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Retenção sólida com próxima revisão em +${days} dias para consolidação.`;
+    } else if (sessionAccuracyPct >= 50) {
+      tierLabel = 'Atenção • Reforço';
+      tierColor = 'amber';
+      reason = `Aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Faixa de reforço necessária: intervalo de +${days} dias para blindar contra esquecimento.`;
+    } else {
+      tierLabel = 'Crítico • Urgente';
+      tierColor = 'rose';
+      reason = `Aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Abaixo de 50% indica lacuna conceitual: revisão antecipada em +${days} dias para correção imediata.`;
+    }
+  }
+
+  return {
+    days,
+    tierLabel,
+    tierColor,
+    reason,
+    sessionAccuracyPct,
+    baseScore: res.baseScore,
+    finalScore: res.score,
+    explanation: res.explanation,
+  };
 }

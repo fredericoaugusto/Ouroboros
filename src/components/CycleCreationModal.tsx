@@ -20,6 +20,8 @@ import {
   ArrowLeft,
   Wrench,
   Trash2,
+  Target,
+  Layers,
 } from 'lucide-react';
 import TopicWeightsModal from './TopicWeightsModal';
 import Breadcrumbs from './Breadcrumbs';
@@ -110,6 +112,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
   const [modalStep, setModalStep] = useState(0);
   const [wizardMode, setWizardMode] = useState<'simple' | 'detailed' | 'manual'>('detailed');
   const [topicSuggestionMode, setTopicSuggestionMode] = useState<'auto' | 'manual'>('auto');
+  const [planningFormat, setPlanningFormat] = useState<'time_cycle' | 'questions_cycle' | 'fixed_weekly'>('time_cycle');
 
   const subjects: Subject[] = useMemo(() => stats.editalData || [], [stats.editalData]);
   const currentPlan = useMemo(() => {
@@ -131,6 +134,8 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
   const [minSession, setMinSession] = useState('45');
   const [maxSession, setMaxSession] = useState('90');
   const [weeklyQuestionsGoal, setWeeklyQuestionsGoal] = useState('200');
+  const [minQuestionsPerSession, setMinQuestionsPerSession] = useState('20');
+  const [maxQuestionsPerSession, setMaxQuestionsPerSession] = useState('35');
   const [searchTerm, setSearchTerm] = useState('');
   const [manualStudySessions, setManualStudySessions] = useState<StudySession[]>([]);
   const [newManualSessionSubjectId, setNewManualSessionSubjectId] = useState('');
@@ -261,13 +266,16 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
     }
 
     generateStudyCycle({
-      studyHours: parseInt(studyHours),
-      minSession: parseInt(minSession),
-      maxSession: parseInt(maxSession),
+      studyHours: parseInt(studyHours) || 20,
+      minSession: parseInt(minSession) || 30,
+      maxSession: parseInt(maxSession) || 90,
       subjectSettings,
       subjects: selectedSubjectsData,
       weeklyQuestionsGoal,
-    });
+      planningFormat,
+      minQuestionsPerSession: parseInt(minQuestionsPerSession) || 20,
+      maxQuestionsPerSession: parseInt(maxQuestionsPerSession) || 35,
+    } as any);
     setContextStudyDays(studyDays);
     if (typeof window !== 'undefined') {
       localStorage.setItem('ouroboros_topic_suggestion_mode', topicSuggestionMode);
@@ -445,7 +453,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
             <X className="w-5 h-5" />
           </button>
 
-          {/* STEP 0: Choose Format (Estudei Print 5) */}
+          {/* STEP 0: Choose Format */}
           {modalStep === 0 && (
             <div className="space-y-6 my-auto">
               <div>
@@ -456,76 +464,213 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
                   Como você quer montar seu planejamento?
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                  Nos dois caminhos o Krono monta a rotina ideal para você.
+                  Escolha o modelo de organização que melhor combina com a sua rotina e perfil de estudo.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Começar Simples */}
-                <div
-                  onClick={() => {
-                    setWizardMode('simple');
-                    setModalStep(1);
-                  }}
-                  className="group p-5 rounded-2xl border-2 border-emerald-500/40 hover:border-emerald-500 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.06] cursor-pointer transition-all flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center mb-4 shadow-md shadow-emerald-500/20">
-                      <Wand2 className="w-5 h-5" />
+              {/* 3 Formatos de Planejamento (Tempo, Questões, Quadro Semanal) */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                  1. Escolha o Formato da Rotina:
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {/* Formato 1: Ciclo por Tempo */}
+                  <div
+                    onClick={() => setPlanningFormat('time_cycle')}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                      planningFormat === 'time_cycle'
+                        ? 'border-emerald-500 bg-emerald-500/[0.06] shadow-md shadow-emerald-500/10'
+                        : 'border-slate-200 dark:border-[#243552] bg-slate-50/50 dark:bg-[#0f1929]/40 hover:border-slate-300 dark:hover:border-[#334b75]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                          planningFormat === 'time_cycle'
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : 'bg-slate-200 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300'
+                        }`}>
+                          <Clock className="w-5 h-5" />
+                        </div>
+                        {planningFormat === 'time_cycle' && (
+                          <span className="w-5 h-5 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center text-xs font-bold">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+                        Ciclo por Tempo
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Blocos em minutos em fila contínua. Sem dia fixo: se imprevistos acontecerem, o ciclo segue de onde parou sem acumular atrasos.
+                      </p>
                     </div>
-                    <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">
-                      Começar simples
-                    </h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      Escolha as disciplinas e diga quanto tempo tem. O sistema distribui o resto — você ajusta depois.
-                    </p>
+                    <div className="mt-4 pt-2.5 border-t border-slate-200/60 dark:border-[#1f304a] flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/15 text-emerald-600 dark:text-emerald-400">
+                        Mais flexível
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-400">
+                        Sem atraso
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-5 pt-3 flex items-center justify-between">
-                    <div className="flex gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
-                        3 etapas
+
+                  {/* Formato 2: Ciclo por Questões */}
+                  <div
+                    onClick={() => setPlanningFormat('questions_cycle')}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                      planningFormat === 'questions_cycle'
+                        ? 'border-indigo-500 bg-indigo-500/[0.06] shadow-md shadow-indigo-500/10'
+                        : 'border-slate-200 dark:border-[#243552] bg-slate-50/50 dark:bg-[#0f1929]/40 hover:border-slate-300 dark:hover:border-[#334b75]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                          planningFormat === 'questions_cycle'
+                            ? 'bg-indigo-600 text-white shadow-sm'
+                            : 'bg-slate-200 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300'
+                        }`}>
+                          <Target className="w-5 h-5" />
+                        </div>
+                        {planningFormat === 'questions_cycle' && (
+                          <span className="w-5 h-5 rounded-full bg-indigo-600 text-white flex items-center justify-center text-xs font-bold">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+                        Ciclo por Questões
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Metas de questões por bloco (ex: 30 questões de Dir. Adm.). O tempo estimado é calibrado dinamicamente pelo seu ritmo (min/questão).
+                      </p>
+                    </div>
+                    <div className="mt-4 pt-2.5 border-t border-slate-200/60 dark:border-[#1f304a] flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-indigo-500/15 text-indigo-600 dark:text-indigo-400">
+                        Foco prático
                       </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
-                        ~1 min
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-400">
+                        Ritmo pessoal
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-emerald-500 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      Começar <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
+                  </div>
+
+                  {/* Formato 3: Quadro Semanal Fixo */}
+                  <div
+                    onClick={() => setPlanningFormat('fixed_weekly')}
+                    className={`p-4 rounded-2xl border-2 cursor-pointer transition-all flex flex-col justify-between ${
+                      planningFormat === 'fixed_weekly'
+                        ? 'border-amber-500 bg-amber-500/[0.06] shadow-md shadow-amber-500/10'
+                        : 'border-slate-200 dark:border-[#243552] bg-slate-50/50 dark:bg-[#0f1929]/40 hover:border-slate-300 dark:hover:border-[#334b75]'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between mb-3">
+                        <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold ${
+                          planningFormat === 'fixed_weekly'
+                            ? 'bg-amber-500 text-slate-950 shadow-sm'
+                            : 'bg-slate-200 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300'
+                        }`}>
+                          <Calendar className="w-5 h-5" />
+                        </div>
+                        {planningFormat === 'fixed_weekly' && (
+                          <span className="w-5 h-5 rounded-full bg-amber-500 text-slate-950 flex items-center justify-center text-xs font-bold">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </div>
+                      <h4 className="text-sm font-extrabold text-slate-900 dark:text-white mb-1">
+                        Quadro Semanal Fixo
+                      </h4>
+                      <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Grade estruturada por dias da semana (Segunda a Domingo). Ideal para rotinas previsíveis e quem prefere horário marcado para cada matéria.
+                      </p>
+                    </div>
+                    <div className="mt-4 pt-2.5 border-t border-slate-200/60 dark:border-[#1f304a] flex items-center gap-1.5 flex-wrap">
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                        Horário fixo
+                      </span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-400">
+                        Seg a Dom
+                      </span>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {/* Ajustar em detalhe */}
-                <div
-                  onClick={() => {
-                    setWizardMode('detailed');
-                    setModalStep(1);
-                  }}
-                  className="group p-5 rounded-2xl border border-slate-200 dark:border-[#243552] hover:border-indigo-500 bg-slate-50/50 dark:bg-[#0f1929]/50 cursor-pointer transition-all flex flex-col justify-between"
-                >
-                  <div>
-                    <div className="w-11 h-11 rounded-xl bg-slate-200 dark:bg-[#1a2942] text-indigo-400 flex items-center justify-center mb-4">
-                      <Sliders className="w-5 h-5" />
+              {/* 2 Modos de Configuração (Simples vs Detalhado) */}
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-2.5">
+                  2. Escolha o Método de Montagem:
+                </label>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {/* Começar Simples */}
+                  <div
+                    onClick={() => {
+                      setWizardMode('simple');
+                      setModalStep(1);
+                    }}
+                    className="group p-5 rounded-2xl border-2 border-emerald-500/40 hover:border-emerald-500 bg-emerald-500/[0.03] hover:bg-emerald-500/[0.06] cursor-pointer transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="w-11 h-11 rounded-xl bg-emerald-500 text-white flex items-center justify-center mb-4 shadow-md shadow-emerald-500/20">
+                        <Wand2 className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">
+                        Começar simples
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Escolha as disciplinas e diga quanto tempo tem. O Krono calcula e distribui a carga horária ideal.
+                      </p>
                     </div>
-                    <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">
-                      Ajustar em detalhe
-                    </h4>
-                    <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
-                      Diga quanto já domina de cada disciplina e quanto ela pesa na prova, e o tempo é dividido com base nisso.
-                    </p>
+                    <div className="mt-5 pt-3 flex items-center justify-between">
+                      <div className="flex gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                          3 etapas
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                          ~1 min
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-emerald-500 inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                        Começar <ArrowRight className="w-3.5 h-3.5" />
+                      </span>
+                    </div>
                   </div>
-                  <div className="mt-5 pt-3 flex items-center justify-between">
-                    <div className="flex gap-2">
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
-                        4 etapas
-                      </span>
-                      <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
-                        ~2 min
+
+                  {/* Ajustar em detalhe */}
+                  <div
+                    onClick={() => {
+                      setWizardMode('detailed');
+                      setModalStep(1);
+                    }}
+                    className="group p-5 rounded-2xl border border-slate-200 dark:border-[#243552] hover:border-indigo-500 bg-slate-50/50 dark:bg-[#0f1929]/50 cursor-pointer transition-all flex flex-col justify-between"
+                  >
+                    <div>
+                      <div className="w-11 h-11 rounded-xl bg-slate-200 dark:bg-[#1a2942] text-indigo-400 flex items-center justify-center mb-4">
+                        <Sliders className="w-5 h-5" />
+                      </div>
+                      <h4 className="text-lg font-bold text-slate-900 dark:text-white mb-1.5">
+                        Ajustar em detalhe
+                      </h4>
+                      <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">
+                        Defina relevância na prova e nível de conhecimento por disciplina para distribuição matemática ponderada.
+                      </p>
+                    </div>
+                    <div className="mt-5 pt-3 flex items-center justify-between">
+                      <div className="flex gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                          4 etapas
+                        </span>
+                        <span className="px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-500 dark:text-slate-300">
+                          ~2 min
+                        </span>
+                      </div>
+                      <span className="text-xs font-bold text-slate-700 dark:text-white inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
+                        Ajustar <ArrowRight className="w-3.5 h-3.5" />
                       </span>
                     </div>
-                    <span className="text-xs font-bold text-slate-700 dark:text-white inline-flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                      Ajustar <ArrowRight className="w-3.5 h-3.5" />
-                    </span>
                   </div>
                 </div>
               </div>
@@ -805,65 +950,131 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
             <div className="space-y-5 flex-1 flex flex-col justify-between">
               <div>
                 <h3 className="text-xl font-extrabold text-slate-900 dark:text-white">
-                  Defina sua Rotina Semanal
+                  {planningFormat === 'questions_cycle'
+                    ? 'Metas do Ciclo por Questões'
+                    : 'Defina sua Rotina Semanal'}
                 </h3>
                 <p className="text-xs text-slate-500 dark:text-slate-400">
-                  Configure quantas horas por semana pretende estudar e a duração de cada bloco
+                  {planningFormat === 'questions_cycle'
+                    ? 'Configure a meta de questões por bloco e a meta semanal de questões para o seu ciclo'
+                    : 'Configure quantas horas por semana pretende estudar e a duração de cada bloco'}
                 </p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
-                    <Clock className="w-4 h-4 text-emerald-500" />
-                    Horas de Estudo por Semana
-                  </label>
-                  <input
-                    type="number"
-                    value={studyHours}
-                    onChange={(e) => setStudyHours(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
-                  />
-                </div>
+                {planningFormat === 'questions_cycle' ? (
+                  <>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                        <HelpCircle className="w-4 h-4 text-indigo-400" />
+                        Meta de Questões por Bloco de Estudo
+                      </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block mb-1">Mínimo de Questões</span>
+                          <input
+                            type="number"
+                            value={minQuestionsPerSession}
+                            onChange={(e) => setMinQuestionsPerSession(e.target.value)}
+                            className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-400 block mb-1">Máximo de Questões</span>
+                          <input
+                            type="number"
+                            value={maxQuestionsPerSession}
+                            onChange={(e) => setMaxQuestionsPerSession(e.target.value)}
+                            className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-2">
+                        ⚡ Ritmo estimado: ~2.5 min/questão ({minQuestionsPerSession} questões ≈ {Math.round(Number(minQuestionsPerSession) * 2.5)} min, {maxQuestionsPerSession} questões ≈ {Math.round(Number(maxQuestionsPerSession) * 2.5)} min)
+                      </p>
+                    </div>
 
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
-                    <HelpCircle className="w-4 h-4 text-indigo-400" />
-                    Meta Semanal de Questões
-                  </label>
-                  <input
-                    type="number"
-                    value={weeklyQuestionsGoal}
-                    onChange={(e) => setWeeklyQuestionsGoal(e.target.value)}
-                    className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
-                  />
-                </div>
-
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-2">
-                    Duração de cada Bloco de Estudo (minutos)
-                  </label>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-[11px] text-slate-400 block mb-1">Mínimo (min)</span>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                        <HelpCircle className="w-4 h-4 text-emerald-500" />
+                        Meta Semanal Total de Questões
+                      </label>
                       <input
                         type="number"
-                        value={minSession}
-                        onChange={(e) => setMinSession(e.target.value)}
+                        value={weeklyQuestionsGoal}
+                        onChange={(e) => setWeeklyQuestionsGoal(e.target.value)}
                         className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
                       />
                     </div>
-                    <div>
-                      <span className="text-[11px] text-slate-400 block mb-1">Máximo (min)</span>
+
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                        <Clock className="w-4 h-4 text-indigo-400" />
+                        Horas de Estudo Semanais Estimadas
+                      </label>
                       <input
                         type="number"
-                        value={maxSession}
-                        onChange={(e) => setMaxSession(e.target.value)}
+                        value={studyHours}
+                        onChange={(e) => setStudyHours(e.target.value)}
                         className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
                       />
                     </div>
-                  </div>
-                </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                        <Clock className="w-4 h-4 text-emerald-500" />
+                        Horas de Estudo por Semana
+                      </label>
+                      <input
+                        type="number"
+                        value={studyHours}
+                        onChange={(e) => setStudyHours(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-2">
+                        <HelpCircle className="w-4 h-4 text-indigo-400" />
+                        Meta Semanal de Questões
+                      </label>
+                      <input
+                        type="number"
+                        value={weeklyQuestionsGoal}
+                        onChange={(e) => setWeeklyQuestionsGoal(e.target.value)}
+                        className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                      />
+                    </div>
+
+                    <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
+                      <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-2">
+                        Duração de cada Bloco de Estudo (minutos)
+                      </label>
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <span className="text-[11px] text-slate-400 block mb-1">Mínimo (min)</span>
+                          <input
+                            type="number"
+                            value={minSession}
+                            onChange={(e) => setMinSession(e.target.value)}
+                            className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                          />
+                        </div>
+                        <div>
+                          <span className="text-[11px] text-slate-400 block mb-1">Máximo (min)</span>
+                          <input
+                            type="number"
+                            value={maxSession}
+                            onChange={(e) => setMaxSession(e.target.value)}
+                            className="w-full px-3.5 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#243552] text-sm font-bold text-slate-900 dark:text-white"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  </>
+                )}
 
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
                   <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-3">

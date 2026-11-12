@@ -51,29 +51,31 @@ const TopicRow: React.FC<TopicRowProps> = ({
     }
   }, [allTopicsExpanded]);
 
+  const cleanSubj = (subjectName || '').trim().toLowerCase();
   const subjectRecords = useMemo(
-    () => studyRecords.filter((r) => r.subject === subjectName),
-    [studyRecords, subjectName]
+    () => studyRecords.filter((r) => (r.subject || '').trim().toLowerCase() === cleanSubj),
+    [studyRecords, cleanSubj]
   );
 
+  const cleanTopicText = (topic.topic_text || '').trim().toLowerCase();
   const topicRecords = useMemo(
-    () => subjectRecords.filter((r) => r.topic === topic.topic_text),
-    [subjectRecords, topic.topic_text]
+    () =>
+      subjectRecords.filter((r) => {
+        const rTop = (r.topic || '').trim().toLowerCase();
+        return (
+          rTop === cleanTopicText ||
+          (rTop.length > 5 && (rTop.endsWith(cleanTopicText) || cleanTopicText.endsWith(rTop))) ||
+          (rTop.length > 8 && (rTop.includes(cleanTopicText) || cleanTopicText.includes(rTop)))
+        );
+      }),
+    [subjectRecords, cleanTopicText]
   );
+
+  const isCompleted = Boolean(topic.is_completed);
 
   const scoreRes = useMemo(() => {
-    const mapped = topicRecords.map((r) => ({
-      date: r.date,
-      studyTime: r.studyTime || 0,
-      questions: {
-        correct: r.questions?.correct ?? (r as any).correctQuestions ?? 0,
-        total:
-          r.questions?.total ??
-          ((r as any).correctQuestions || 0) + ((r as any).incorrectQuestions || 0),
-      },
-    }));
     return computeTopicScore(
-      mapped,
+      topicRecords,
       topic.relevance ?? 3,
       topic.difficulty ?? 3,
       (topic as any).perceivedMastery ?? topic.mastery ?? 3,
@@ -81,6 +83,9 @@ const TopicRow: React.FC<TopicRowProps> = ({
         subjectRecords,
         allStudyRecords: studyRecords,
         subjectName,
+        topicText: topic.topic_text,
+        isCompleted,
+        hasNotes: Boolean(topic.notes && topic.notes.replace(/<[^>]*>/g, '').trim().length > 0),
       }
     );
   }, [
@@ -89,9 +94,12 @@ const TopicRow: React.FC<TopicRowProps> = ({
     topic.difficulty,
     (topic as any).perceivedMastery,
     topic.mastery,
+    topic.notes,
+    topic.topic_text,
     subjectRecords,
     studyRecords,
     subjectName,
+    isCompleted,
   ]);
 
   const completedQ = topic.completed ?? scoreRes.correctQuestions;
@@ -102,7 +110,6 @@ const TopicRow: React.FC<TopicRowProps> = ({
   const wrongQ = Math.max(0, totalQ - completedQ);
   const percentageCorrect = totalQ > 0 ? Math.round((completedQ / totalQ) * 100) : 0;
 
-  const isCompleted = Boolean(topic.is_completed);
   const hasStudiedData = isCompleted || topicRecords.length > 0 || totalQ > 0;
   const hasNotes = !!(topic.notes && topic.notes.replace(/<[^>]*>/g, '').trim().length > 0);
 

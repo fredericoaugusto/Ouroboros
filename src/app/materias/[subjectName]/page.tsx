@@ -187,6 +187,7 @@ export default function MateriaDetalhes() {
     updateStudyRecord,
     deleteStudyRecord,
     selectedDataFile,
+    studyPlans,
     refreshPlans,
   } = useData();
   const { theme } = useTheme();
@@ -227,13 +228,35 @@ export default function MateriaDetalhes() {
     fetchPlan(false);
   }, [fetchPlan]);
 
+  const normalizedSubjectName = useMemo(
+    () => (subjectName || '').trim().toLowerCase(),
+    [subjectName]
+  );
+
   const filteredStudyRecords = useMemo(() => {
-    return studyRecords.filter((record) => record.subject === subjectName);
-  }, [studyRecords, subjectName]);
+    return (studyRecords || []).filter(
+      (record) => (record.subject || '').trim().toLowerCase() === normalizedSubjectName
+    );
+  }, [studyRecords, normalizedSubjectName]);
 
   const currentSubject = useMemo(() => {
-    return planData?.subjects.find((s) => s.subject === subjectName);
-  }, [planData, subjectName]);
+    if (!normalizedSubjectName) return null;
+    // 1. Tenta no planData local
+    const foundInLocal = planData?.subjects?.find(
+      (s) => (s.subject || '').trim().toLowerCase() === normalizedSubjectName
+    );
+    if (foundInLocal) return foundInLocal;
+
+    // 2. Tenta nos studyPlans carregados globalmente no DataContext
+    for (const plan of studyPlans || []) {
+      const subs = Array.isArray(plan) ? plan : plan?.subjects;
+      const foundInGlobal = (subs || []).find(
+        (s: any) => (s.subject || '').trim().toLowerCase() === normalizedSubjectName
+      );
+      if (foundInGlobal) return foundInGlobal;
+    }
+    return null;
+  }, [planData, studyPlans, normalizedSubjectName]);
 
   const totalTopicsCount = useMemo(() => {
     return countTopicsRecursively(currentSubject?.topics || []);
@@ -434,36 +457,6 @@ export default function MateriaDetalhes() {
       setIsExpanded(allTopicsExpanded);
     }, [allTopicsExpanded]);
 
-    const topicRecords = useMemo(
-      () => filteredStudyRecords.filter((r) => r.topic === topic.topic_text),
-      [topic.topic_text]
-    );
-
-    const scoreRes = useMemo(() => {
-      const mapped = topicRecords.map((r) => ({
-        date: r.date,
-        studyTime: r.studyTime || 0,
-        questions: {
-          correct: r.questions?.correct ?? (r as any).correctQuestions ?? 0,
-          total:
-            r.questions?.total ??
-            ((r as any).correctQuestions || 0) + ((r as any).incorrectQuestions || 0),
-        },
-      }));
-      return computeTopicScore(
-        mapped,
-        topic.relevance ?? 3,
-        topic.difficulty ?? 3,
-        topic.perceivedMastery ?? topic.mastery ?? 3,
-        {
-          subjectRecords: filteredStudyRecords,
-          allStudyRecords: studyRecords || [],
-          simuladoRecords: simuladoRecords || [],
-          subjectName,
-        }
-      );
-    }, [topicRecords, topic.relevance, topic.difficulty, topic.perceivedMastery, topic.mastery]);
-
     const isLeafCompleted = (t: Topic): boolean => {
       if (!t.sub_topics || t.sub_topics.length === 0) {
         return Boolean(
@@ -477,6 +470,61 @@ export default function MateriaDetalhes() {
     };
 
     const isCompleted = isLeafCompleted(topic);
+
+    const getAllDescendantTopicTexts = useCallback((t: Topic): string[] => {
+      let texts = [t.topic_text.trim().toLowerCase()];
+      if (t.sub_topics && t.sub_topics.length > 0) {
+        for (const sub of t.sub_topics) {
+          texts = texts.concat(getAllDescendantTopicTexts(sub));
+        }
+      }
+      return texts;
+    }, []);
+
+    const topicRecords = useMemo(() => {
+      const targetTexts = new Set(getAllDescendantTopicTexts(topic));
+      return filteredStudyRecords.filter((r) => {
+        const rTop = (r.topic || '').trim().toLowerCase();
+        if (targetTexts.has(rTop)) return true;
+        return Array.from(targetTexts).some(
+          (tt) =>
+            (rTop.length > 5 && (rTop.endsWith(tt) || tt.endsWith(rTop))) ||
+            (rTop.length > 8 && (rTop.includes(tt) || tt.includes(rTop)))
+        );
+      });
+    }, [filteredStudyRecords, topic, getAllDescendantTopicTexts]);
+
+    const scoreRes = useMemo(() => {
+      return computeTopicScore(
+        topicRecords,
+        topic.relevance ?? 3,
+        topic.difficulty ?? 3,
+        topic.perceivedMastery ?? topic.mastery ?? 3,
+        {
+          subjectRecords: filteredStudyRecords,
+          allStudyRecords: studyRecords || [],
+          simuladoRecords: simuladoRecords || [],
+          subjectName,
+          topicText: topic.topic_text,
+          isCompleted,
+          hasNotes: Boolean(topic.notes && String(topic.notes).replace(/<[^>]*>/g, '').trim().length > 0),
+        }
+      );
+    }, [
+      topicRecords,
+      topic.relevance,
+      topic.difficulty,
+      topic.perceivedMastery,
+      topic.mastery,
+      topic.notes,
+      topic.topic_text,
+      filteredStudyRecords,
+      studyRecords,
+      simuladoRecords,
+      subjectName,
+      isCompleted,
+    ]);
+
     const hasStudiedData = isCompleted || topicRecords.length > 0;
     const hasSubtopics = !!(topic.sub_topics && topic.sub_topics.length > 0);
     const hasNotes = !!(topic.notes && topic.notes.replace(/<[^>]*>/g, '').trim().length > 0);
@@ -574,7 +622,14 @@ export default function MateriaDetalhes() {
             {scoreRes.totalQuestions > 0 ? (
               <span>
                 <strong className="text-emerald-500">{scoreRes.correctQuestions}</strong>/
-                {scoreRes.totalQuestions} ({Math.round(scoreRes.rawAccuracy * 100)}%)
+                {scoreRes.totalQuestions}{' '}
+                (
+                {scoreRes.rawAccuracy !== null
+                  ? scoreRes.rawAccuracy <= 1
+                    ? Math.round(scoreRes.rawAccuracy * 100)
+                    : Math.round(scoreRes.rawAccuracy)
+                  : 0}
+                %)
               </span>
             ) : (
               <span className="text-slate-400">—</span>

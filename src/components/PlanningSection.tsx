@@ -14,10 +14,12 @@ import {
   Plus,
   Pencil,
   ExternalLink,
+  History,
 } from 'lucide-react';
 import TopicQueueSelectorModal, {
   getSubjectTopicOverride,
 } from './TopicQueueSelectorModal';
+import SubjectRecentStudiesModal from './SubjectRecentStudiesModal';
 import { findTopicNotebookUrl } from '../lib/scoreEngine';
 import { startGlobalTimerSession } from '../lib/timerStore';
 
@@ -26,6 +28,7 @@ const PlanningSection = () => {
     studyCycle,
     sessionProgressMap,
     stats,
+    studyRecords,
     setCurrentStudySession,
     setIsRegisterModalOpen,
     setIsStopwatchModalOpen,
@@ -35,6 +38,10 @@ const PlanningSection = () => {
   } = useData();
 
   const [overrideVersion, setOverrideVersion] = useState(0);
+  const [recentStudiesSubject, setRecentStudiesSubject] = useState<{
+    subject: string;
+    color?: string;
+  } | null>(null);
   const [topicModalTarget, setTopicModalTarget] = useState<{
     subjectName: string;
     subjectColor: string;
@@ -281,17 +288,28 @@ const PlanningSection = () => {
                       </div>
 
                       <div className="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400 mt-2">
-                        <Clock size={13} className="text-emerald-500 shrink-0" />
-                        {nextSessionProgress > 0 ? (
-                          <span>
-                            Faltam{' '}
-                            <strong className="text-emerald-600 dark:text-emerald-400">
-                              {nextSessionRemaining} min
-                            </strong>{' '}
-                            ({nextSessionProgress}min / {nextSession.duration}min concluídos)
+                        {nextSession.targetQuestions || nextSession.mode === 'questions' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-lg bg-indigo-500/10 text-indigo-500 dark:text-indigo-400 border border-indigo-500/25 font-bold text-xs">
+                            <span>🎯 Meta: {nextSession.targetQuestions || 25} questões</span>
+                            <span className="opacity-70 font-normal">
+                              (~{nextSessionProgress > 0 ? `${nextSessionRemaining} min restantes` : `${nextSession.duration} min`})
+                            </span>
                           </span>
                         ) : (
-                          <span>{nextSession.duration} min planejados</span>
+                          <>
+                            <Clock size={13} className="text-emerald-500 shrink-0" />
+                            {nextSessionProgress > 0 ? (
+                              <span>
+                                Faltam{' '}
+                                <strong className="text-emerald-600 dark:text-emerald-400">
+                                  {nextSessionRemaining} min
+                                </strong>{' '}
+                                ({nextSessionProgress}min / {nextSession.duration}min concluídos)
+                              </span>
+                            ) : (
+                              <span>{nextSession.duration} min planejados</span>
+                            )}
+                          </>
                         )}
                       </div>
                       {nextSessionProgress > 0 && (
@@ -306,6 +324,19 @@ const PlanningSection = () => {
                   </div>
 
                   <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setRecentStudiesSubject({
+                          subject: nextSession.subject,
+                          color: nextSession.color,
+                        })
+                      }
+                      className="p-2.5 rounded-xl text-slate-500 hover:text-emerald-500 hover:bg-emerald-500/10 border border-slate-200 dark:border-[#243552] transition-colors"
+                      title="Ver últimos estudos desta disciplina"
+                    >
+                      <History size={15} />
+                    </button>
                     <button
                       onClick={() => handleStartStudyTimer(nextSession)}
                       className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition-all"
@@ -398,9 +429,35 @@ const PlanningSection = () => {
                             </div>
                           </div>
                         </div>
-                        <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1 flex-shrink-0">
-                          <Clock size={12} /> {prog > 0 ? `${rem}m restantes` : `${session.duration}m`}
-                        </span>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setRecentStudiesSubject({
+                                subject: session.subject,
+                                color: session.color,
+                              })
+                            }
+                            className="p-1 rounded-lg text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 transition-colors"
+                            title="Ver últimos estudos desta disciplina"
+                          >
+                            <History size={13} />
+                          </button>
+                          <span className="text-xs font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                            {session.targetQuestions || session.mode === 'questions' ? (
+                              <span className="inline-flex items-center gap-1 text-indigo-500 dark:text-indigo-400 font-bold">
+                                🎯 {session.targetQuestions || 25}q{' '}
+                                <span className="font-normal opacity-70">
+                                  ({prog > 0 ? `${rem}m` : `${session.duration}m`})
+                                </span>
+                              </span>
+                            ) : (
+                              <>
+                                <Clock size={12} /> {prog > 0 ? `${rem}m restantes` : `${session.duration}m`}
+                              </>
+                            )}
+                          </span>
+                        </div>
                       </div>
                     );
                   })}
@@ -448,6 +505,17 @@ const PlanningSection = () => {
             Criar Ciclo
           </Link>
         </div>
+      )}
+
+      {recentStudiesSubject && (
+        <SubjectRecentStudiesModal
+          isOpen={!!recentStudiesSubject}
+          onClose={() => setRecentStudiesSubject(null)}
+          subjectName={recentStudiesSubject.subject}
+          subjectColor={recentStudiesSubject.color}
+          studyRecords={studyRecords || []}
+          editalSubjects={stats?.editalData || []}
+        />
       )}
 
       {topicModalTarget && (

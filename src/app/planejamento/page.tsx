@@ -25,10 +25,12 @@ import {
   RefreshCw,
   Pencil,
   ExternalLink,
+  History,
 } from 'lucide-react';
 import CycleCreationModal from '../../components/CycleCreationModal';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
 import ConfirmationModal from '../../components/ConfirmationModal';
+import SubjectRecentStudiesModal from '../../components/SubjectRecentStudiesModal';
 import TopicQueueSelectorModal, {
   getSubjectTopicOverride,
 } from '../../components/TopicQueueSelectorModal';
@@ -278,6 +280,7 @@ interface SortableItemProps {
   onStartTimer: (session: StudySession, topic: string) => void;
   onManualRegister: (session: StudySession, topic: string) => void;
   onOpenTopicSelector: (subjectName: string, subjectColor?: string) => void;
+  onOpenRecentStudies?: (subjectName: string, subjectColor?: string) => void;
   isEditMode: boolean;
   onDelete: (id: string) => void;
   onDuplicate: (session: StudySession) => void;
@@ -296,6 +299,7 @@ const SortableItem = ({
   onStartTimer,
   onManualRegister,
   onOpenTopicSelector,
+  onOpenRecentStudies,
   isEditMode,
   onDelete,
   onDuplicate,
@@ -361,6 +365,11 @@ const SortableItem = ({
             >
               {session.subject}
             </Link>
+            {(session.targetQuestions || session.mode === 'questions') && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 border border-indigo-500/30">
+                🎯 Meta: {session.targetQuestions || 25} questões
+              </span>
+            )}
             {currentProgress > 0 && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                 Faltam {formatMinutesToHoursMinutes(remainingMinutes)} (
@@ -470,6 +479,16 @@ const SortableItem = ({
               <Plus className="w-3.5 h-3.5" />
               Manual
             </button>
+            {onOpenRecentStudies && (
+              <button
+                type="button"
+                onClick={() => onOpenRecentStudies(session.subject, session.color)}
+                className="p-1.5 rounded-xl text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 border border-transparent hover:border-emerald-500/30 transition-colors"
+                title="Ver últimos estudos desta disciplina"
+              >
+                <History className="w-3.5 h-3.5" />
+              </button>
+            )}
           </>
         )}
       </div>
@@ -515,6 +534,10 @@ export default function Planejamento() {
   const [hoveredSession, setHoveredSession] = useState<UniqueIdentifier | null>(null);
   const [showCompletedSection, setShowCompletedSection] = useState(false);
   const [overrideVersion, setOverrideVersion] = useState(0);
+  const [recentStudiesSubject, setRecentStudiesSubject] = useState<{
+    subject: string;
+    color?: string;
+  } | null>(null);
   const [topicModalTarget, setTopicModalTarget] = useState<{
     subjectName: string;
     subjectColor: string;
@@ -1156,23 +1179,47 @@ export default function Planejamento() {
                           </div>
                         )}
                         <div className="flex items-center gap-2 mt-2">
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-900/50 text-white">
-                            <Clock className="w-3 h-3 text-emerald-400" />
-                            {nextHighlightProgress > 0
-                              ? `Faltam ${formatMinutesToHoursMinutes(
-                                  nextHighlightRemaining
-                                )} (${formatMinutesToHoursMinutes(
-                                  nextHighlightProgress
-                                )} / ${formatMinutesToHoursMinutes(
-                                  nextHighlightSession.duration
-                                )})`
-                              : formatMinutesToHoursMinutes(nextHighlightSession.duration)}
-                          </span>
+                          {nextHighlightSession.targetQuestions || nextHighlightSession.mode === 'questions' ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              <span>🎯 Meta: {nextHighlightSession.targetQuestions || 25} questões</span>
+                              <span className="opacity-75 font-normal">
+                                (~{nextHighlightProgress > 0
+                                  ? `Faltam ${formatMinutesToHoursMinutes(nextHighlightRemaining)}`
+                                  : formatMinutesToHoursMinutes(nextHighlightSession.duration)})
+                              </span>
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-slate-900/50 text-white">
+                              <Clock className="w-3 h-3 text-emerald-400" />
+                              {nextHighlightProgress > 0
+                                ? `Faltam ${formatMinutesToHoursMinutes(
+                                    nextHighlightRemaining
+                                  )} (${formatMinutesToHoursMinutes(
+                                    nextHighlightProgress
+                                  )} / ${formatMinutesToHoursMinutes(
+                                    nextHighlightSession.duration
+                                  )})`
+                                : formatMinutesToHoursMinutes(nextHighlightSession.duration)}
+                            </span>
+                          )}
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setRecentStudiesSubject({
+                            subject: nextHighlightSession.subject,
+                            color: nextHighlightSession.color,
+                          })
+                        }
+                        className="p-2.5 rounded-xl text-slate-500 dark:text-slate-400 hover:text-emerald-500 hover:bg-emerald-500/10 border border-slate-200 dark:border-[#243552] transition-colors"
+                        title="Ver últimos estudos desta disciplina"
+                      >
+                        <History className="w-4 h-4" />
+                      </button>
                       <button
                         onClick={() =>
                           handleStartTimerForSession(
@@ -1242,6 +1289,9 @@ export default function Planejamento() {
                               onStartTimer={handleStartTimerForSession}
                               onManualRegister={handleManualRegisterForSession}
                               onOpenTopicSelector={openTopicSelectorForSubject}
+                              onOpenRecentStudies={(subj, clr) =>
+                                setRecentStudiesSubject({ subject: subj, color: clr })
+                              }
                               isEditMode={isEditMode}
                               onDelete={handleDeleteSession}
                               onDuplicate={handleDuplicateSession}
@@ -1494,6 +1544,17 @@ export default function Planejamento() {
         confirmText="Sim, excluir planejamento"
         cancelText="Cancelar"
       />
+
+      {recentStudiesSubject && (
+        <SubjectRecentStudiesModal
+          isOpen={!!recentStudiesSubject}
+          onClose={() => setRecentStudiesSubject(null)}
+          subjectName={recentStudiesSubject.subject}
+          subjectColor={recentStudiesSubject.color}
+          studyRecords={studyRecords || []}
+          editalSubjects={subjects || []}
+        />
+      )}
 
       {topicModalTarget && (
         <TopicQueueSelectorModal

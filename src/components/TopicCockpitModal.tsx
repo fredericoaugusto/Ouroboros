@@ -167,7 +167,10 @@ export default function TopicCockpitModal({
 
   // Calcula também o Score e a Retenção Gerais da Disciplina (incluindo Simulados)
   const subjectScoreResult = useMemo(() => {
-    const editalSubj = (stats?.editalData || []).find((s) => s.subject === subjectName);
+    const cleanSubj = (subjectName || '').trim().toLowerCase();
+    const editalSubj = (stats?.editalData || []).find(
+      (s) => (s.subject || '').trim().toLowerCase() === cleanSubj
+    );
     return computeSubjectScore({
       subjectName,
       topics: editalSubj?.topics || [],

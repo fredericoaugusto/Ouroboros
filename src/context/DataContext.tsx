@@ -66,6 +66,7 @@ export interface StudyRecord {
   reviewPeriods?: string[];
   teoriaFinalizada: boolean;
   countInPlanning: boolean;
+  errorReasons?: string[];
 }
 
 export interface ReviewRecord {
@@ -161,6 +162,9 @@ export interface StudySession {
   subject: string; // Manter por enquanto para compatibilidade e exibição
   duration: number;
   color: string;
+  mode?: 'time' | 'questions' | 'weekly';
+  targetQuestions?: number;
+  dayOfWeek?: string;
 }
 
 export interface Stats {
@@ -1502,8 +1506,15 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     maxSession: number;
     subjectSettings: { [subjectId: string]: { importance: number; knowledge: number } };
     subjects: EditalSubject[];
+    weeklyQuestionsGoal?: string;
+    planningFormat?: 'time_cycle' | 'questions_cycle' | 'fixed_weekly';
+    minQuestionsPerSession?: number;
+    maxQuestionsPerSession?: number;
   }): StudySession[] => {
     const { studyHours, minSession, maxSession, subjects: allSelectedSubjects } = settings;
+    const isQuestionsMode = settings.planningFormat === 'questions_cycle';
+    const minQ = settings.minQuestionsPerSession || 15;
+    const maxQ = settings.maxQuestionsPerSession || 35;
     const totalMinutes = studyHours * 60;
 
     if (topicScores.length === 0) {
@@ -1567,9 +1578,20 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         const { importance, knowledge } = settings.subjectSettings[currentSubjectId] || { importance: 3, knowledge: 3 };
         const effectiveWeight = importance / (knowledge || 1);
         const normalizedWeight = (effectiveWeight - 1/5) / (5 - 1/5);
-        let sessionDuration = minSession + (maxSession - minSession) * normalizedWeight;
-        sessionDuration = Math.round(sessionDuration / 5) * 5;
-        sessionDuration = Math.max(minSession, Math.min(maxSession, sessionDuration));
+
+        let sessionDuration: number;
+        let targetQuestions: number | undefined = undefined;
+
+        if (isQuestionsMode) {
+          targetQuestions = Math.round(minQ + (maxQ - minQ) * normalizedWeight);
+          // Estima a duração do bloco a partir do ritmo de ~2.5 min/questão
+          const estimatedMinutes = Math.round((targetQuestions * 2.5) / 5) * 5;
+          sessionDuration = Math.max(minSession, Math.min(maxSession, estimatedMinutes));
+        } else {
+          sessionDuration = minSession + (maxSession - minSession) * normalizedWeight;
+          sessionDuration = Math.round(sessionDuration / 5) * 5;
+          sessionDuration = Math.max(minSession, Math.min(maxSession, sessionDuration));
+        }
 
         const finalDuration = Math.min(sessionDuration, remainingMinutes);
         
@@ -1583,7 +1605,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
             subjectId: currentSubjectId,
             subject: subjectData.name,
             duration: finalDuration,
-            color: subjectData.color
+            color: subjectData.color,
+            mode: isQuestionsMode ? 'questions' : 'time',
+            targetQuestions: isQuestionsMode ? targetQuestions : undefined,
         });
 
         remainingMinutes -= finalDuration;
@@ -1602,6 +1626,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     subjectSettings: any;
     subjects: any[];
     weeklyQuestionsGoal: string;
+    planningFormat?: 'time_cycle' | 'questions_cycle' | 'fixed_weekly';
+    minQuestionsPerSession?: number;
+    maxQuestionsPerSession?: number;
   }) => {
     const finalCycle = generateStudyCycleLogic(settings);
     setStudyCycle(finalCycle);
