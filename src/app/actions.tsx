@@ -184,7 +184,8 @@ export async function deleteStudyCycleFile(planFileName: string): Promise<{ succ
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const supabase = getSupabaseAdmin();
     const normalizedPlan = normalizePlanFileName(planFileName);
 
@@ -195,6 +196,7 @@ export async function deleteStudyCycleFile(planFileName: string): Promise<{ succ
       .eq('plan_file_name', normalizedPlan);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'CYCLE_DELETE', 'cycle', normalizedPlan);
     return { success: true };
   } catch (error) {
     console.error(`Erro ao deletar o ciclo ${planFileName}:`, error);
@@ -291,7 +293,8 @@ export async function saveStudyRecord(fileName: string, record: StudyRecord): Pr
 
 export async function getStudyRecords(fileName: string): Promise<StudyRecord[]> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) return [];
 
@@ -336,7 +339,8 @@ export async function saveReviewRecord(fileName: string, record: ReviewRecord): 
 
 export async function getReviewRecords(fileName: string): Promise<ReviewRecord[]> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) return [];
 
@@ -380,7 +384,8 @@ export async function saveSimuladoRecord(fileName: string, record: SimuladoRecor
 
 export async function getSimuladoRecords(fileName: string): Promise<SimuladoRecord[]> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) return [];
 
@@ -510,7 +515,8 @@ export async function updatePlanFile(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) {
       return { success: false, error: 'Plan not found.' };
@@ -579,6 +585,10 @@ export async function updatePlanFile(
         if (error) throw error;
       }
     }
+
+    await recordStudentAudit(session, 'PLAN_UPDATE', 'plan', fileName, {
+      updatedFields: Object.keys(updatedData),
+    });
 
     return { success: true };
   } catch (error) {
@@ -787,7 +797,8 @@ export async function renameSubjectAction(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) {
       return { success: false, error: 'Plano não encontrado.' };
@@ -864,6 +875,12 @@ export async function renameSubjectAction(
         .eq('user_id', userId);
     }
 
+    await recordStudentAudit(session, 'SUBJECT_RENAME', 'subject', subjectId, {
+      fileName,
+      oldSubjectName,
+      newSubjectName,
+    });
+
     return { success: true, oldSubjectName };
   } catch (error: any) {
     console.error(
@@ -883,7 +900,8 @@ export async function addOrUpdateSubjectAction(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) {
       return { success: false, error: 'Plano não encontrado.' };
@@ -919,6 +937,11 @@ export async function addOrUpdateSubjectAction(
       .eq('user_id', userId);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'SUBJECT_SAVE', 'subject', resultSubjectId, {
+      fileName,
+      subject: subjectData.subject,
+      isUpdate: existingSubjectIndex !== -1,
+    });
     return { success: true, subjectId: resultSubjectId };
   } catch (error: any) {
     console.error(`Erro ao salvar a matéria em ${fileName}:`, error);
@@ -937,7 +960,8 @@ export async function updateTopicWeightAction(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) {
       return { success: false, error: 'Plano não encontrado.' };
@@ -978,6 +1002,11 @@ export async function updateTopicWeightAction(
       .eq('user_id', userId);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'TOPIC_WEIGHT_UPDATE', 'topic', topicText, {
+      fileName,
+      subjectId,
+      newWeight,
+    });
     return { success: true };
   } catch (error: any) {
     console.error('Erro ao atualizar o peso do tópico:', error);
@@ -1066,7 +1095,8 @@ export async function updateAllTopicWeightsAction(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) {
       return { success: false, error: 'Plano não encontrado.' };
@@ -1099,6 +1129,9 @@ export async function updateAllTopicWeightsAction(
       .eq('user_id', userId);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'TOPIC_WEIGHTS_BULK_UPDATE', 'plan', fileName, {
+      subjectsUpdated: Object.keys(weightMap).length,
+    });
     return { success: true };
   } catch (error: any) {
     console.error('Erro ao atualizar todos os pesos de tópicos:', error);
@@ -1149,6 +1182,10 @@ export async function importEditalMutationAction(options: {
       };
 
       await upsertFullPlanData(userId, fileName, newPlanData);
+      await recordStudentAudit(session, 'EDITAL_IMPORT', 'plan', fileName, {
+        mode: 'new',
+        subjectsCount: newPlanData.subjects.length,
+      });
       return { success: true, fileName };
     } else {
       const fileName = normalizePlanFileName(options.targetPlanFile);
@@ -1179,6 +1216,10 @@ export async function importEditalMutationAction(options: {
         .eq('user_id', userId);
 
       if (error) throw error;
+      await recordStudentAudit(session, 'EDITAL_IMPORT', 'plan', fileName, {
+        mode: 'append',
+        subjectsCount: incoming.length,
+      });
       return { success: true, fileName };
     }
   } catch (error: any) {
@@ -1198,7 +1239,8 @@ export async function updateTopicDetailsAction(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) {
       return { success: false, error: 'Plano não encontrado.' };
@@ -1238,6 +1280,11 @@ export async function updateTopicDetailsAction(
       .eq('user_id', userId);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'TOPIC_DETAILS_UPDATE', 'topic', topicText, {
+      fileName,
+      subjectNameOrId,
+      patchKeys: Object.keys(patch),
+    });
     return { success: true };
   } catch (error: any) {
     console.error('Erro ao atualizar detalhes do tópico:', error);

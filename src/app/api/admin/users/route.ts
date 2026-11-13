@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import { getAdminSession } from '@/lib/adminAuth';
 import { getSupabaseAdmin } from '@/lib/supabase';
@@ -50,6 +51,65 @@ export async function GET() {
   } catch (err) {
     console.error('Erro ao listar usuários:', err);
     return NextResponse.json({ error: 'Erro ao listar usuários.' }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  const admin = await getAdminSession();
+  if (!admin) {
+    return NextResponse.json({ error: 'Não autorizado.' }, { status: 401 });
+  }
+
+  try {
+    const { username, password, status } = await req.json();
+    const cleanUsername = String(username || '').trim();
+    const cleanPassword = String(password || '').trim();
+    const initialStatus = ['pending', 'approved'].includes(status) ? status : 'approved';
+
+    if (!cleanUsername || cleanPassword.length < 4) {
+      return NextResponse.json(
+        { error: 'Usuário e senha (mín. 4 caracteres) são obrigatórios.' },
+        { status: 400 }
+      );
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { data: existing } = await supabase
+      .from('users')
+      .select('id')
+      .eq('username', cleanUsername)
+      .maybeSingle();
+
+    if (existing) {
+      return NextResponse.json({ error: 'Já existe um estudante com esse usuário.' }, { status: 409 });
+    }
+
+    const newId = crypto.randomUUID();
+    const { error } = await supabase.from('users').insert({
+      id: newId,
+      username: cleanUsername,
+      password_hash: bcrypt.hashSync(cleanPassword, 10),
+      status: initialStatus,
+      approved_by: initialStatus === 'approved' ? admin.username : null,
+      approved_at: initialStatus === 'approved' ? new Date().toISOString() : null,
+    });
+
+    if (error) throw error;
+
+    await recordAuditLog({
+      actorType: 'admin',
+      actorId: admin.adminId,
+      actorUsername: admin.username,
+      action: 'ADMIN_CREATE_USER',
+      entityType: 'user',
+      entityId: newId,
+      details: { username: cleanUsername, status: initialStatus },
+    });
+
+    return NextResponse.json({ success: true, id: newId }, { status: 201 });
+  } catch (err) {
+    console.error('Erro ao criar estudante no admin:', err);
+    return NextResponse.json({ error: 'Erro ao criar estudante.' }, { status: 500 });
   }
 }
 

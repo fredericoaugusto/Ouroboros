@@ -22,6 +22,9 @@ import {
   Activity,
   Plus,
   AlertTriangle,
+  Download,
+  Upload,
+  Eraser,
 } from 'lucide-react';
 
 type AdminTab = 'overview' | 'users' | 'plans' | 'logs' | 'admins';
@@ -114,6 +117,14 @@ export default function AdminDashboardPage() {
   // Novo admin
   const [newAdminUsername, setNewAdminUsername] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
+
+  // Novo estudante pelo admin
+  const [newStudentUsername, setNewStudentUsername] = useState('');
+  const [newStudentPassword, setNewStudentPassword] = useState('');
+  const [restoreTargetUser, setRestoreTargetUser] = useState<{ id: string; username: string } | null>(
+    null
+  );
+  const restoreInputRef = React.useRef<HTMLInputElement>(null);
 
   const showToast = (type: 'success' | 'error', text: string) => {
     setFeedback({ type, text });
@@ -256,6 +267,105 @@ export default function AdminDashboardPage() {
       return;
     }
     window.location.href = '/dashboard';
+  };
+
+  const handleCreateStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const res = await fetch('/api/admin/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: newStudentUsername,
+        password: newStudentPassword,
+        status: 'approved',
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast('error', data.error || 'Falha ao criar estudante.');
+      return;
+    }
+    setNewStudentUsername('');
+    setNewStudentPassword('');
+    showToast('success', 'Estudante criado e aprovado com sucesso.');
+    loadAllData();
+  };
+
+  const handleExportUserBackup = async (userId: string, username: string) => {
+    const res = await fetch(`/api/admin/users/backup?userId=${encodeURIComponent(userId)}`);
+    const data = await res.json();
+    if (!res.ok) {
+      showToast('error', data.error || 'Falha ao exportar backup.');
+      return;
+    }
+    const blob = new Blob([JSON.stringify(data.backup, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backup-${username}-${new Date().toISOString().split('T')[0]}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    showToast('success', `Backup de "${username}" exportado.`);
+    loadAllData();
+  };
+
+  const handleTriggerRestoreUserBackup = (userId: string, username: string) => {
+    setRestoreTargetUser({ id: userId, username });
+    restoreInputRef.current?.click();
+  };
+
+  const handleRestoreFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    const target = restoreTargetUser;
+    if (restoreInputRef.current) restoreInputRef.current.value = '';
+    if (!file || !target) return;
+
+    if (
+      !window.confirm(
+        `Substituir TODOS os dados atuais do estudante "${target.username}" pelo arquivo "${file.name}"?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const text = await file.text();
+      const backupData = JSON.parse(text);
+      const res = await fetch('/api/admin/users/backup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: target.id, backupData }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        showToast('error', data.error || 'Falha ao restaurar backup.');
+        return;
+      }
+      showToast('success', `Backup restaurado na conta de "${target.username}".`);
+      loadAllData();
+    } catch {
+      showToast('error', 'Arquivo JSON inválido.');
+    }
+  };
+
+  const handleClearUserData = async (userId: string, username: string) => {
+    if (
+      !window.confirm(
+        `Zerar TODOS os planos, sessões, revisões, simulados e ciclos de "${username}"? (A conta continuará ativa)`
+      )
+    ) {
+      return;
+    }
+    const res = await fetch(`/api/admin/users/backup?userId=${encodeURIComponent(userId)}`, {
+      method: 'DELETE',
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showToast('error', data.error || 'Falha ao zerar dados.');
+      return;
+    }
+    showToast('success', `Dados de "${username}" zerados.`);
+    loadAllData();
   };
 
   const handleDeletePlan = async (planId: string, planName: string) => {
@@ -567,6 +677,53 @@ export default function AdminDashboardPage() {
         {/* TAB: USERS */}
         {activeTab === 'users' && (
           <div className="space-y-4">
+            <input
+              ref={restoreInputRef}
+              type="file"
+              accept=".json"
+              onChange={handleRestoreFileChange}
+              className="hidden"
+            />
+
+            <form
+              onSubmit={handleCreateStudent}
+              className="p-4 rounded-2xl bg-[#131f33] border border-[#1f304a] flex flex-wrap items-end gap-3"
+            >
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Criar Novo Estudante (já aprovado)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={newStudentUsername}
+                  onChange={(e) => setNewStudentUsername(e.target.value)}
+                  placeholder="Usuário do estudante"
+                  className="w-full px-3 py-1.5 rounded-lg bg-[#0b1320] border border-[#1f304a] text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-[11px] font-semibold text-slate-400 mb-1">
+                  Senha inicial
+                </label>
+                <input
+                  type="password"
+                  required
+                  minLength={4}
+                  value={newStudentPassword}
+                  onChange={(e) => setNewStudentPassword(e.target.value)}
+                  placeholder="Mín. 4 caracteres"
+                  className="w-full px-3 py-1.5 rounded-lg bg-[#0b1320] border border-[#1f304a] text-xs text-white focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <button
+                type="submit"
+                className="px-4 py-1.5 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs inline-flex items-center gap-1.5"
+              >
+                <Plus className="w-3.5 h-3.5" /> Criar Estudante
+              </button>
+            </form>
+
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex flex-wrap gap-1.5">
                 {[
@@ -661,6 +818,27 @@ export default function AdminDashboardPage() {
                             className="px-2 py-1 rounded bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/25 font-semibold inline-flex items-center gap-1"
                           >
                             <UserCheck className="w-3 h-3" /> Assumir
+                          </button>
+                          <button
+                            onClick={() => handleExportUserBackup(u.id, u.username)}
+                            title="Exportar Backup .json do estudante"
+                            className="p-1.5 rounded bg-[#1a2942] hover:bg-[#233759] text-emerald-400"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleTriggerRestoreUserBackup(u.id, u.username)}
+                            title="Restaurar Backup .json na conta do estudante"
+                            className="p-1.5 rounded bg-[#1a2942] hover:bg-[#233759] text-indigo-400"
+                          >
+                            <Upload className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => handleClearUserData(u.id, u.username)}
+                            title="Zerar dados de estudo do estudante"
+                            className="p-1.5 rounded bg-[#1a2942] hover:bg-[#233759] text-amber-400"
+                          >
+                            <Eraser className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => handleResetStudentPassword(u.id, u.username)}

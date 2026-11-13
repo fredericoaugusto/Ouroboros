@@ -1,6 +1,7 @@
 import NextAuth from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
 import bcrypt from "bcryptjs";
+import { NextResponse } from "next/server";
 import { getUserByUsername } from "../../../../lib/users";
 import { recordAuditLog } from "@/lib/auditLogger";
 import { getImpersonationState } from "@/lib/adminAuth";
@@ -104,4 +105,27 @@ export const authOptions = {
 
 const handler = NextAuth(authOptions);
 
-export { handler as GET, handler as POST };
+export async function GET(req: Request, context: any) {
+  const url = new URL(req.url);
+  if (url.pathname.endsWith("/session")) {
+    const impersonation = await getImpersonationState();
+    if (impersonation) {
+      return NextResponse.json({
+        user: {
+          id: impersonation.targetUserId,
+          name: impersonation.targetUsername,
+          email: impersonation.targetUsername,
+        },
+        expires: new Date(impersonation.exp * 1000).toISOString(),
+        impersonatedBy: {
+          adminId: impersonation.adminId,
+          adminUsername: impersonation.adminUsername,
+          startedAt: impersonation.startedAt,
+        },
+      });
+    }
+  }
+  return handler(req, context);
+}
+
+export { handler as POST };

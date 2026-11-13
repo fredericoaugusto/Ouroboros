@@ -38,7 +38,7 @@ Este Pull Request substitui a persistência local em arquivos `.json` por banco 
 - **Administradores Padrão**: Seed automático garantido para `byfred` e `gustavo` (senha inicial padrão: `senha123`).
 - **Gestão Completa (`/admin`)**:
   - **Visão Geral**: Métricas globais da plataforma (estudantes, pendentes, planos, simulados, horas estudadas, volume de logs) e fila rápida de aprovação.
-  - **Estudantes & Aprovações**: Aprovar, recusar, suspender, redefinir senha, excluir conta e assumir conta.
+  - **Estudantes & Aprovações**: Criar estudante já aprovado, aprovar, recusar, suspender, redefinir senha, excluir conta, exportar/restaurar backup `.json` direto da conta do estudante, zerar dados e assumir conta.
   - **Planos**: Visualização e moderação de planos de toda a plataforma.
   - **Administradores**: Criação de novos admins e ativação/desativação de contas administrativas.
 
