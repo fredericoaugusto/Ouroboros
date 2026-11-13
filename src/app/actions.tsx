@@ -1,10 +1,10 @@
 'use server';
 
 import crypto from 'crypto';
-import { getServerSession } from 'next-auth';
-import { authOptions } from './api/auth/[...nextauth]/route';
 import { EditalTopic, EditalSubject as Subject } from '@/context/DataContext';
 import { getSupabaseAdmin } from '@/lib/supabase';
+import { EffectiveStudentSession, getEffectiveStudentSession } from '@/lib/adminAuth';
+import { recordStudentAudit } from '@/lib/auditLogger';
 import {
   ensurePlanMeta,
   getFullPlanData,
@@ -99,12 +99,17 @@ export interface StudyCycleData {
   studyDays: string[];
 }
 
-async function getAuthenticatedUserId(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user || !session.user.id) {
+async function requireStudentSession(): Promise<EffectiveStudentSession> {
+  const session = await getEffectiveStudentSession();
+  if (!session || !session.userId) {
     throw new Error('Usuário não autenticado.');
   }
-  return session.user.id;
+  return session;
+}
+
+async function getAuthenticatedUserId(): Promise<string> {
+  const session = await requireStudentSession();
+  return session.userId;
 }
 
 export async function saveStudyCycleToFile(
@@ -116,7 +121,8 @@ export async function saveStudyCycleToFile(
   }
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const supabase = getSupabaseAdmin();
     const normalizedPlan = normalizePlanFileName(planFileName);
 
@@ -136,6 +142,10 @@ export async function saveStudyCycleToFile(
     );
 
     if (error) throw error;
+    await recordStudentAudit(session, 'CYCLE_SAVE', 'cycle', normalizedPlan, {
+      sessionsCount: cycleData.studyCycle?.length ?? 0,
+      studyHours: cycleData.studyHours,
+    });
     return { success: true };
   } catch (error) {
     console.error(`Erro ao salvar o ciclo ${planFileName}:`, error);
@@ -212,7 +222,8 @@ export async function getJsonFiles(): Promise<string[]> {
 }
 
 export async function deleteJsonFile(fileName: string): Promise<void> {
-  const userId = await getAuthenticatedUserId();
+  const session = await requireStudentSession();
+  const userId = session.userId;
   const supabase = getSupabaseAdmin();
   const normalized = normalizePlanFileName(fileName);
 
@@ -232,6 +243,8 @@ export async function deleteJsonFile(fileName: string): Promise<void> {
     .delete()
     .eq('user_id', userId)
     .eq('plan_file_name', normalized);
+
+  await recordStudentAudit(session, 'PLAN_DELETE', 'plan', normalized);
 }
 
 export async function getJsonContent(fileName: string) {
@@ -254,7 +267,8 @@ export async function getJsonContent(fileName: string) {
 
 export async function saveStudyRecord(fileName: string, record: StudyRecord): Promise<void> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await ensurePlanMeta(userId, fileName);
     const supabase = getSupabaseAdmin();
 
@@ -263,6 +277,12 @@ export async function saveStudyRecord(fileName: string, record: StudyRecord): Pr
       .upsert(mapStudyRecordToRow(plan.id, userId, record), { onConflict: 'plan_id,id' });
 
     if (error) throw error;
+    await recordStudentAudit(session, 'STUDY_RECORD_SAVE', 'study_record', record.id, {
+      fileName,
+      subject: record.subject,
+      topic: record.topic,
+      studyTime: record.studyTime,
+    });
   } catch (error) {
     console.error('Error saving study record:', error);
     throw error;
@@ -292,7 +312,8 @@ export async function getStudyRecords(fileName: string): Promise<StudyRecord[]> 
 
 export async function saveReviewRecord(fileName: string, record: ReviewRecord): Promise<void> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await ensurePlanMeta(userId, fileName);
     const supabase = getSupabaseAdmin();
 
@@ -301,6 +322,12 @@ export async function saveReviewRecord(fileName: string, record: ReviewRecord): 
       .upsert(mapReviewRecordToRow(plan.id, userId, record), { onConflict: 'plan_id,id' });
 
     if (error) throw error;
+    await recordStudentAudit(session, 'REVIEW_RECORD_SAVE', 'review_record', record.id, {
+      fileName,
+      status: record.status,
+      subject: record.subject,
+      topic: record.topic,
+    });
   } catch (error) {
     console.error('Error saving review record:', error);
     throw error;
@@ -330,7 +357,8 @@ export async function getReviewRecords(fileName: string): Promise<ReviewRecord[]
 
 export async function saveSimuladoRecord(fileName: string, record: SimuladoRecord): Promise<void> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await ensurePlanMeta(userId, fileName);
     const supabase = getSupabaseAdmin();
 
@@ -339,6 +367,11 @@ export async function saveSimuladoRecord(fileName: string, record: SimuladoRecor
       .upsert(mapSimuladoRecordToRow(plan.id, userId, record), { onConflict: 'plan_id,id' });
 
     if (error) throw error;
+    await recordStudentAudit(session, 'SIMULADO_RECORD_SAVE', 'simulado_record', record.id, {
+      fileName,
+      name: record.name,
+      banca: record.banca,
+    });
   } catch (error) {
     console.error('Error saving simulado record:', error);
     throw error;
@@ -379,7 +412,8 @@ export async function migrateStudyRecordIds(fileName: string) {
 
 export async function deleteStudyRecordAction(fileName: string, recordId: string): Promise<void> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) return;
 
@@ -399,6 +433,7 @@ export async function deleteStudyRecordAction(fileName: string, recordId: string
       .eq('id', recordId);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'STUDY_RECORD_DELETE', 'study_record', recordId, { fileName });
   } catch (error) {
     console.error('Error deleting study record:', error);
     throw error;
@@ -422,7 +457,8 @@ export async function createPlanFile(
   const jsonFileName = `${sanitizedPlanName}.json`;
 
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const existing = await getPlanMeta(userId, jsonFileName);
     if (existing) {
       return { success: false, error: `O plano '${planName}' já existe.` };
@@ -453,6 +489,11 @@ export async function createPlanFile(
     });
 
     if (error) throw error;
+    await recordStudentAudit(session, 'PLAN_CREATE', 'plan', jsonFileName, {
+      name: planName.trim(),
+      cargo: cargo.trim(),
+      edital: edital.trim(),
+    });
     return { success: true, fileName: jsonFileName };
   } catch (error) {
     console.error(`Erro ao criar o plano ${jsonFileName}:`, error);
@@ -581,7 +622,8 @@ export async function updateSimuladoRecord(fileName: string, record: SimuladoRec
 
 export async function deleteSimuladoRecordAction(fileName: string, recordId: string): Promise<void> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const plan = await getPlanMeta(userId, fileName);
     if (!plan) return;
 
@@ -594,6 +636,9 @@ export async function deleteSimuladoRecordAction(fileName: string, recordId: str
       .eq('id', recordId);
 
     if (error) throw error;
+    await recordStudentAudit(session, 'SIMULADO_RECORD_DELETE', 'simulado_record', recordId, {
+      fileName,
+    });
   } catch (error) {
     console.error('Error deleting simulado record:', error);
     throw error;
@@ -601,7 +646,8 @@ export async function deleteSimuladoRecordAction(fileName: string, recordId: str
 }
 
 export async function exportFullBackupAction(): Promise<any> {
-  const userId = await getAuthenticatedUserId();
+  const session = await requireStudentSession();
+  const userId = session.userId;
   const supabase = getSupabaseAdmin();
 
   const [plansRes, cyclesRes] = await Promise.all([
@@ -625,6 +671,11 @@ export async function exportFullBackupAction(): Promise<any> {
     content: mapRowToCycleData(row),
   }));
 
+  await recordStudentAudit(session, 'BACKUP_EXPORT', 'backup', userId, {
+    plansCount: allPlansData.length,
+    cyclesCount: allCyclesData.length,
+  });
+
   return { plans: allPlansData, cycles: allCyclesData };
 }
 
@@ -643,7 +694,8 @@ export async function restoreFullBackupAction(backupData: {
   };
 }): Promise<{ success: boolean; error?: string }> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
 
     if (!backupData.plans || !Array.isArray(backupData.plans)) {
       throw new Error("O backup está faltando a lista de 'planos' ou ela é inválida.");
@@ -675,6 +727,11 @@ export async function restoreFullBackupAction(backupData: {
       });
     }
 
+    await recordStudentAudit(session, 'BACKUP_RESTORE', 'backup', userId, {
+      plansRestored: backupData.plans.length,
+      cyclesRestored: backupData.cycles?.length ?? 0,
+    });
+
     return { success: true };
   } catch (error: any) {
     console.error('Erro durante a restauração do backup:', error);
@@ -684,7 +741,8 @@ export async function restoreFullBackupAction(backupData: {
 
 export async function clearAllDataAction(): Promise<{ success: boolean; error?: string }> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
     const supabase = getSupabaseAdmin();
 
     const [plansDel, cyclesDel] = await Promise.all([
@@ -694,6 +752,8 @@ export async function clearAllDataAction(): Promise<{ success: boolean; error?: 
 
     if (plansDel.error) throw plansDel.error;
     if (cyclesDel.error) throw cyclesDel.error;
+
+    await recordStudentAudit(session, 'DATA_CLEAR_ALL', 'user', userId);
 
     return { success: true };
   } catch (error: any) {

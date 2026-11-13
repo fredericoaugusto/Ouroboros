@@ -1,6 +1,7 @@
 import 'server-only';
 import { headers } from 'next/headers';
 import { getSupabaseAdmin } from './supabase';
+import type { EffectiveStudentSession } from './adminAuth';
 
 export type AuditActorType = 'user' | 'admin' | 'admin_impersonation' | 'system';
 
@@ -54,5 +55,37 @@ export async function recordAuditLog(entry: AuditLogInput): Promise<void> {
     }
   } catch (err) {
     console.error('Falha inesperada no auditLogger:', err);
+  }
+}
+
+export async function recordStudentAudit(
+  session: EffectiveStudentSession,
+  action: string,
+  entityType?: string,
+  entityId?: string,
+  details?: Record<string, any>
+): Promise<void> {
+  if (session.impersonatedBy) {
+    await recordAuditLog({
+      actorType: 'admin_impersonation',
+      actorId: session.impersonatedBy.adminId,
+      actorUsername: session.impersonatedBy.adminUsername,
+      impersonatedUserId: session.userId,
+      impersonatedUsername: session.username,
+      action,
+      entityType,
+      entityId,
+      details,
+    });
+  } else {
+    await recordAuditLog({
+      actorType: 'user',
+      actorId: session.userId,
+      actorUsername: session.username,
+      action,
+      entityType,
+      entityId,
+      details,
+    });
   }
 }

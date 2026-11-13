@@ -27,7 +27,11 @@ export default function LoginPage() {
     setLoading(false);
 
     if (result?.error) {
-      setError('Credenciais inválidas. Verifique seu usuário e senha.');
+      setError(
+        result.error === 'CredentialsSignin'
+          ? 'Credenciais inválidas. Verifique seu usuário e senha.'
+          : result.error
+      );
     } else {
       router.push('/dashboard');
     }

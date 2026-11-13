@@ -2,17 +2,20 @@ import 'server-only';
 import crypto from 'crypto';
 import { getSupabaseAdmin } from './supabase';
 
+export type UserStatus = 'pending' | 'approved' | 'rejected' | 'suspended';
+
 export interface User {
   id: string;
   username: string;
   password: string; // Hashed password
+  status: UserStatus;
 }
 
 export async function getUserByUsername(username: string): Promise<User | undefined> {
   const supabase = getSupabaseAdmin();
   const { data, error } = await supabase
     .from('users')
-    .select('id, username, password_hash')
+    .select('id, username, password_hash, status')
     .eq('username', username)
     .maybeSingle();
 
@@ -29,6 +32,7 @@ export async function getUserByUsername(username: string): Promise<User | undefi
     id: data.id,
     username: data.username,
     password: data.password_hash,
+    status: (data.status as UserStatus) || 'pending',
   };
 }
 
@@ -42,8 +46,9 @@ export async function createUser(username: string, hashedPassword: string): Prom
       id: newId,
       username,
       password_hash: hashedPassword,
+      status: 'pending',
     })
-    .select('id, username, password_hash')
+    .select('id, username, password_hash, status')
     .single();
 
   if (error || !data) {
@@ -55,5 +60,6 @@ export async function createUser(username: string, hashedPassword: string): Prom
     id: data.id,
     username: data.username,
     password: data.password_hash,
+    status: (data.status as UserStatus) || 'pending',
   };
 }

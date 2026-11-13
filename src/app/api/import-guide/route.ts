@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import puppeteer from 'puppeteer';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../auth/[...nextauth]/route';
 import fetch from 'node-fetch'; // Importa node-fetch no topo
 import crypto from 'crypto'; // Importa a biblioteca crypto para gerar UUIDs
 import { upsertFullPlanData } from '@/lib/studyPlansRepo';
+import { getEffectiveStudentSession } from '@/lib/adminAuth';
+import { recordStudentAudit } from '@/lib/auditLogger';
 
 // Interfaces para os dados do plano
 interface Topic {
@@ -68,9 +68,9 @@ async function urlToBase64(url: string): Promise<string | undefined> {
 
 // Função principal da API
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await getEffectiveStudentSession();
 
-  if (!session || !session.user || !session.user.id) {
+  if (!session || !session.userId) {
     return NextResponse.json({ error: 'Não autorizado. Faça login para importar um guia.' }, { status: 401 });
   }
 
@@ -296,13 +296,17 @@ export async function POST(req: Request) {
     const planData: PlanData = { ...headerData, subjects: finalSubjects, bancaTopicWeights };
 
     const fileName = `${slugify(planData.name)}.json`;
-    await upsertFullPlanData(session.user.id, fileName, {
+    await upsertFullPlanData(session.userId, fileName, {
       ...planData,
       observations: '',
       subjects: planData.subjects as any,
       records: [],
       reviewRecords: [],
       simuladoRecords: [],
+    });
+    await recordStudentAudit(session, 'GUIDE_IMPORT', 'plan', fileName, {
+      name: planData.name,
+      subjectsCount: finalSubjects.length,
     });
     console.log(`Plano salvo no Supabase: ${fileName}`);
 
