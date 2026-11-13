@@ -18,20 +18,71 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ----------------------------------------------------------------------------
--- 1. Usuários (substitui data/users.json)
+-- 1. Usuários Estudantes (substitui data/users.json)
 -- ----------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.users (
   id TEXT PRIMARY KEY,
   username TEXT UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected | suspended
+  approved_by TEXT,
+  approved_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Garante compatibilidade caso a tabela já tenha sido criada anteriormente
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS approved_by TEXT;
+ALTER TABLE public.users ADD COLUMN IF NOT EXISTS approved_at TIMESTAMPTZ;
+
+CREATE INDEX IF NOT EXISTS idx_users_status ON public.users(status);
 
 DROP TRIGGER IF EXISTS trg_users_updated_at ON public.users;
 CREATE TRIGGER trg_users_updated_at
   BEFORE UPDATE ON public.users
   FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ----------------------------------------------------------------------------
+-- 1B. Administradores (tabela totalmente isolada dos estudantes)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.admin_users (
+  id TEXT PRIMARY KEY,
+  username TEXT UNIQUE NOT NULL,
+  password_hash TEXT NOT NULL,
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+DROP TRIGGER IF EXISTS trg_admin_users_updated_at ON public.admin_users;
+CREATE TRIGGER trg_admin_users_updated_at
+  BEFORE UPDATE ON public.admin_users
+  FOR EACH ROW EXECUTE FUNCTION public.set_updated_at();
+
+-- ----------------------------------------------------------------------------
+-- 1C. Logs de Auditoria (ações de estudantes, admins e impersonation)
+-- ----------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS public.audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  actor_type TEXT NOT NULL, -- user | admin | admin_impersonation | system
+  actor_id TEXT NOT NULL,
+  actor_username TEXT NOT NULL,
+  impersonated_user_id TEXT,
+  impersonated_username TEXT,
+  action TEXT NOT NULL,
+  entity_type TEXT,
+  entity_id TEXT,
+  details JSONB NOT NULL DEFAULT '{}'::jsonb,
+  ip_address TEXT,
+  user_agent TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON public.audit_logs(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON public.audit_logs(actor_type, actor_id);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_action ON public.audit_logs(action);
+CREATE INDEX IF NOT EXISTS idx_audit_logs_impersonated ON public.audit_logs(impersonated_user_id);
 
 -- ----------------------------------------------------------------------------
 -- 2. Planos de Estudo (substitui data/<userId>/<plano>.json)
@@ -177,6 +228,8 @@ CREATE TRIGGER trg_study_cycles_updated_at
 -- Row Level Security (RLS) - Default Deny para clientes públicos/anon
 -- ----------------------------------------------------------------------------
 ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admin_users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_plans ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_records ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.review_records ENABLE ROW LEVEL SECURITY;
