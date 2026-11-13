@@ -8,7 +8,7 @@ import { Menu } from 'lucide-react';
 const MainContentWrapper = ({ children }: { children: React.ReactNode }) => {
   const { isSidebarExpanded, toggleSidebar } = useSidebar();
   const pathname = usePathname();
-  const isAuthPage = ['/login', '/register'].includes(pathname);
+  const isAuthPage = ['/login', '/register'].includes(pathname) || pathname.startsWith('/admin');
   const [isTransitioning, setIsTransitioning] = useState(false);
 
   useEffect(() => {
