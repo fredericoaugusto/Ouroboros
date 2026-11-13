@@ -89,6 +89,15 @@ docker compose up -d
 
 ---
 
+## Passo 5.1: Acessando o Painel Administrativo
+
+O Ouroboros conta com um painel administrativo isolado em **`/admin/login`** (separado das contas de estudantes):
+- **Admins padrão iniciais**: `byfred` e `gustavo` (senha inicial: `senha123`).
+- Novos estudantes que se cadastrarem em `/register` ficam com status **Pendente** até serem aprovados por um administrador em `/admin`.
+- **Importante**: Após o primeiro acesso em produção, altere as senhas padrão na aba **Admins** ou via banco de dados.
+
+---
+
 ## Passo 6: Backup e Restauração de Emergência (`.json`)
 
 Mesmo usando o Supabase, o Ouroboros mantém a página **Backup e Restauração** (`/backup`) 100% funcional para que você tenha controle total dos seus dados:
