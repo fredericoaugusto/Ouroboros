@@ -2,10 +2,9 @@ import { NextResponse } from 'next/server';
 import puppeteer from 'puppeteer';
 import { getServerSession } from 'next-auth/next';
 import { authOptions } from '../auth/[...nextauth]/route';
-import fs from 'fs/promises';
-import path from 'path';
 import fetch from 'node-fetch'; // Importa node-fetch no topo
 import crypto from 'crypto'; // Importa a biblioteca crypto para gerar UUIDs
+import { upsertFullPlanData } from '@/lib/studyPlansRepo';
 
 // Interfaces para os dados do plano
 interface Topic {
@@ -47,18 +46,6 @@ function slugify(text: string): string {
     .replace(/\s+/g, '-')
     .replace(/[^\w\-]+/g, '')
     .replace(/--+/g, '-');
-}
-
-// Lógica de getUserDataDirectory duplicada aqui para garantir que funcione no build de produção
-async function getImportUserDataDirectory(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user || !session.user.id) {
-    throw new Error('Usuário não autenticado na função de diretório de dados.');
-  }
-  const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-  const userDir = path.join(dataDir, session.user.id);
-  await fs.mkdir(userDir, { recursive: true });
-  return userDir;
 }
 
 // Função para converter URL de imagem para Base64
@@ -308,13 +295,16 @@ export async function POST(req: Request) {
     const bancaTopicWeights = extractTopicWeights(finalSubjects);
     const planData: PlanData = { ...headerData, subjects: finalSubjects, bancaTopicWeights };
 
-    const userDir = await getImportUserDataDirectory(); // Usa a função duplicada
-    
     const fileName = `${slugify(planData.name)}.json`;
-    const filePath = path.join(userDir, fileName);
-
-    await fs.writeFile(filePath, JSON.stringify(planData, null, 2), 'utf-8');
-    console.log(`Plano salvo em: ${filePath}`);
+    await upsertFullPlanData(session.user.id, fileName, {
+      ...planData,
+      observations: '',
+      subjects: planData.subjects as any,
+      records: [],
+      reviewRecords: [],
+      simuladoRecords: [],
+    });
+    console.log(`Plano salvo no Supabase: ${fileName}`);
 
     return NextResponse.json({ message: 'Guia importado com sucesso!', plan: planData });
 

@@ -1,11 +1,6 @@
-import fs from 'fs/promises';
-import path from 'path';
-
-// Função para obter o caminho correto do arquivo de usuários
-function getUsersFilePath() {
-    const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-    return path.join(dataDir, 'users.json');
-}
+import 'server-only';
+import crypto from 'crypto';
+import { getSupabaseAdmin } from './supabase';
 
 export interface User {
   id: string;
@@ -13,45 +8,52 @@ export interface User {
   password: string; // Hashed password
 }
 
-async function ensureUsersFileExists() {
-  const usersFile = getUsersFilePath();
-  try {
-    await fs.access(usersFile);
-  } catch (error) {
-    // Garante que o diretório exista antes de tentar criar o arquivo
-    await fs.mkdir(path.dirname(usersFile), { recursive: true });
-    // Se o arquivo não existir, cria com um array vazio
-    await fs.writeFile(usersFile, JSON.stringify([]), 'utf-8');
-  }
-}
-
-export async function getUsers(): Promise<User[]> {
-  await ensureUsersFileExists();
-  const usersFile = getUsersFilePath();
-  const fileContent = await fs.readFile(usersFile, 'utf-8');
-  return JSON.parse(fileContent);
-}
-
-export async function saveUsers(users: User[]): Promise<void> {
-  const usersFile = getUsersFilePath();
-  // Garante que o diretório exista antes de salvar
-  await fs.mkdir(path.dirname(usersFile), { recursive: true });
-  await fs.writeFile(usersFile, JSON.stringify(users, null, 2), 'utf-8');
-}
-
 export async function getUserByUsername(username: string): Promise<User | undefined> {
-  const users = await getUsers();
-  return users.find(user => user.username === username);
+  const supabase = getSupabaseAdmin();
+  const { data, error } = await supabase
+    .from('users')
+    .select('id, username, password_hash')
+    .eq('username', username)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Erro ao buscar usuário no Supabase:', error);
+    throw new Error('Falha ao consultar usuário no banco de dados.');
+  }
+
+  if (!data) {
+    return undefined;
+  }
+
+  return {
+    id: data.id,
+    username: data.username,
+    password: data.password_hash,
+  };
 }
 
 export async function createUser(username: string, hashedPassword: string): Promise<User> {
-  const users = await getUsers();
-  const newUser: User = {
-    id: Date.now().toString(), // Simple unique ID
-    username,
-    password: hashedPassword,
+  const supabase = getSupabaseAdmin();
+  const newId = crypto.randomUUID();
+
+  const { data, error } = await supabase
+    .from('users')
+    .insert({
+      id: newId,
+      username,
+      password_hash: hashedPassword,
+    })
+    .select('id, username, password_hash')
+    .single();
+
+  if (error || !data) {
+    console.error('Erro ao criar usuário no Supabase:', error);
+    throw new Error('Falha ao registrar usuário no banco de dados.');
+  }
+
+  return {
+    id: data.id,
+    username: data.username,
+    password: data.password_hash,
   };
-  users.push(newUser);
-  await saveUsers(users);
-  return newUser;
 }
