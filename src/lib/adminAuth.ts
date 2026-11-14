@@ -6,8 +6,8 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/app/api/auth/[...nextauth]/route';
 import { getSupabaseAdmin } from './supabase';
 
-export const ADMIN_COOKIE_NAME = 'ouroboros_admin_session';
-export const IMPERSONATE_COOKIE_NAME = 'ouroboros_impersonate';
+export const ADMIN_COOKIE_NAME = 'krono_admin_session';
+export const IMPERSONATE_COOKIE_NAME = 'krono_impersonate';
 
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12 horas
 const IMPERSONATE_TTL_SECONDS = 60 * 60 * 4; // 4 horas

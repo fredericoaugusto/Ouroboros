@@ -2,9 +2,9 @@ version: '3.8'
 
 services:
   web:
-    image: ouroboros-web
+    image: krono-web
     build: .
-    container_name: ouroboros-app
+    container_name: krono-app
     ports:
       - "3000:3000"
     volumes:

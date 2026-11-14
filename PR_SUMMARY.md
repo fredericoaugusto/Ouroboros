@@ -34,7 +34,7 @@ Este Pull Request substitui a persistência local em arquivos `.json` por banco 
 - Apenas contas aprovadas (`status = 'approved'`) por um administrador têm acesso à plataforma.
 
 ### 4. Painel Administrativo Totalmente Isolado (`/admin` e `/admin/login`)
-- **Tabela e Sessão Independentes**: Administradores residem em `public.admin_users` (totalmente separada de `public.users`), usando cookie próprio `HttpOnly` assinado com HMAC-SHA256 (`ouroboros_admin_session`) e nunca se misturam com contas de estudantes.
+- **Tabela e Sessão Independentes**: Administradores residem em `public.admin_users` (totalmente separada de `public.users`), usando cookie próprio `HttpOnly` assinado com HMAC-SHA256 (`krono_admin_session`) e nunca se misturam com contas de estudantes.
 - **Administradores Padrão**: Seed automático garantido para `byfred` e `gustavo` (senha inicial padrão: `senha123`).
 - **Gestão Completa (`/admin`)**:
   - **Visão Geral**: Métricas globais da plataforma (estudantes, pendentes, planos, simulados, horas estudadas, volume de logs) e fila rápida de aprovação.

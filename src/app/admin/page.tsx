@@ -496,7 +496,7 @@ export default function AdminDashboardPage() {
             </div>
             <div>
               <h1 className="text-base font-extrabold tracking-tight text-white">
-                Ouroboros • Painel Administrativo
+                Krono • Painel Administrativo
               </h1>
               <p className="text-[11px] text-slate-400">
                 Logado como admin <strong className="text-indigo-400">{admin?.username}</strong> (conta isolada)

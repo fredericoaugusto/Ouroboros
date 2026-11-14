@@ -33,7 +33,7 @@ const BackupPage = () => {
       const link = document.createElement('a');
       link.href = jsonString;
       const date = new Date().toISOString().split('T')[0];
-      link.download = `backup-ouroboros-${date}.json`;
+      link.download = `backup-krono-${date}.json`;
       link.click();
       setSuccess('Backup completo exportado com sucesso!');
       setError(null);

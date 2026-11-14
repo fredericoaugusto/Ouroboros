@@ -170,7 +170,7 @@ export default function ExtensionGuideModal({ isOpen, onClose }: ExtensionGuideM
                 </code>{' '}
                 (ou selecione direto a pasta{' '}
                 <code className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-[#090f1a] font-mono text-[11px]">
-                  Ouroboros/public/krono-extension
+                  Krono/public/krono-extension
                 </code>
                 ).
               </li>

@@ -37,7 +37,7 @@
      inkscape:window-maximized="1"
      inkscape:current-layer="svg5" />
   <title
-     id="titleDesc">Ouroboros — logo dourado</title>
+     id="titleDesc">Krono — logo dourado</title>
   <defs
      id="defs4">
     <linearGradient
@@ -151,7 +151,7 @@
        y2="113.4505"
        gradientUnits="userSpaceOnUse" />
   </defs>
-  <!-- Ouroboros símbolo -->
+  <!-- Krono símbolo -->
   <g
      transform="matrix(0.00798369,-1.5054356,1.7098146,0.00702937,10.556595,188.77112)"
      id="g5">
@@ -187,14 +187,14 @@
      id="text5"
      style="font-size:110px;font-family:Gluten;-inkscape-font-specification:Gluten;letter-spacing:-2px;fill:url(#linearGradient11);stroke:url(#linearGradient13);stroke-width:0.9;stroke-dasharray:none"
      class="word"
-     aria-label="ouroboros"
+     aria-label="krono"
      sodipodi:nodetypes="scccscccssscscccsscccscccsccsccsscscscsccssccccccccscccccccssccccccccsscccscssssscccsccscscsccscscsscccscccssscscccsscccscccsccsccssccssscccsscsccccscscccsccscccsscccscssccsccsscccscccssscscccsscccscccsccsccsscccscssssscccsccscscsccscscsscccscccssscscccsscccscccsccsccsscsccscsccscsscssccscccscccsscscsccsccccsscss" />
   <metadata
      id="metadata5">
     <rdf:RDF>
       <cc:Work
          rdf:about="">
-        <dc:title>Ouroboros — logo dourado</dc:title>
+        <dc:title>Krono — logo dourado</dc:title>
       </cc:Work>
     </rdf:RDF>
   </metadata>

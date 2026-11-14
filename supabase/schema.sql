@@ -1,5 +1,5 @@
 -- ============================================================================
--- Ouroboros - Schema PostgreSQL para Supabase
+-- Krono - Schema PostgreSQL para Supabase
 -- Segurança: RLS habilitado sem políticas públicas (acesso exclusivo via
 -- service_role no backend Next.js, com escopo estrito por user_id).
 -- ============================================================================

@@ -1,6 +1,6 @@
-# Guia Passo a Passo: Integrando o Ouroboros com o Supabase
+# Guia Passo a Passo: Integrando o Krono com o Supabase
 
-Este guia explica, do zero, como conectar o **Ouroboros** a um banco de dados gratuito e seguro no **Supabase** (PostgreSQL).  
+Este guia explica, do zero, como conectar o **Krono** a um banco de dados gratuito e seguro no **Supabase** (PostgreSQL).  
 Nenhuma senha ou chave do banco fica exposta no navegador — toda a comunicação acontece exclusivamente no servidor.
 
 ---
@@ -10,7 +10,7 @@ Nenhuma senha ou chave do banco fica exposta no navegador — toda a comunicaç�
 1. Acesse [https://supabase.com](https://supabase.com) e clique em **Start your project** (pode entrar com sua conta do GitHub).
 2. Clique em **New Project**.
 3. Preencha:
-   - **Name**: `ouroboros` (ou o nome que preferir).
+   - **Name**: `krono` (ou o nome que preferir).
    - **Database Password**: crie uma senha forte e guarde-a em um lugar seguro.
    - **Region**: escolha a região mais próxima (ex: `South America (São Paulo)`).
 4. Clique em **Create new project** e aguarde cerca de 1 a 2 minutos até o projeto ficar pronto.
@@ -46,7 +46,7 @@ Nenhuma senha ou chave do banco fica exposta no navegador — toda a comunicaç�
 ## Passo 4: Configurar o arquivo `.env.local` (ou Docker)
 
 ### Opção A — Rodando localmente com Node.js
-1. Na raiz do projeto (`Ouroboros/`), crie um arquivo chamado `.env.local` (você pode copiar o `.env.example`).
+1. Na raiz do projeto (`Krono/`), crie um arquivo chamado `.env.local` (você pode copiar o `.env.example`).
 2. Coloque dentro dele:
 
 ```env
@@ -91,7 +91,7 @@ docker compose up -d
 
 ## Passo 5.1: Acessando o Painel Administrativo
 
-O Ouroboros conta com um painel administrativo isolado em **`/admin/login`** (separado das contas de estudantes):
+O Krono conta com um painel administrativo isolado em **`/admin/login`** (separado das contas de estudantes):
 - **Admins padrão iniciais**: `byfred` e `gustavo` (senha inicial: `senha123`).
 - Novos estudantes que se cadastrarem em `/register` ficam com status **Pendente** até serem aprovados por um administrador em `/admin`.
 - **Importante**: Após o primeiro acesso em produção, altere as senhas padrão na aba **Admins** ou via banco de dados.
@@ -100,7 +100,7 @@ O Ouroboros conta com um painel administrativo isolado em **`/admin/login`** (se
 
 ## Passo 6: Backup e Restauração de Emergência (`.json`)
 
-Mesmo usando o Supabase, o Ouroboros mantém a página **Backup e Restauração** (`/backup`) 100% funcional para que você tenha controle total dos seus dados:
+Mesmo usando o Supabase, o Krono mantém a página **Backup e Restauração** (`/backup`) 100% funcional para que você tenha controle total dos seus dados:
 
 - **Exportar Backup Completo**: gera um arquivo `.json` contendo **100% dos seus dados** no banco (todos os planos, editais verticalizados, matérias, pesos, sessões de estudo, revisões, simulados, ciclos de estudo e metas).
-- **Restaurar a partir de Arquivo**: se o servidor/VPS cair ou você quiser migrar para um novo banco Supabase do zero, basta subir uma nova instância do Ouroboros, criar/logar na sua conta, ir em **Backup e Restauração** e enviar o `.json`. O sistema limpa os dados atuais daquela conta e grava tudo automaticamente nas tabelas do novo Supabase.
+- **Restaurar a partir de Arquivo**: se o servidor/VPS cair ou você quiser migrar para um novo banco Supabase do zero, basta subir uma nova instância do Krono, criar/logar na sua conta, ir em **Backup e Restauração** e enviar o `.json`. O sistema limpa os dados atuais daquela conta e grava tudo automaticamente nas tabelas do novo Supabase.

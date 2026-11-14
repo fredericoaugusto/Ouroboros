@@ -19,11 +19,11 @@ Você é o assistente técnico de desenvolvimento e também o curador do **Segun
 - Responda em Português do Brasil, de forma direta, técnica e concisa.
 
 ### 2. Manutenção Automática do Cofre
-- **Decisões de Projeto**: Ao criar componentes relevantes, refatorar código ou alterar configurações no projeto atual (`Ouroboros`), atualize a nota `01 - Projetos/Ouroboros.md`.
+- **Decisões de Projeto**: Ao criar componentes relevantes, refatorar código ou alterar configurações no projeto atual (`Krono`), atualize a nota `01 - Projetos/Krono.md`.
 - **Registro de Soluções**: Ao solucionar bugs complexos, problemas de compilação, empacotamento ou compatibilidade (ex: Next.js 14 App Router, Electron, Puppeteer, Docker, Tailwind CSS, TypeScript), crie uma nota concisa em `02 - Aprendizados/<Título_Descritivo>.md`.
 - **Atualização do Índice**: Sempre que uma nova nota for criada no cofre, adicione imediatamente a referência correspondente em `00 - Indice.md` usando a sintaxe de wikilink do Obsidian: `[[Nome da Nota]]`.
 
-### 3. Diretrizes Técnicas & Boas Práticas (Ouroboros)
+### 3. Diretrizes Técnicas & Boas Práticas (Krono)
 - **Stack Principal**: Next.js 14 (App Router), React 18, TypeScript, Tailwind CSS, Radix UI, Lucide Icons, dnd-kit, Chart.js, Tiptap.
 - **Desktop & Empacotamento**: Electron com `electron-builder`, cache isolado do Puppeteer (`.cache/puppeteer`) e assets em `build/` e `data/`.
 - **Containerização**: Suporte a Docker e Docker Compose com montagem de volumes para ambiente de desenvolvimento e produção.

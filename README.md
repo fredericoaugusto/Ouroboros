@@ -1,10 +1,10 @@
-# Ouroboros
+# Krono
 
-[![GitHub license](https://img.shields.io/github/license/grebsu/Ouroboros.svg)](https://github.com/grebsu/Ouroboros/blob/master/LICENSE)
-[![GitHub package.json version](https://img.shields.io/github/package-json/version/grebsu/Ouroboros)](https://github.com/grebsu/Ouroboros/blob/master/package.json)
+[![GitHub license](https://img.shields.io/github/license/fredericoaugusto/Krono.svg)](https://github.com/fredericoaugusto/Krono/blob/master/LICENSE)
+[![GitHub package.json version](https://img.shields.io/github/package-json/version/fredericoaugusto/Krono)](https://github.com/fredericoaugusto/Krono/blob/master/package.json)
 <!-- Adicione mais badges aqui, ex: status de build -->
 
-O Ouroboros é uma aplicação completa para planejamento de estudos, projetada para ajudar estudantes a organizar seus horários, acompanhar o progresso e gerenciar revisões de forma eficaz.
+O Krono é uma aplicação completa para planejamento de estudos, projetada para ajudar estudantes a organizar seus horários, acompanhar o progresso e gerenciar revisões de forma eficaz.
 
 ## 📖 Sumário
 - [🎥 Demonstração em Vídeo](#-demonstração-em-vídeo)
@@ -36,11 +36,11 @@ Confira também o tutorial completo para aprender a usar todas as ferramentas:
 
 A versão mais recente da aplicação para desktop (Windows e Linux) pode ser baixada aqui:
 
-**[➡️ Baixar Ouroboros v1.1.3](https://github.com/grebsu/Ouroboros/releases/tag/v1.1.3)**
+**[➡️ Baixar Krono v1.1.3](https://github.com/fredericoaugusto/Krono/releases/tag/v1.1.3)**
 
 ## 💖 Apoie o Projeto
 
-Se o Ouroboros te ajudou nos seus estudos, considere apoiar o projeto com uma doação! Sua contribuição ajuda a manter o desenvolvimento contínuo, a implementação de novas funcionalidades e a correção de bugs. O projeto visa ajudar estudantes hipossuficientes a ter acesso a uma ferramenta de estudos poderosa, visando democratizar o estudo. Qualquer valor é muito bem-vindo e faz uma grande diferença.
+Se o Krono te ajudou nos seus estudos, considere apoiar o projeto com uma doação! Sua contribuição ajuda a manter o desenvolvimento contínuo, a implementação de novas funcionalidades e a correção de bugs. O projeto visa ajudar estudantes hipossuficientes a ter acesso a uma ferramenta de estudos poderosa, visando democratizar o estudo. Qualquer valor é muito bem-vindo e faz uma grande diferença.
 
 Você pode doar escaneando o QR Code abaixo com seu aplicativo de banco:
 
@@ -88,11 +88,11 @@ Siga estas instruções para obter uma cópia do projeto e executá-lo em sua m�
 
 1. Clone o repositório:
    ```bash
-   git clone https://github.com/grebsu/Ouroboros.git
+   git clone https://github.com/fredericoaugusto/Krono.git
    ```
 2. Navegue até o diretório do projeto:
    ```bash
-   cd Ouroboros
+   cd Krono
    ```
 3. Instale as dependências:
    ```bash
@@ -130,12 +130,12 @@ Para executar a aplicação usando a imagem pré-construída do Docker Hub:
 
 1.  **Puxe a imagem Docker:**
     ```bash
-    docker pull ouroboros73/ouroboros:latest
+    docker pull krono-web:latest
     ```
 2.  **Execute o contêiner Docker:**
     Certifique-se de configurar suas variáveis de ambiente (por exemplo, `DATABASE_URL`, `NEXTAUTH_SECRET`, `NEXTAUTH_URL`) ao executar o contêiner. Você pode passá-las usando a flag `-e`.
     ```bash
-    docker run -p 3000:3000 -e DATABASE_URL="your_database_url" -e NEXTAUTH_SECRET="your_nextauth_secret" -e NEXTAUTH_URL="http://localhost:3000" ouroboros73/ouroboros:latest
+    docker run -p 3000:3000 -e DATABASE_URL="your_database_url" -e NEXTAUTH_SECRET="your_nextauth_secret" -e NEXTAUTH_URL="http://localhost:3000" krono-web:latest
     ```
 
 #### Construindo e Executando a Versão Desktop (Electron)

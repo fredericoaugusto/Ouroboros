@@ -300,7 +300,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
     } as any);
     setContextStudyDays(studyDays);
     if (typeof window !== 'undefined') {
-      localStorage.setItem('ouroboros_topic_suggestion_mode', topicSuggestionMode);
+      localStorage.setItem('krono_topic_suggestion_mode', topicSuggestionMode);
     }
     showNotification('Planejamento de estudos gerado com sucesso!', 'success');
     onClose();
