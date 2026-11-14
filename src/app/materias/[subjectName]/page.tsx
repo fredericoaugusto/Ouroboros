@@ -23,7 +23,12 @@ import {
   Activity,
   Sparkles,
 } from 'lucide-react';
-import { getJsonContent, StudyRecord, updateTopicDetailsAction } from '../../actions';
+import {
+  getJsonContent,
+  StudyRecord,
+  updateTopicDetailsAction,
+  addSubtopicAction,
+} from '../../actions';
 import { useData } from '../../../context/DataContext';
 import { useTheme } from '../../../context/ThemeContext';
 import { useNotification } from '../../../context/NotificationContext';
@@ -447,6 +452,45 @@ export default function MateriaDetalhes() {
     }
   };
 
+  const handleAddSubtopic = async (parentTopicText: string) => {
+    if (!currentFile) {
+      showNotification('Nenhum plano selecionado.', 'error');
+      return;
+    }
+    const name = window.prompt(`Nome do novo subtópico dentro de "${parentTopicText}":`);
+    if (!name || !name.trim()) return;
+    const res = await addSubtopicAction(currentFile, subjectName, parentTopicText, name.trim());
+    if (res.success) {
+      showNotification('Subtópico adicionado com sucesso!', 'success');
+      await fetchPlan(true);
+      await refreshPlans();
+    } else {
+      showNotification(res.error || 'Erro ao adicionar subtópico.', 'error');
+    }
+  };
+
+  const errorReasonsStats = useMemo(() => {
+    const counts: Record<string, number> = {};
+    let totalTags = 0;
+    for (const r of filteredStudyRecords) {
+      const reasons = r.errorReasons || (r.questions as any)?.errorReasons || [];
+      if (Array.isArray(reasons)) {
+        for (const reason of reasons) {
+          counts[reason] = (counts[reason] || 0) + 1;
+          totalTags++;
+        }
+      }
+    }
+    const sorted = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, count]) => ({
+        reason,
+        count,
+        pct: totalTags > 0 ? Math.round((count / totalTags) * 100) : 0,
+      }));
+    return { sorted, totalTags };
+  }, [filteredStudyRecords]);
+
   // Recursive Topic Row with Score, Retention & Cockpit trigger
   const TopicRow: React.FC<{
     topic: Topic;
@@ -661,6 +705,15 @@ export default function MateriaDetalhes() {
 
           <td className="py-3 px-6 text-right whitespace-nowrap">
             <div className="inline-flex items-center gap-1.5">
+              {level < 2 && (
+                <button
+                  onClick={() => handleAddSubtopic(topic.topic_text)}
+                  className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 dark:bg-[#0b1320] text-slate-600 dark:text-slate-300 hover:bg-emerald-500/15 hover:text-emerald-500 border border-slate-200 dark:border-[#1f304a] transition-colors"
+                  title="Adicionar subtópico dentro deste item"
+                >
+                  + Sub
+                </button>
+              )}
               <button
                 onClick={() => setCockpitTopic(topic)}
                 className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-500/10 text-indigo-400 hover:bg-indigo-500 hover:text-white transition-colors"
@@ -1186,8 +1239,22 @@ export default function MateriaDetalhes() {
                             {formatTime(record.studyTime)}
                           </td>
                           <td className="py-3.5 px-4 whitespace-nowrap">
-                            <span className="text-emerald-500 font-bold">{c}</span> /{' '}
-                            <span className="text-rose-400 font-bold">{inc}</span>
+                            <div>
+                              <span className="text-emerald-500 font-bold">{c}</span> /{' '}
+                              <span className="text-rose-400 font-bold">{inc}</span>
+                            </div>
+                            {Array.isArray(record.errorReasons) && record.errorReasons.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {record.errorReasons.map((er) => (
+                                  <span
+                                    key={er}
+                                    className="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20 text-[9px] font-bold"
+                                  >
+                                    {er}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </td>
                           <td className="py-3.5 px-4 whitespace-nowrap">
                             {nbUrl ? (
@@ -1270,6 +1337,47 @@ export default function MateriaDetalhes() {
                 Aproveitamento combinado: {subjectScoreObj.combinedAccuracyPct}%
               </p>
             </div>
+          </div>
+
+          {/* Diagnóstico de Motivos de Erro na Disciplina */}
+          <div className="p-5 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200/80 dark:border-[#1f304a] shadow-sm">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400 block">
+                  Diagnóstico de Motivos de Erro em {subjectName}
+                </span>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                  {errorReasonsStats.totalTags > 0
+                    ? `Principal causa registrada: ${errorReasonsStats.sorted[0].reason} (${errorReasonsStats.sorted[0].pct}% das marcações)`
+                    : 'Ao errar questões no modal de registro, selecione as tags rápidas de motivo do erro para ver o diagnóstico aqui.'}
+                </p>
+              </div>
+              <span className="text-xs font-bold text-slate-400">
+                {errorReasonsStats.totalTags} marcações
+              </span>
+            </div>
+            {errorReasonsStats.sorted.length > 0 && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 mt-3">
+                {errorReasonsStats.sorted.map((item) => (
+                  <div
+                    key={item.reason}
+                    className="p-3 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/70 dark:border-[#1f304a] flex items-center justify-between"
+                  >
+                    <div>
+                      <div className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        {item.reason}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
+                        {item.count} {item.count === 1 ? 'sessão' : 'sessões'} com esse erro
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 rounded-lg bg-rose-500/15 text-rose-400 font-extrabold text-xs">
+                      {item.pct}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm">

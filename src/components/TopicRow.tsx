@@ -7,6 +7,7 @@ import {
   ExternalLink,
   Check,
   Sliders,
+  ListTree,
 } from 'lucide-react';
 import { StudyRecord, EditalTopic as Topic } from '../context/DataContext';
 import { computeTopicScore } from '../lib/scoreEngine';
@@ -27,6 +28,7 @@ interface TopicRowProps {
   onToggleCompletion: (subject: string, topic: string) => void;
   onOpenRegisterModal: (subject: string, topic: Topic) => void;
   onOpenCockpit?: (subject: string, topic: any) => void;
+  onAddSubtopic?: (subject: string, parentTopicText: string) => void;
   allTopicsExpanded?: boolean;
 }
 
@@ -38,6 +40,7 @@ const TopicRow: React.FC<TopicRowProps> = ({
   onToggleCompletion,
   onOpenRegisterModal,
   onOpenCockpit,
+  onAddSubtopic,
   allTopicsExpanded,
 }) => {
   const [isExpanded, setIsExpanded] = useState(
@@ -273,6 +276,21 @@ const TopicRow: React.FC<TopicRowProps> = ({
         {/* Actions */}
         <td className="py-3 px-4 text-right whitespace-nowrap">
           <div className="inline-flex items-center justify-end gap-1.5">
+            {onAddSubtopic && level < 2 && (
+              <button
+                type="button"
+                onClick={() => onAddSubtopic(subjectName, topic.topic_text)}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 dark:bg-[#1a2942] text-slate-600 dark:text-slate-300 hover:bg-emerald-500/15 hover:text-emerald-500 transition-colors"
+                title={
+                  level === 0
+                    ? 'Adicionar Subtópico (2º nível)'
+                    : 'Adicionar Subtópico do Subtópico (3º nível)'
+                }
+              >
+                <ListTree className="w-3 h-3" />
+                <span className="hidden xl:inline">+ Sub</span>
+              </button>
+            )}
             {onOpenCockpit && (
               <button
                 type="button"
@@ -308,6 +326,7 @@ const TopicRow: React.FC<TopicRowProps> = ({
             onToggleCompletion={onToggleCompletion}
             onOpenRegisterModal={onOpenRegisterModal}
             onOpenCockpit={onOpenCockpit}
+            onAddSubtopic={onAddSubtopic}
             allTopicsExpanded={allTopicsExpanded}
           />
         ))}

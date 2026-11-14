@@ -1,7 +1,9 @@
 'use client';
 
 import React from 'react';
+import Link from 'next/link';
 import { useData, HierarchicalPerformanceNode, StudyRecord } from '../../context/DataContext';
+import { computeTopicScore } from '../../lib/scoreEngine';
 import {
   Plus,
   Filter,
@@ -15,6 +17,11 @@ import {
   Flame,
   ListChecks,
   Award,
+  AlertTriangle,
+  Calendar,
+  Target,
+  Sparkles,
+  TrendingUp,
 } from 'lucide-react';
 import ChartComponents from '../../components/ChartComponents';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
@@ -52,6 +59,8 @@ ChartJS.register(
 export default function Estatisticas() {
   const {
     stats,
+    studyRecords,
+    simuladoRecords,
     addStudyRecord,
     updateStudyRecord,
     applyFilters,
@@ -66,6 +75,228 @@ export default function Estatisticas() {
   const [subjectSortOrder, setSubjectSortOrder] = React.useState<'desc' | 'asc' | 'alpha'>(
     'desc'
   );
+  const [examDate, setExamDate] = React.useState<string>('');
+  const [selectedErrorSubject, setSelectedErrorSubject] = React.useState<string>('ALL');
+
+  React.useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const saved = window.localStorage.getItem('krono_exam_date');
+      if (saved) setExamDate(saved);
+    }
+  }, []);
+
+  const handleExamDateChange = (val: string) => {
+    setExamDate(val);
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem('krono_exam_date', val);
+    }
+  };
+
+  // 1. Projeção Matemática de Fechamento do Edital ("Termômetro até a Prova")
+  const editalProjection = React.useMemo(() => {
+    const total = stats.totalTopics || 0;
+    const completed = stats.completedTopics || 0;
+    const pending = Math.max(0, total - completed);
+    const activeWeeks = Math.max(1, (stats.totalDaysSinceFirstRecord || 7) / 7);
+    const topicsPerWeek = completed > 0 ? +(completed / activeWeeks).toFixed(1) : 0;
+    const avgMinutesPerTopic =
+      completed > 0
+        ? Math.round(stats.totalStudyTime / 60000 / completed)
+        : 90; // fallback 90 min por tópico
+
+    const weeksNeededAtCurrentPace =
+      topicsPerWeek > 0 ? pending / topicsPerWeek : null;
+    const predictedFinishDate =
+      weeksNeededAtCurrentPace !== null
+        ? new Date(Date.now() + weeksNeededAtCurrentPace * 7 * 86400000)
+        : null;
+
+    let daysUntilExam: number | null = null;
+    let requiredTopicsPerWeek: number | null = null;
+    let requiredMinutesPerDay: number | null = null;
+    let onTrack: boolean | null = null;
+
+    if (examDate) {
+      const targetMs = new Date(examDate + 'T23:59:59').getTime();
+      const diffDays = Math.ceil((targetMs - Date.now()) / 86400000);
+      if (diffDays > 0) {
+        daysUntilExam = diffDays;
+        const weeksUntilExam = Math.max(0.5, diffDays / 7);
+        requiredTopicsPerWeek = +(pending / weeksUntilExam).toFixed(1);
+        requiredMinutesPerDay = Math.round((pending * avgMinutesPerTopic) / diffDays);
+        onTrack =
+          predictedFinishDate !== null
+            ? predictedFinishDate.getTime() <= targetMs
+            : pending === 0;
+      }
+    }
+
+    return {
+      total,
+      completed,
+      pending,
+      topicsPerWeek,
+      avgMinutesPerTopic,
+      predictedFinishDate,
+      daysUntilExam,
+      requiredTopicsPerWeek,
+      requiredMinutesPerDay,
+      onTrack,
+    };
+  }, [stats, examDate]);
+
+  // 2. Raio-X de "Pontos Cegos de Alto Risco" (Matriz Relevância x Score)
+  const blindSpots = React.useMemo(() => {
+    const items: Array<{
+      subject: string;
+      topic: string;
+      relevance: number;
+      difficulty: number;
+      currentScore: number;
+      retention: number;
+      totalQuestions: number;
+      priorityROI: number;
+      studied: boolean;
+    }> = [];
+
+    const allRecs = studyRecords || [];
+    const simRecs = simuladoRecords || [];
+
+    const collectLeaves = (topics: any[]): any[] => {
+      let leaves: any[] = [];
+      for (const t of topics || []) {
+        if (t.sub_topics && t.sub_topics.length > 0) {
+          leaves = leaves.concat(collectLeaves(t.sub_topics));
+        } else {
+          leaves.push(t);
+        }
+      }
+      return leaves;
+    };
+
+    for (const subj of stats.editalData || []) {
+      const subjName = subj.subject;
+      const subjRecs = allRecs.filter(
+        (r) => (r.subject || '').trim().toLowerCase() === (subjName || '').trim().toLowerCase()
+      );
+      const leaves = collectLeaves(subj.topics || []);
+
+      for (const leaf of leaves) {
+        const rel = leaf.relevance ?? 3;
+        const diff = leaf.difficulty ?? 3;
+        const mast = leaf.perceivedMastery ?? leaf.mastery ?? 3;
+        const tText = leaf.topic_text || '';
+        const tRecs = subjRecs.filter(
+          (r) => (r.topic || '').trim().toLowerCase() === tText.trim().toLowerCase()
+        );
+        const isComp = Boolean(
+          leaf.is_completed ||
+            leaf.status === 'completed' ||
+            tRecs.some((r) => r.teoriaFinalizada)
+        );
+        const scoreRes = computeTopicScore(tRecs, rel, diff, mast, {
+          subjectRecords: subjRecs,
+          allStudyRecords: allRecs,
+          simuladoRecords: simRecs,
+          subjectName: subjName,
+          topicText: tText,
+          isCompleted: isComp,
+        });
+
+        const studied = isComp || tRecs.length > 0;
+        // Ponto cego: alta relevância (>= 4, ou >= 3 se estudado com score baixo) e score < 68 ou poucas questões (< 15)
+        if (
+          (rel >= 4 && (!studied || scoreRes.currentScore < 70 || scoreRes.totalQuestions < 15)) ||
+          (rel >= 3 && studied && scoreRes.currentScore < 62)
+        ) {
+          items.push({
+            subject: subjName,
+            topic: tText,
+            relevance: rel,
+            difficulty: diff,
+            currentScore: studied ? scoreRes.currentScore : 0,
+            retention: studied ? scoreRes.retention : 0,
+            totalQuestions: scoreRes.totalQuestions,
+            priorityROI: scoreRes.priorityROI,
+            studied,
+          });
+        }
+      }
+    }
+
+    return items
+      .sort((a, b) => {
+        if (b.relevance !== a.relevance) return b.relevance - a.relevance;
+        return b.priorityROI - a.priorityROI;
+      })
+      .slice(0, 12);
+  }, [stats.editalData, studyRecords, simuladoRecords]);
+
+  // 3. Diagnóstico de Motivos de Erro (Global e por Disciplina)
+  const errorDiagnosis = React.useMemo(() => {
+    const counts: Record<string, number> = {};
+    const subjectsWithErrors = new Set<string>();
+    let totalMarks = 0;
+
+    for (const r of studyRecords || []) {
+      const reasons = r.errorReasons || (r.questions as any)?.errorReasons || [];
+      if (Array.isArray(reasons) && reasons.length > 0) {
+        if (r.subject) subjectsWithErrors.add(r.subject);
+        if (selectedErrorSubject === 'ALL' || r.subject === selectedErrorSubject) {
+          for (const reason of reasons) {
+            counts[reason] = (counts[reason] || 0) + 1;
+            totalMarks++;
+          }
+        }
+      }
+    }
+
+    const breakdown = Object.entries(counts)
+      .sort((a, b) => b[1] - a[1])
+      .map(([reason, count]) => ({
+        reason,
+        count,
+        pct: totalMarks > 0 ? Math.round((count / totalMarks) * 100) : 0,
+      }));
+
+    return {
+      breakdown,
+      totalMarks,
+      subjectsList: Array.from(subjectsWithErrors).sort(),
+    };
+  }, [studyRecords, selectedErrorSubject]);
+
+  // 4. Produtividade por Dia da Semana (Melhor Dia de Rendimento)
+  const weekdayPerformance = React.useMemo(() => {
+    const names = ['Domingo', 'Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado'];
+    const map = names.map((name) => ({ name, timeMs: 0, correct: 0, total: 0 }));
+
+    for (const r of studyRecords || []) {
+      if (!r.date) continue;
+      const d = new Date(r.date + (r.date.includes('T') ? '' : 'T12:00:00'));
+      const dayIdx = d.getDay();
+      if (dayIdx >= 0 && dayIdx <= 6) {
+        map[dayIdx].timeMs += r.studyTime || 0;
+        map[dayIdx].correct += r.questions?.correct || 0;
+        map[dayIdx].total += r.questions?.total || 0;
+      }
+    }
+
+    let bestHourDay = map[0];
+    let bestAccDay: { name: string; acc: number; total: number } | null = null;
+
+    for (const item of map) {
+      if (item.timeMs > bestHourDay.timeMs) bestHourDay = item;
+      if (item.total >= 10) {
+        const acc = Math.round((item.correct / item.total) * 100);
+        if (!bestAccDay || acc > bestAccDay.acc) {
+          bestAccDay = { name: item.name, acc, total: item.total };
+        }
+      }
+    }
+
+    return { map, bestHourDay, bestAccDay };
+  }, [studyRecords]);
 
   const sortedSubjectHours = React.useMemo(() => {
     const entries = Object.entries(stats.subjectStudyHours ?? {});
@@ -523,6 +754,285 @@ export default function Estatisticas() {
             Distribuição por Categoria
           </h2>
           <CategoryHoursChart categoryStudyHours={stats.categoryStudyHours} />
+        </div>
+      </div>
+
+      {/* INTELIGÊNCIA DE PROVA & DIAGNÓSTICO AVANÇADO (4 Pilares de Alto Rendimento) */}
+      <div className="space-y-6">
+        <div className="flex items-center gap-2.5">
+          <Sparkles className="w-5 h-5 text-emerald-500" />
+          <h2 className="text-lg font-extrabold text-slate-900 dark:text-white">
+            Inteligência de Prova & Diagnóstico Avançado
+          </h2>
+        </div>
+
+        {/* 1. Termômetro de Projeção Matemática de Fechamento do Edital + 4. Melhor Dia da Semana */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div className="lg:col-span-8 bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
+                  <Calendar className="w-3.5 h-3.5" />
+                  Termômetro de Fechamento do Edital
+                </span>
+                <h3 className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                  Projeção Matemática de Conclusão até a Prova
+                </h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-500 dark:text-slate-400">
+                  Data da Prova:
+                </label>
+                <input
+                  type="date"
+                  value={examDate}
+                  onChange={(e) => handleExamDateChange(e.target.value)}
+                  className="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-slate-800 dark:text-white"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/60 dark:border-[#1f304a]">
+                <span className="text-[10px] font-bold uppercase text-slate-400">
+                  Ritmo Real Atual
+                </span>
+                <div className="text-xl font-extrabold text-slate-900 dark:text-white mt-1">
+                  {editalProjection.topicsPerWeek} tópicos/sem
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  ~{editalProjection.avgMinutesPerTopic} min investidos por tópico
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/60 dark:border-[#1f304a]">
+                <span className="text-[10px] font-bold uppercase text-slate-400">
+                  Previsão de Fechamento
+                </span>
+                <div className="text-xl font-extrabold text-indigo-400 mt-1">
+                  {editalProjection.pending === 0
+                    ? '100% Concluído!'
+                    : editalProjection.predictedFinishDate
+                    ? editalProjection.predictedFinishDate.toLocaleDateString('pt-BR')
+                    : 'Sem ritmo base'}
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Restam {editalProjection.pending} de {editalProjection.total} tópicos
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/60 dark:border-[#1f304a]">
+                <span className="text-[10px] font-bold uppercase text-slate-400">
+                  Meta até a Prova
+                </span>
+                {editalProjection.daysUntilExam !== null ? (
+                  <>
+                    <div
+                      className={`text-xl font-extrabold mt-1 ${
+                        editalProjection.onTrack ? 'text-emerald-500' : 'text-amber-400'
+                      }`}
+                    >
+                      {editalProjection.requiredTopicsPerWeek} tóp/sem
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Faltam {editalProjection.daysUntilExam} dias (~
+                      {editalProjection.requiredMinutesPerDay} min/dia p/ fechar)
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="text-sm font-bold text-slate-500 mt-1">
+                      Defina a data da prova acima
+                    </div>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Calculamos a meta diária exata para bater 100%
+                    </p>
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="lg:col-span-4 bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm flex flex-col justify-between">
+            <div>
+              <span className="text-[11px] font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                <TrendingUp className="w-3.5 h-3.5" />
+                Bio-Ritmo Semanal
+              </span>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white mt-0.5">
+                Seus Melhores Dias de Rendimento
+              </h3>
+            </div>
+
+            <div className="space-y-3 my-3">
+              <div className="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-emerald-500">
+                    Maior Volume de Horas
+                  </span>
+                  <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    {weekdayPerformance.bestHourDay.timeMs > 0
+                      ? weekdayPerformance.bestHourDay.name
+                      : 'Sem dados'}
+                  </div>
+                </div>
+                <span className="text-xs font-extrabold text-emerald-500">
+                  {formatTime(weekdayPerformance.bestHourDay.timeMs)}
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-bold uppercase text-indigo-400">
+                    Maior Precisão em Questões
+                  </span>
+                  <div className="text-sm font-extrabold text-slate-900 dark:text-white">
+                    {weekdayPerformance.bestAccDay
+                      ? weekdayPerformance.bestAccDay.name
+                      : 'Mín. 10 questões/dia'}
+                  </div>
+                </div>
+                {weekdayPerformance.bestAccDay && (
+                  <span className="text-xs font-extrabold text-indigo-400">
+                    {weekdayPerformance.bestAccDay.acc}% acerto
+                  </span>
+                )}
+              </div>
+            </div>
+
+            <p className="text-[11px] text-slate-400">
+              Use seus dias de pico de precisão para matérias de alta complexidade ou baterias difíceis.
+            </p>
+          </div>
+        </div>
+
+        {/* 2. Raio-X de Pontos Cegos de Alto Risco + 3. Diagnóstico de Motivos de Erro */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Raio-X de Pontos Cegos */}
+          <div className="lg:col-span-7 bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-rose-400 flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5" />
+                  Matriz Relevância × Score
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-rose-500/15 text-rose-400 text-[11px] font-bold">
+                  {blindSpots.length} alertas
+                </span>
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                Raio-X de Pontos Cegos de Alto Risco
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5 mb-4">
+                Tópicos de alta importância para a prova que estão com Score baixo (&lt; 70), poucas questões (&lt; 15) ou ainda não estudados.
+              </p>
+
+              {blindSpots.length === 0 ? (
+                <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-[#0b1320] text-xs text-slate-400">
+                  Excelente! Nenhum ponto cego crítico de alta relevância detectado no momento.
+                </div>
+              ) : (
+                <div className="space-y-2.5 max-h-80 overflow-y-auto pr-1">
+                  {blindSpots.map((bs, idx) => (
+                    <div
+                      key={`${bs.subject}-${bs.topic}-${idx}`}
+                      className="p-3 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200/70 dark:border-[#1f304a] flex items-center justify-between gap-3"
+                    >
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-extrabold uppercase text-indigo-400 truncate">
+                            {bs.subject}
+                          </span>
+                          <span className="px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px] font-bold">
+                            Importância {bs.relevance}/5
+                          </span>
+                        </div>
+                        <div className="text-xs font-bold text-slate-800 dark:text-slate-100 truncate mt-0.5">
+                          {bs.topic}
+                        </div>
+                        <div className="text-[11px] text-slate-400 mt-0.5">
+                          {bs.studied
+                            ? `Score: ${bs.currentScore} pts • ${bs.totalQuestions} questões • ROI: ${bs.priorityROI}`
+                            : `Ainda não estudado • ${bs.totalQuestions} questões • ROI: ${bs.priorityROI}`}
+                        </div>
+                      </div>
+                      <Link
+                        href={`/materias/${encodeURIComponent(bs.subject)}`}
+                        className="shrink-0 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500 text-emerald-500 hover:text-white text-xs font-bold transition-colors"
+                      >
+                        Atacar
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Diagnóstico de Motivos de Erro */}
+          <div className="lg:col-span-5 bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-6 shadow-sm flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-2 mb-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5" />
+                  Raio-X de Erros em Questões
+                </span>
+                <select
+                  value={selectedErrorSubject}
+                  onChange={(e) => setSelectedErrorSubject(e.target.value)}
+                  className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-slate-700 dark:text-slate-200"
+                >
+                  <option value="ALL">Todas as Disciplinas</option>
+                  {errorDiagnosis.subjectsList.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <h3 className="text-base font-extrabold text-slate-900 dark:text-white">
+                Por que você está errando questões?
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5 mb-4">
+                Distribuição das tags rápidas marcadas ao registrar baterias com erros.
+              </p>
+
+              {errorDiagnosis.breakdown.length === 0 ? (
+                <div className="p-8 text-center rounded-xl bg-slate-50 dark:bg-[#0b1320] text-xs text-slate-400">
+                  Nenhuma tag de motivo de erro registrada ainda. Ao lançar questões erradas, clique nos motivos (ex: Letra de Lei, Pegadinha, Falta de Base) para gerar seu diagnóstico!
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {errorDiagnosis.breakdown.map((item) => (
+                    <div key={item.reason} className="space-y-1">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-800 dark:text-slate-100">
+                          {item.reason}
+                        </span>
+                        <span className="font-extrabold text-rose-400">
+                          {item.pct}% ({item.count}x)
+                        </span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-slate-100 dark:bg-[#0b1320] overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-rose-500 to-amber-500"
+                          style={{ width: `${Math.max(6, item.pct)}%` }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {errorDiagnosis.breakdown.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-slate-100 dark:border-[#1f304a] text-[11px] text-slate-400">
+                💡 <strong>Recomendação:</strong> Maior incidência em{' '}
+                <strong className="text-rose-400">{errorDiagnosis.breakdown[0].reason}</strong>.
+                Priorize revisões focadas nessa lacuna antes do próximo simulado.
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

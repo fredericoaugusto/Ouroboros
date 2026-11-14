@@ -136,35 +136,38 @@ body {
 
 /* Cloze / Ocultar para Active Recall no Editor de Notas */
 .krono-cloze {
-  background-color: rgba(99, 102, 241, 0.18);
+  background-color: rgba(99, 102, 241, 0.22);
   color: transparent !important;
-  text-shadow: 0 0 9px rgba(99, 102, 241, 0.65);
+  text-shadow: 0 0 8px rgba(99, 102, 241, 0.75);
   border-bottom: 2px dashed #6366f1;
   border-radius: 4px;
-  padding: 0 4px;
+  padding: 1px 5px;
   cursor: pointer;
-  user-select: none;
-  transition: all 0.2s ease-in-out;
+  transition: all 0.18s ease-in-out;
 }
 
 .krono-cloze:hover,
 .krono-cloze:active,
-.krono-cloze.revealed {
+.krono-cloze:focus,
+.krono-cloze.revealed,
+.krono-cloze-reveal-all .krono-cloze {
   color: inherit !important;
   text-shadow: none !important;
-  background-color: rgba(99, 102, 241, 0.25);
+  background-color: rgba(99, 102, 241, 0.2);
 }
 
 .dark .krono-cloze {
-  background-color: rgba(129, 140, 248, 0.2);
-  text-shadow: 0 0 9px rgba(129, 140, 248, 0.8);
+  background-color: rgba(129, 140, 248, 0.22);
+  text-shadow: 0 0 8px rgba(129, 140, 248, 0.85);
   border-bottom-color: #818cf8;
 }
 
 .dark .krono-cloze:hover,
 .dark .krono-cloze:active,
-.dark .krono-cloze.revealed {
+.dark .krono-cloze:focus,
+.dark .krono-cloze.revealed,
+.dark .krono-cloze-reveal-all .krono-cloze {
   color: #e0e7ff !important;
   text-shadow: none !important;
-  background-color: rgba(129, 140, 248, 0.3);
+  background-color: rgba(129, 140, 248, 0.28);
 }

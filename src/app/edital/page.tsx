@@ -21,7 +21,7 @@ import StudyRegisterModal from '../../components/StudyRegisterModal';
 import TopicCockpitModal, { TopicMetadata } from '../../components/TopicCockpitModal';
 import ImportEditalModal from '../../components/ImportEditalModal';
 import TopicRow from '../../components/TopicRow';
-import { updateTopicDetailsAction } from '../actions';
+import { updateTopicDetailsAction, addSubtopicAction } from '../actions';
 import { computeSubjectScore } from '../../lib/scoreEngine';
 
 const SUBJECT_PALETTE = [
@@ -207,6 +207,26 @@ const EditalPage = () => {
     }
   };
 
+  const handleAddSubtopic = async (subjectText: string, parentTopicText: string) => {
+    if (!selectedDataFile) return;
+    const newName = window.prompt(
+      `Digite o nome do novo subtópico dentro de "${parentTopicText}":`
+    );
+    if (!newName || !newName.trim()) return;
+    const res = await addSubtopicAction(
+      selectedDataFile,
+      subjectText,
+      parentTopicText,
+      newName.trim()
+    );
+    if (res.success) {
+      showNotification(`Subtópico "${newName.trim()}" criado com sucesso!`, 'success');
+      await refreshPlans();
+    } else {
+      showNotification(`Erro ao criar subtópico: ${res.error}`, 'error');
+    }
+  };
+
   const { editalData, totalTopics, completedTopics, overallEditalProgress } = stats;
 
   const filteredEditalData = useMemo(() => {
@@ -224,7 +244,7 @@ const EditalPage = () => {
     });
   }, [editalData, searchQuery]);
 
-  if (loading) {
+  if (loading && (!editalData || editalData.length === 0)) {
     return (
       <div className="min-h-[60vh] flex items-center justify-center">
         <div className="w-8 h-8 rounded-full border-2 border-emerald-500 border-t-transparent animate-spin" />
@@ -519,6 +539,7 @@ const EditalPage = () => {
                                 topic: t,
                               })
                             }
+                            onAddSubtopic={handleAddSubtopic}
                             allTopicsExpanded={allTopicsExpanded}
                           />
                         ))}

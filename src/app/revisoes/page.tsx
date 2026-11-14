@@ -16,6 +16,7 @@ import {
   Sparkles,
   Clock,
   HelpCircle,
+  Flame,
 } from 'lucide-react';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
 import TopicCockpitModal, { TopicMetadata } from '../../components/TopicCockpitModal';
@@ -55,6 +56,7 @@ export default function Revisao() {
   const [activeTab, setActiveTab] = useState<
     'due' | 'upcoming' | 'all_scores' | 'manual_completed'
   >('due');
+  const [isSprintMode, setIsSprintMode] = useState(false);
   const [completingReviewId, setCompletingReviewId] = useState<string | null>(null);
   const [expandedHistoryKey, setExpandedHistoryKey] = useState<string | null>(null);
   const [cockpitTarget, setCockpitTarget] = useState<{
@@ -214,17 +216,39 @@ export default function Revisao() {
   const dueItems = useMemo(
     () =>
       adaptiveItems
-        .filter((i) => i.diffDays <= 0 || i.scoreResult.currentScore < 65)
-        .sort((a, b) => a.diffDays - b.diffDays),
-    [adaptiveItems]
+        .filter((i) => {
+          const isDue = i.diffDays <= 0 || i.scoreResult.currentScore < 65;
+          if (!isDue) return false;
+          if (isSprintMode) {
+            return (i.scoreResult.importance ?? 3) >= 4 || i.scoreResult.priorityROI >= 60;
+          }
+          return true;
+        })
+        .sort((a, b) =>
+          isSprintMode
+            ? b.scoreResult.priorityROI - a.scoreResult.priorityROI
+            : a.diffDays - b.diffDays
+        ),
+    [adaptiveItems, isSprintMode]
   );
 
   const upcomingItems = useMemo(
     () =>
       adaptiveItems
-        .filter((i) => i.diffDays > 0 && i.scoreResult.currentScore >= 65)
-        .sort((a, b) => a.diffDays - b.diffDays),
-    [adaptiveItems]
+        .filter((i) => {
+          const isUpcoming = i.diffDays > 0 && i.scoreResult.currentScore >= 65;
+          if (!isUpcoming) return false;
+          if (isSprintMode) {
+            return (i.scoreResult.importance ?? 3) >= 4;
+          }
+          return true;
+        })
+        .sort((a, b) =>
+          isSprintMode
+            ? b.scoreResult.priorityROI - a.scoreResult.priorityROI
+            : a.diffDays - b.diffDays
+        ),
+    [adaptiveItems, isSprintMode]
   );
 
   const handleStartAdaptiveReview = (item: AdaptiveReviewItem) => {
@@ -294,6 +318,20 @@ export default function Revisao() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 self-start sm:self-center">
+          <button
+            type="button"
+            onClick={() => setIsSprintMode((prev) => !prev)}
+            className={`inline-flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold border transition-all shadow-sm ${
+              isSprintMode
+                ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white border-amber-400 shadow-amber-500/20'
+                : 'bg-white dark:bg-[#131f33] border-slate-200 dark:border-[#243552] text-slate-700 dark:text-slate-200 hover:border-amber-500/50'
+            }`}
+            title="Filtra e ordena revisões priorizando Tópicos de Alta Relevância (Peso 4 e 5) pelo maior ROI de pontos na prova"
+          >
+            <Flame className={`w-4 h-4 ${isSprintMode ? 'text-white fill-current' : 'text-amber-500'}`} />
+            <span>{isSprintMode ? 'Sprint Reta Final (Ativo)' : 'Modo Sprint Pós-Edital'}</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsTutorialOpen(true)}
@@ -508,12 +546,24 @@ export default function Revisao() {
                             <strong className="text-slate-700 dark:text-slate-200">
                               {scoreResult.correctQuestions}/{scoreResult.totalQuestions}
                             </strong>{' '}
-                            ({Math.round(scoreResult.rawAccuracy * 100)}%)
+                            (
+                            {scoreResult.rawAccuracy !== null
+                              ? scoreResult.rawAccuracy <= 1
+                                ? Math.round(scoreResult.rawAccuracy * 100)
+                                : Math.round(scoreResult.rawAccuracy)
+                              : 0}
+                            %)
                           </span>
                           <span>
                             Retenção:{' '}
                             <strong className="text-indigo-500 dark:text-indigo-400">
                               {scoreResult.retention}%
+                            </strong>
+                          </span>
+                          <span>
+                            ROI na Prova:{' '}
+                            <strong className="text-amber-500 dark:text-amber-400">
+                              {scoreResult.priorityROI} pts
                             </strong>
                           </span>
                           <span>

@@ -197,11 +197,32 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
   }, [selectedSubjectIds, isOpen]);
 
   const percentages = useMemo(() => {
+    const KNOWLEDGE_MULT: Record<number, number> = {
+      1: 3.2,
+      2: 2.3,
+      3: 1.5,
+      4: 1.0,
+      5: 0.65,
+    };
+    const countLeaves = (topics: Topic[] = []): number => {
+      let c = 0;
+      for (const t of topics) {
+        if (t.sub_topics && t.sub_topics.length > 0) c += countLeaves(t.sub_topics);
+        else c += 1;
+      }
+      return Math.max(1, c);
+    };
+
     const weights: { [key: string]: number } = {};
     let totalWeight = 0;
     selectedSubjectIds.forEach((subjectId) => {
       const setting = subjectSettings[subjectId] || { importance: 3, knowledge: 3 };
-      const weight = setting.importance / (setting.knowledge || 1);
+      const imp = Math.max(1, Math.min(5, setting.importance || 3));
+      const know = Math.max(1, Math.min(5, setting.knowledge || 3));
+      const subj = subjectMap.get(subjectId);
+      const leafCount = countLeaves(subj?.topics || []);
+      const volumeFactor = 0.85 + 0.15 * Math.min(2.0, Math.sqrt(leafCount / 8));
+      const weight = Math.pow(imp, 1.15) * (KNOWLEDGE_MULT[know] ?? 1.5) * volumeFactor;
       weights[subjectId] = weight;
       totalWeight += weight;
     });
@@ -211,7 +232,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
         totalWeight > 0 ? ((weights[subjectId] / totalWeight) * 100).toFixed(1) : '0.0';
     });
     return newPercentages;
-  }, [subjectSettings, selectedSubjectIds]);
+  }, [subjectSettings, selectedSubjectIds, subjectMap]);
 
   const handleSubjectSelect = (subjectId: string) => {
     setSelectedSubjectIds((prev) =>
@@ -275,6 +296,7 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
       planningFormat,
       minQuestionsPerSession: parseInt(minQuestionsPerSession) || 20,
       maxQuestionsPerSession: parseInt(maxQuestionsPerSession) || 35,
+      studyDays,
     } as any);
     setContextStudyDays(studyDays);
     if (typeof window !== 'undefined') {
@@ -1076,31 +1098,33 @@ const CycleCreationModal: React.FC<CycleCreationModalProps> = ({
                   </>
                 )}
 
-                <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
-                  <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-3">
-                    <Calendar className="w-4 h-4 text-emerald-500" />
-                    Dias de Estudo na Semana
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {daysOfWeek.map((day) => {
-                      const active = studyDays.includes(day);
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => handleDaySelect(day)}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                            active
-                              ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20'
-                              : 'bg-white dark:bg-[#131f33] text-slate-500 border border-slate-200 dark:border-[#1f304a]'
-                          }`}
-                        >
-                          {day.slice(0, 3)}
-                        </button>
-                      );
-                    })}
+                {planningFormat === 'fixed_weekly' && (
+                  <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] sm:col-span-2">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200 flex items-center gap-2 mb-3">
+                      <Calendar className="w-4 h-4 text-emerald-500" />
+                      Dias de Estudo na Semana
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                      {daysOfWeek.map((day) => {
+                        const active = studyDays.includes(day);
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => handleDaySelect(day)}
+                            className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
+                              active
+                                ? 'bg-emerald-500 text-white shadow-sm shadow-emerald-500/20'
+                                : 'bg-white dark:bg-[#131f33] text-slate-500 border border-slate-200 dark:border-[#1f304a]'
+                            }`}
+                          >
+                            {day.slice(0, 3)}
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div className="flex justify-between pt-4 border-t border-slate-200 dark:border-[#1f304a]">

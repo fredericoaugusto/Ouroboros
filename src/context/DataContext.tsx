@@ -28,6 +28,7 @@ import {
   addOrUpdateSubjectAction
 } from '../app/actions';
 import { useNotification } from './NotificationContext';
+import { computeSubjectQuestionPace } from '../lib/scoreEngine';
 
 // --- INTERFACES HIERÁRQUICAS ---
 export interface EditalTopic {
@@ -912,7 +913,25 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       let cumulativeTime = 0;
 
       for (const record of sortedRecords) {
-        const recordDuration = record.studyTime / 60000;
+        let recordDuration = record.studyTime / 60000;
+        const matchingQuestionSession = currentStudyCycle.find(
+          (s) =>
+            (s.subjectId === record.subjectId || s.subject === record.subject) &&
+            (s.mode === 'questions' || (s.targetQuestions && s.targetQuestions > 0)) &&
+            (newSessionProgressMap[s.id as string] || 0) < s.duration
+        );
+        if (
+          matchingQuestionSession &&
+          matchingQuestionSession.targetQuestions &&
+          record.questions &&
+          record.questions.total > 0
+        ) {
+          const questionEquivalentMinutes =
+            (record.questions.total / matchingQuestionSession.targetQuestions) *
+            matchingQuestionSession.duration;
+          recordDuration = Math.max(recordDuration, questionEquivalentMinutes);
+        }
+
         const previousCumulativeTime = cumulativeTime;
         cumulativeTime += recordDuration;
 
@@ -929,7 +948,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         let remainingTimeToDistribute = timeToProcessInCurrentCycle;
 
         for (const session of currentStudyCycle) {
-          if (session.subjectId === record.subjectId) {
+          if (session.subjectId === record.subjectId || session.subject === record.subject) {
             const currentSessionProgress = newSessionProgressMap[session.id as string] || 0;
             if (currentSessionProgress < session.duration) {
               const remainingCapacity = session.duration - currentSessionProgress;
@@ -1510,110 +1529,191 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     planningFormat?: 'time_cycle' | 'questions_cycle' | 'fixed_weekly';
     minQuestionsPerSession?: number;
     maxQuestionsPerSession?: number;
+    studyDays?: string[];
   }): StudySession[] => {
     const { studyHours, minSession, maxSession, subjects: allSelectedSubjects } = settings;
     const isQuestionsMode = settings.planningFormat === 'questions_cycle';
-    const minQ = settings.minQuestionsPerSession || 15;
-    const maxQ = settings.maxQuestionsPerSession || 35;
-    const totalMinutes = studyHours * 60;
+    const isWeeklyMode = settings.planningFormat === 'fixed_weekly';
+    const activeStudyDays =
+      settings.studyDays && settings.studyDays.length > 0
+        ? settings.studyDays
+        : studyDays && studyDays.length > 0
+        ? studyDays
+        : ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta'];
+    const minQ = Math.max(5, settings.minQuestionsPerSession || 15);
+    const maxQ = Math.max(minQ, settings.maxQuestionsPerSession || 35);
+    const totalMinutes = Math.max(60, (studyHours || 20) * 60);
+    const totalWeeklyQuestions = Math.max(
+      allSelectedSubjects.length * minQ,
+      parseInt(settings.weeklyQuestionsGoal || weeklyQuestionsGoal || '200', 10) || 200
+    );
 
-    if (topicScores.length === 0) {
-      showNotification('Não há dados de tópicos para gerar o ciclo. Verifique os pesos e o histórico.', 'warning');
+    if (!allSelectedSubjects || allSelectedSubjects.length === 0) {
+      showNotification('Selecione pelo menos uma disciplina para gerar o planejamento.', 'warning');
       return [];
     }
 
-    const selectedSubjectIds = new Set(allSelectedSubjects.map(s => s.id));
+    const KNOWLEDGE_MULT: Record<number, number> = {
+      1: 3.2, // Não conheço -> máxima urgência
+      2: 2.3, // Conheço pouco
+      3: 1.5, // Mediano
+      4: 1.0, // Conheço bem
+      5: 0.65, // Domino -> manutenção enxuta
+    };
 
-    const relevantTopicScores = topicScores.filter(t => selectedSubjectIds.has(t.subjectId));
+    const countLeaves = (topics: EditalTopic[] = []): number => {
+      let c = 0;
+      for (const t of topics) {
+        if (t.sub_topics && t.sub_topics.length > 0) c += countLeaves(t.sub_topics);
+        else c += 1;
+      }
+      return Math.max(1, c);
+    };
 
-    if (relevantTopicScores.length === 0) {
-        showNotification('Nenhum tópico relevante encontrado para as matérias selecionadas. Tente calcular os pesos por banca.', 'warning');
-        return [];
+    // 1. Calcula o peso proporcional real de cada disciplina (Relevância^1.15 * Multiplicador de Lacuna * Fator suave de volume)
+    const rawWeights = new Map<string, number>();
+    let totalWeight = 0;
+
+    for (const s of allSelectedSubjects) {
+      const cfg = settings.subjectSettings?.[s.id] || { importance: 3, knowledge: 3 };
+      const imp = Math.max(1, Math.min(5, cfg.importance || 3));
+      const know = Math.max(1, Math.min(5, cfg.knowledge || 3));
+      const leafCount = countLeaves(s.topics || []);
+      const volumeFactor = 0.85 + 0.15 * Math.min(2.0, Math.sqrt(leafCount / 8));
+      const w = Math.pow(imp, 1.15) * (KNOWLEDGE_MULT[know] ?? 1.5) * volumeFactor;
+      rawWeights.set(s.id, w);
+      totalWeight += w;
     }
 
-    // Ordena a lista de tópicos UMA VEZ, do maior score para o menor.
-    relevantTopicScores.sort((a, b) => b.score - a.score);
+    if (totalWeight <= 0) totalWeight = allSelectedSubjects.length;
 
-    // Agrupa os tópicos por matéria para garantir a rotação
-    const topicsBySubject = new Map<string, TopicScore[]>();
-    for (const topic of relevantTopicScores) {
-        if (!topicsBySubject.has(topic.subjectId)) {
-            topicsBySubject.set(topic.subjectId, []);
+    // 2. Converte a cota proporcional de cada disciplina em blocos (StudySession[])
+    interface SubjectBucket {
+      subjectId: string;
+      subjectName: string;
+      color: string;
+      blocks: Array<{ duration: number; targetQuestions?: number }>;
+      totalBlocks: number;
+      currentScore: number;
+    }
+
+    const buckets: SubjectBucket[] = [];
+    const midSession = (minSession + maxSession) / 2;
+    const midQ = (minQ + maxQ) / 2;
+
+    // Encontra o maior e menor peso para escalonar suavemente o tamanho de cada bloco dentro de [minSession, maxSession]
+    const weightValues = Array.from(rawWeights.values());
+    const minW = Math.min(...weightValues);
+    const maxW = Math.max(...weightValues);
+
+    for (const s of allSelectedSubjects) {
+      const w = rawWeights.get(s.id) || 1;
+      const share = w / totalWeight;
+      const normW = maxW > minW ? (w - minW) / (maxW - minW) : 0.5;
+
+      const blocks: Array<{ duration: number; targetQuestions?: number }> = [];
+
+      if (isQuestionsMode) {
+        const subjectTargetTotalQ = Math.max(minQ, Math.round(share * totalWeeklyQuestions));
+        const preferredBlockQ = Math.round(minQ + (maxQ - minQ) * (0.3 + 0.5 * normW));
+        const numBlocks = Math.max(1, Math.round(subjectTargetTotalQ / Math.max(10, preferredBlockQ || midQ)));
+        const { minutesPerQuestion } = computeSubjectQuestionPace(s.subject, studyRecords);
+
+        let remainingQ = subjectTargetTotalQ;
+        for (let i = 0; i < numBlocks; i++) {
+          const isLast = i === numBlocks - 1;
+          const rawBlockQ = isLast ? remainingQ : Math.round(remainingQ / (numBlocks - i));
+          const qCount = Math.max(minQ, Math.min(maxQ, rawBlockQ));
+          remainingQ = Math.max(minQ, remainingQ - qCount);
+          const estMin = Math.round((qCount * minutesPerQuestion) / 5) * 5;
+          blocks.push({
+            duration: Math.max(20, Math.min(120, estMin)),
+            targetQuestions: qCount,
+          });
         }
-        topicsBySubject.get(topic.subjectId)!.push(topic);
+      } else {
+        const subjectTargetMinutes = Math.max(minSession, Math.round(share * totalMinutes));
+        const preferredBlockMin =
+          Math.round((minSession + (maxSession - minSession) * (0.25 + 0.5 * normW)) / 5) * 5;
+        const numBlocks = Math.max(
+          1,
+          Math.round(subjectTargetMinutes / Math.max(minSession, preferredBlockMin || midSession))
+        );
+
+        let remainingSubjMin = subjectTargetMinutes;
+        for (let i = 0; i < numBlocks; i++) {
+          const isLast = i === numBlocks - 1;
+          const rawBlockMin = isLast
+            ? remainingSubjMin
+            : Math.round(remainingSubjMin / (numBlocks - i) / 5) * 5;
+          const bMin = Math.max(
+            minSession,
+            Math.min(maxSession, Math.round(rawBlockMin / 5) * 5)
+          );
+          remainingSubjMin = Math.max(minSession, remainingSubjMin - bMin);
+          blocks.push({ duration: bMin });
+        }
+      }
+
+      buckets.push({
+        subjectId: s.id,
+        subjectName: s.subject,
+        color: s.color || '#10b981',
+        blocks,
+        totalBlocks: blocks.length,
+        currentScore: 0,
+      });
     }
 
-    // Cria uma fila de matérias para fazer o round-robin
-    const subjectQueue = Array.from(topicsBySubject.keys());
-    
+    // 3. Smooth Weighted Round-Robin (Intercalação proporcional sem repetir a mesma matéria seguida quando evitável)
     const cycle: StudySession[] = [];
-    let remainingMinutes = totalMinutes;
-    const subjectDataMap = new Map(allSelectedSubjects.map(s => [s.id, { color: s.color, name: s.subject }]));
-    let queueIndex = 0;
+    const totalBlocksToEmit = buckets.reduce((acc, b) => acc + b.blocks.length, 0);
+    let lastSubjectId: string | null = null;
 
-    while (remainingMinutes >= minSession && subjectQueue.length > 0) {
-        const currentSubjectId = subjectQueue[queueIndex];
-        const subjectTopics = topicsBySubject.get(currentSubjectId);
+    for (let step = 0; step < totalBlocksToEmit; step++) {
+      const activeBuckets = buckets.filter((b) => b.blocks.length > 0);
+      if (activeBuckets.length === 0) break;
 
-        // Se a matéria não tem mais tópicos, remove da fila e continua
-        if (!subjectTopics || subjectTopics.length === 0) {
-            subjectQueue.splice(queueIndex, 1);
-            if (queueIndex >= subjectQueue.length) {
-                queueIndex = 0; // Volta ao início se removeu o último
-            }
-            continue;
-        }
+      const totalActiveWeight = activeBuckets.reduce((acc, b) => acc + b.totalBlocks, 0);
+      for (const b of activeBuckets) {
+        b.currentScore += b.totalBlocks;
+      }
 
-        // Pega o tópico de maior pontuação para a matéria atual
-        const bestTopic = subjectTopics.shift()!; // Remove o primeiro elemento
-        const subjectData = subjectDataMap.get(currentSubjectId);
+      // Ordena pelo maior saldo atual; evita repetir a matéria imediatamente anterior se houver outra disponível
+      const sorted = [...activeBuckets].sort((a, b) => b.currentScore - a.currentScore);
+      let chosen = sorted[0];
+      if (chosen.subjectId === lastSubjectId && sorted.length > 1) {
+        chosen = sorted[1];
+      }
 
-        if (!subjectData) {
-            // Caso raro: a matéria não tem dados. Pula para a próxima.
-            queueIndex = (queueIndex + 1) % subjectQueue.length;
-            continue;
-        }
+      chosen.currentScore -= totalActiveWeight;
+      const nextBlock = chosen.blocks.shift()!;
+      lastSubjectId = chosen.subjectId;
 
-        // Calcula a duração da sessão
-        const { importance, knowledge } = settings.subjectSettings[currentSubjectId] || { importance: 3, knowledge: 3 };
-        const effectiveWeight = importance / (knowledge || 1);
-        const normalizedWeight = (effectiveWeight - 1/5) / (5 - 1/5);
+      cycle.push({
+        id: `${Date.now()}-session-${cycle.length}`,
+        subjectId: chosen.subjectId,
+        subject: chosen.subjectName,
+        duration: nextBlock.duration,
+        color: chosen.color,
+        mode: isQuestionsMode ? 'questions' : isWeeklyMode ? 'weekly' : 'time',
+        targetQuestions: isQuestionsMode ? nextBlock.targetQuestions : undefined,
+      });
+    }
 
-        let sessionDuration: number;
-        let targetQuestions: number | undefined = undefined;
-
-        if (isQuestionsMode) {
-          targetQuestions = Math.round(minQ + (maxQ - minQ) * normalizedWeight);
-          // Estima a duração do bloco a partir do ritmo de ~2.5 min/questão
-          const estimatedMinutes = Math.round((targetQuestions * 2.5) / 5) * 5;
-          sessionDuration = Math.max(minSession, Math.min(maxSession, estimatedMinutes));
-        } else {
-          sessionDuration = minSession + (maxSession - minSession) * normalizedWeight;
-          sessionDuration = Math.round(sessionDuration / 5) * 5;
-          sessionDuration = Math.max(minSession, Math.min(maxSession, sessionDuration));
-        }
-
-        const finalDuration = Math.min(sessionDuration, remainingMinutes);
-        
-        if (finalDuration < minSession) {
-            // Não há mais tempo suficiente para uma sessão mínima, encerra.
-            break;
-        }
-
-        cycle.push({ 
-            id: `${Date.now()}-session-${cycle.length}`,
-            subjectId: currentSubjectId,
-            subject: subjectData.name,
-            duration: finalDuration,
-            color: subjectData.color,
-            mode: isQuestionsMode ? 'questions' : 'time',
-            targetQuestions: isQuestionsMode ? targetQuestions : undefined,
-        });
-
-        remainingMinutes -= finalDuration;
-
-        // Avança para a próxima matéria na fila
-        queueIndex = (queueIndex + 1) % subjectQueue.length;
+    // 4. Se o formato escolhido for Quadro Semanal Fixo, distribui os blocos gerados pelos dias de estudo selecionados
+    if (isWeeklyMode && cycle.length > 0 && activeStudyDays.length > 0) {
+      const DAY_ORDER = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+      const orderedDays = [...activeStudyDays].sort(
+        (a, b) => DAY_ORDER.indexOf(a) - DAY_ORDER.indexOf(b)
+      );
+      cycle.forEach((sess, idx) => {
+        const dayIndex = Math.min(
+          orderedDays.length - 1,
+          Math.floor((idx / cycle.length) * orderedDays.length)
+        );
+        sess.dayOfWeek = orderedDays[dayIndex];
+      });
     }
 
     return cycle;
@@ -1897,9 +1997,9 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     }
   }, [showNotification]);
 
-  const refreshPlans = useCallback(async () => {
+  const refreshPlans = useCallback(async (silent = true) => {
     if (authStatus !== 'authenticated') return;
-    setLoading(true);
+    if (!silent) setLoading(true);
     const allPlanFiles = await getJsonFiles();
     const planFiles = allPlanFiles.filter(plan => plan.toUpperCase() !== 'USERS.JSON');
     setAvailablePlans(planFiles);
@@ -1907,7 +2007,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const planDataPromises = planFiles.map(file => getJsonContent(file));
     const plansData = await Promise.all(planDataPromises);
     setStudyPlans(plansData);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, [authStatus]);
 
   const saveSubject = useCallback(async (subjectData: { id?: string; subject: string; topics: EditalTopic[]; color: string }) => {

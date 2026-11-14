@@ -477,52 +477,63 @@ export function computeTopicScore(
         )
       : null;
 
-  // 1. DESEMPENHO BAYESIANO CONSISTENTE (Prior Beta p0 = 0.60, W0 = 6, Credibilidade Contínua N/(N+10))
+  // 1. DESEMPENHO BAYESIANO + EWMA CALIBRADO (Sem dupla penalização de amostra)
   const effectiveQTotal = studyQTotal + simQuestionsForTopic * 1.5;
   const effectiveQCorrect = studyQCorrect + simCorrectForTopic * 1.5;
   const rawAccuracy = studyQTotal > 0 ? (studyQCorrect / studyQTotal) * 100 : null;
 
-  const priorWeight = 6;
-  const priorMean = 0.60; // 60% consistente em toda a etapa 1
+  // Prior Bayesiano suave (W0 = 3.5, p0 = 0.68) que evita 0%/100% irreais com 1-2 questões,
+  // mas permite que quem acerta 80-100% em 8+ questões já atinja 84-96% de performance real!
+  const priorWeight = 3.5;
+  const priorMean = 0.68;
   const bayesianAccuracy =
     ((effectiveQCorrect + priorWeight * priorMean) / (effectiveQTotal + priorWeight)) * 100;
 
   const blendedAccuracy =
     ewmaAccuracy !== null
-      ? bayesianAccuracy * 0.62 + ewmaAccuracy * 0.38
+      ? bayesianAccuracy * 0.58 + ewmaAccuracy * 0.42
       : bayesianAccuracy;
 
-  // Fator de credibilidade contínuo N / (N + 10) em vez de corte linear abrupto
-  const confidenceFactor = effectiveQTotal / (effectiveQTotal + 10);
-  const perfComponent = confidenceFactor * blendedAccuracy + (1 - confidenceFactor) * 60;
+  // Credibilidade contínua informativa N / (N + 5) (sem encolher blendedAccuracy uma segunda vez!)
+  const confidenceFactor =
+    effectiveQTotal > 0 ? effectiveQTotal / (effectiveQTotal + 5) : 0;
+  const perfComponent = effectiveQTotal > 0 ? blendedAccuracy : 62;
 
-  // 2. COMPONENTE SUBJETIVO NÃO-LINEAR + ESFORÇO ATIVO (Retornos Decrescentes) + ESPAÇAMENTO LOGARÍTMICO
-  // Evita que D=0 e M=0 gere armazenamento zero; modela interação Domínio vs Facilidade
-  const masteryNorm = mastery / 5; // 0..1
-  const easeNorm = (5 - difficulty) / 5; // 0..1
+  // 2. COMPONENTE SUBJETIVO NÃO-LINEAR + ESFORÇO ATIVO + ESPAÇAMENTO LOGARÍTMICO
+  // Se o aluno já tem alta taxa de acerto objetiva, o domínio percebido padrão (3/5) não deve puxar a nota para baixo
+  const objectiveMasteryFloor =
+    rawAccuracy !== null && studyQTotal >= 4 ? (rawAccuracy / 100) * 0.94 : 0;
+  const masteryNorm = Math.max(mastery / 5, objectiveMasteryFloor); // 0..1
+  const easeNorm = (5.5 - difficulty) / 5; // 0.1..1.0
   const subjComponent = clamp(
-    (masteryNorm * 0.72 + easeNorm * 0.28) * 100,
-    12,
+    (masteryNorm * 0.78 + easeNorm * 0.22) * 100,
+    20,
     100
   );
 
-  // Retornos decrescentes com raiz quadrada (valoriza primeiras horas/questões, mas continua crescendo até 4h e 60 questões)
-  const hoursScore = Math.min(1, Math.sqrt(activeWeightedHours / 3.2)) * 50;
-  const questionsVolumeScore = Math.min(1, Math.sqrt(effectiveQTotal / 50)) * 50;
-  const effortComponent = clamp(hoursScore + questionsVolumeScore, 0, 100);
+  // Retornos decrescentes calibrados por tópico individual (base 52 + ganho rápido até 1.2h e 20 questões)
+  const hoursScore = Math.min(1, Math.sqrt(activeWeightedHours / 1.2)) * 24;
+  const questionsVolumeScore = Math.min(1, Math.sqrt(effectiveQTotal / 20)) * 24;
+  const effortComponent = clamp(52 + hoursScore + questionsVolumeScore, 52, 100);
 
-  // Curva logarítmica para espaçamento K (continua premiando K > 4 dias distintos sem saturar abruptamente)
-  const spacingComponent = clamp(Math.min(100, 38 * Math.log(1 + distinctStudyDays)), 0, 100);
+  // Curva logarítmica para espaçamento K (base 65 no 1º contato, subindo para 85-100 conforme repete em dias distintos)
+  const spacingComponent = clamp(
+    Math.min(100, 48 + 30 * Math.log(1 + distinctStudyDays)),
+    65,
+    100
+  );
 
   // Score Base de Armazenamento (Storage Strength S_base)
   let baseScoreRaw =
-    perfComponent * 0.64 +
-    subjComponent * 0.16 +
-    effortComponent * 0.12 +
-    spacingComponent * 0.08;
+    effectiveQTotal > 0
+      ? perfComponent * 0.72 +
+        subjComponent * 0.12 +
+        effortComponent * 0.09 +
+        spacingComponent * 0.07
+      : subjComponent * 0.50 + effortComponent * 0.30 + spacingComponent * 0.20;
 
-  if (isCompletedFlag && baseScoreRaw < 55 && studyQTotal === 0) {
-    baseScoreRaw = Math.max(baseScoreRaw, 58);
+  if (isCompletedFlag && baseScoreRaw < 65 && studyQTotal === 0) {
+    baseScoreRaw = Math.max(baseScoreRaw, 66);
   }
 
   const baseScore = Math.round(clamp(baseScoreRaw, 15, 100));
@@ -537,21 +548,21 @@ export function computeTopicScore(
     Math.floor((now.getTime() - lastStudyDate.getTime()) / MS_PER_DAY)
   );
 
-  const lambda0 = 0.024;
-  const diffFactor = clamp(1 + 0.14 * (difficulty - 2.5), 0.72, 1.40);
-  const masteryDecayFactor = clamp(1.26 - 0.84 * (baseScore / 100), 0.36, 1.25);
+  const lambda0 = 0.022;
+  const diffFactor = clamp(1 + 0.12 * (difficulty - 2.5), 0.75, 1.35);
+  const masteryDecayFactor = clamp(1.22 - 0.82 * (baseScore / 100), 0.34, 1.20);
   // Amortecimento exponencial suave por repetições espaçadas K
-  const spacingDecayDampener = 1 / (1 + 0.32 * Math.max(0, distinctStudyDays - 1));
+  const spacingDecayDampener = 1 / (1 + 0.35 * Math.max(0, distinctStudyDays - 1));
   const recentLapsePenalty =
-    lastSessionAccuracy !== null && lastSessionAccuracy < 55 ? 1.30 : 1.0;
+    lastSessionAccuracy !== null && lastSessionAccuracy < 55 ? 1.28 : 1.0;
 
   const rawLambda =
     (lambda0 * diffFactor * masteryDecayFactor * spacingDecayDampener * recentLapsePenalty) /
     userRetentionMultiplier;
-  const lambda = clamp(rawLambda, 0.0025, 0.095);
+  const lambda = clamp(rawLambda, 0.0022, 0.09);
 
   // Estabilidade S (em dias): tempo exato para a retenção cair de 100% para 90%
-  const memoryStabilityDays = Number(clamp(-Math.log(0.9) / lambda, 1.2, 120).toFixed(1));
+  const memoryStabilityDays = Number(clamp(-Math.log(0.9) / lambda, 1.5, 120).toFixed(1));
 
   // Curva FSRS-4.5 Pura e Consistente: R(t) = (1 + (19/81) * (t / S))^(-0.5)
   // Nota: em t = S, R(S) = (1 + 19/81)^(-0.5) = (100/81)^(-0.5) = 9/10 = 90%!
@@ -565,9 +576,10 @@ export function computeTopicScore(
   const rDay1 = Math.pow(1 + (19 / 81) * (1 / memoryStabilityDays), -0.5);
   const dailyDecayPercent = Number(clamp((1 - rDay1) * 100, 0.2, 12.0).toFixed(1));
 
-  // Score Atual (combina Força de Armazenamento S_base e Força de Recuperação R(t) - Bjork 1994)
+  // Score Atual: reflete fielmente o Domínio Consolidado (S_base) modulado suavemente pela Retenção R(t)
+  // (Assim, um tópico com 85-95% de acerto mantém Score na casa dos 80-92 enquanto a retenção estiver saudável!)
   const currentScore = Math.round(
-    clamp(baseScore * (0.35 + 0.65 * (retention / 100)), 10, 100)
+    clamp(baseScore * (0.64 + 0.36 * (retention / 100)), 10, 100)
   );
 
   // 4. AGENDAMENTO ANALÍTICO CONSISTENTE FSRS-4.5 + CENSURA POR DATA DA PROVA

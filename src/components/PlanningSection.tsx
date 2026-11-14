@@ -232,10 +232,15 @@ const PlanningSection = () => {
                       <BookOpen size={20} />
                     </Link>
                     <div className="min-w-0 flex-1">
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2 mb-1 flex-wrap">
                         <span className="inline-block text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-900/80 text-emerald-400">
                           Próximo Estudo
                         </span>
+                        {nextSession.dayOfWeek && (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                            📅 {nextSession.dayOfWeek}
+                          </span>
+                        )}
                         {nextSessionProgress > 0 && (
                           <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
                             Em andamento ({nextSessionPct}%)

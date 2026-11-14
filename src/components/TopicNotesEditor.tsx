@@ -30,10 +30,12 @@ import {
   Eraser,
   Check,
   EyeOff,
+  Eye,
 } from 'lucide-react';
 
 export const ClozeExtension = Mark.create({
   name: 'cloze',
+  inclusive: false,
 
   addOptions() {
     return {
@@ -99,6 +101,7 @@ export default function TopicNotesEditor({
   onSave,
 }: TopicNotesEditorProps) {
   const [justSaved, setJustSaved] = useState(false);
+  const [revealAllCloze, setRevealAllCloze] = useState(false);
   const lastTopicKeyRef = useRef<string>(topicKey);
 
   const editor = useEditor({
@@ -430,10 +433,30 @@ export default function TopicNotesEditor({
               ? 'bg-indigo-600 text-white shadow-sm ring-2 ring-indigo-400/50'
               : 'text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-200 dark:border-indigo-800/60 hover:bg-indigo-100 dark:hover:bg-indigo-900/40'
           }`}
-          title="Ocultar termo selecionado (Active Recall / Cloze). Passe o mouse ou toque para revelar e testar a memória!"
+          title="Selecione uma palavra/frase e clique para Ocultar (Cloze) ou Mostrar novamente"
         >
           <EyeOff size={13} />
-          <span>Ocultar (Cloze)</span>
+          <span>{editor.isActive('cloze') ? 'Remover Ocultação' : 'Ocultar (Cloze)'}</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => setRevealAllCloze((prev) => !prev)}
+          className={`px-2 py-1 rounded-lg text-xs font-semibold flex items-center gap-1 transition-all border ${
+            revealAllCloze
+              ? 'bg-amber-500/15 text-amber-600 dark:text-amber-400 border-amber-500/30'
+              : 'text-slate-500 dark:text-slate-400 border-slate-200 dark:border-[#1f304a] hover:bg-slate-200 dark:hover:bg-[#1a2942]'
+          }`}
+          title={
+            revealAllCloze
+              ? 'Ocultar todos os termos Cloze (Modo Active Recall)'
+              : 'Revelar todos os termos ocultos para facilitar leitura/edição'
+          }
+        >
+          {revealAllCloze ? <EyeOff size={13} /> : <Eye size={13} />}
+          <span className="hidden sm:inline">
+            {revealAllCloze ? 'Esconder Spoilers' : 'Ver Spoilers'}
+          </span>
         </button>
 
         <div className="flex-grow" />
@@ -455,8 +478,16 @@ export default function TopicNotesEditor({
 
       {/* Área de Conteúdo do Caderno Digital */}
       <div
-        className="flex-grow min-h-[460px] overflow-y-auto cursor-text bg-white dark:bg-[#0b1320]"
-        onClick={() => editor.chain().focus().run()}
+        className={`flex-grow min-h-[460px] overflow-y-auto cursor-text bg-white dark:bg-[#0b1320] ${
+          revealAllCloze ? 'krono-cloze-reveal-all' : ''
+        }`}
+        onClick={(e) => {
+          const target = e.target as HTMLElement;
+          if (target && target.classList?.contains('krono-cloze')) {
+            target.classList.toggle('revealed');
+          }
+          editor.chain().focus().run();
+        }}
       >
         <EditorContent editor={editor} />
       </div>

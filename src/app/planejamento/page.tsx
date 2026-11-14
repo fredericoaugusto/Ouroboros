@@ -26,6 +26,8 @@ import {
   Pencil,
   ExternalLink,
   History,
+  Flame,
+  Calendar,
 } from 'lucide-react';
 import CycleCreationModal from '../../components/CycleCreationModal';
 import StudyRegisterModal from '../../components/StudyRegisterModal';
@@ -34,7 +36,7 @@ import SubjectRecentStudiesModal from '../../components/SubjectRecentStudiesModa
 import TopicQueueSelectorModal, {
   getSubjectTopicOverride,
 } from '../../components/TopicQueueSelectorModal';
-import { findTopicNotebookUrl } from '../../lib/scoreEngine';
+import { findTopicNotebookUrl, computeTopicScore } from '../../lib/scoreEngine';
 import { startGlobalTimerSession } from '../../lib/timerStore';
 import {
   DndContext,
@@ -365,6 +367,11 @@ const SortableItem = ({
             >
               {session.subject}
             </Link>
+            {session.dayOfWeek && (
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-600 dark:text-amber-400 border border-amber-500/30">
+                📅 {session.dayOfWeek}
+              </span>
+            )}
             {(session.targetQuestions || session.mode === 'questions') && (
               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/15 text-indigo-500 dark:text-indigo-400 border border-indigo-500/30">
                 🎯 Meta: {session.targetQuestions || 25} questões
@@ -560,6 +567,8 @@ export default function Planejamento() {
   const [isRestartConfirmOpen, setIsRestartConfirmOpen] = useState(false);
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [autoSuggestTopics, setAutoSuggestTopics] = useState(true);
+  const [isSprintMode, setIsSprintMode] = useState(false);
+  const [selectedWeeklyDay, setSelectedWeeklyDay] = useState<string>('Todos');
   const [showAllSubjectsInChart, setShowAllSubjectsInChart] = useState(false);
   const optionsMenuRef = useRef<HTMLDivElement>(null);
 
@@ -568,6 +577,10 @@ export default function Planejamento() {
     const savedSuggest = localStorage.getItem('alexandria_auto_suggest_topics');
     if (savedSuggest !== null) {
       setAutoSuggestTopics(savedSuggest === 'true');
+    }
+    const savedSprint = localStorage.getItem('krono_sprint_mode');
+    if (savedSprint !== null) {
+      setIsSprintMode(savedSprint === 'true');
     }
   }, []);
 
@@ -674,7 +687,7 @@ export default function Planejamento() {
     ? subjectBreakdownList
     : subjectBreakdownList.slice(0, 7);
 
-  // Busca o próximo tópico pendente no edital da disciplina (ou o escolhido pelo usuário)
+  // Busca o próximo tópico pendente no edital da disciplina (ou prioriza por ROI se Modo Sprint Pós-Edital estiver ativo)
   const getSuggestedTopicForSubject = useCallback(
     (subjectName: string): string => {
       void overrideVersion;
@@ -690,6 +703,54 @@ export default function Planejamento() {
             .filter((r) => r.subject === subjectName && r.teoriaFinalizada)
             .map((r) => r.topic)
         );
+
+        // Se o Modo Sprint de Reta Final (Pós-Edital) estiver ativo, prioriza tópicos de alta relevância (4-5) e maior ROI!
+        if (isSprintMode) {
+          const allLeaves: any[] = [];
+          const collectLeaves = (list: Topic[]) => {
+            for (const t of list) {
+              if (t.sub_topics && t.sub_topics.length > 0) {
+                collectLeaves(t.sub_topics);
+              } else {
+                allLeaves.push(t);
+              }
+            }
+          };
+          collectLeaves(subj.topics);
+
+          if (allLeaves.length > 0) {
+            const subjRecs = studyRecords.filter(
+              (r) => (r.subject || '').toLowerCase() === subjectName.toLowerCase()
+            );
+            const scoredLeaves = allLeaves.map((leaf) => {
+              const tRecs = subjRecs.filter((r) => r.topic === leaf.topic_text);
+              const res = computeTopicScore(
+                tRecs,
+                leaf.relevance ?? leaf.userWeight ?? 3,
+                leaf.difficulty ?? 3,
+                leaf.perceivedMastery ?? leaf.mastery ?? 3,
+                {
+                  subjectRecords: subjRecs,
+                  allStudyRecords: studyRecords,
+                  subjectName,
+                  topicText: leaf.topic_text,
+                  isCompleted: Boolean(leaf.is_completed || completedSet.has(leaf.topic_text)),
+                }
+              );
+              const rel = leaf.relevance ?? leaf.userWeight ?? 3;
+              const isHighYield = rel >= 4;
+              const notDoneYet = !leaf.is_completed && !completedSet.has(leaf.topic_text);
+              const sprintScore =
+                res.priorityROI + (isHighYield ? 35 : 0) + (notDoneYet ? 20 : 0);
+              return { topicText: leaf.topic_text, sprintScore };
+            });
+            scoredLeaves.sort((a, b) => b.sprintScore - a.sprintScore);
+            if (scoredLeaves[0]?.topicText) {
+              return scoredLeaves[0].topicText;
+            }
+          }
+        }
+
         const findFirstUncompleted = (list: Topic[]): string => {
           for (const t of list) {
             if (t.sub_topics && t.sub_topics.length > 0) {
@@ -711,7 +772,7 @@ export default function Planejamento() {
       }
       return subj?.topics?.[0]?.topic_text || '';
     },
-    [getRecommendedSession, subjects, studyRecords, overrideVersion]
+    [getRecommendedSession, subjects, studyRecords, overrideVersion, isSprintMode]
   );
 
   const openTopicSelectorForSubject = useCallback(
@@ -845,20 +906,42 @@ export default function Planejamento() {
     [updateStudyRecord, addStudyRecord, showNotification, setInitialStudyRecord]
   );
 
+  const hasWeeklyDays = useMemo(
+    () => Boolean(studyCycle && studyCycle.some((s) => Boolean(s.dayOfWeek))),
+    [studyCycle]
+  );
+
+  const weeklyDaysAvailable = useMemo(() => {
+    if (!studyCycle) return [];
+    const order = ['Segunda', 'Terça', 'Quarta', 'Quinta', 'Sexta', 'Sábado', 'Domingo'];
+    const found = Array.from(
+      new Set(studyCycle.map((s) => s.dayOfWeek).filter(Boolean) as string[])
+    );
+    return found.sort((a, b) => order.indexOf(a) - order.indexOf(b));
+  }, [studyCycle]);
+
   const pendingSessions = useMemo(
     () =>
       (studyCycle || []).filter(
-        (s) => (sessionProgressMap[s.id as string] || 0) < s.duration
+        (s) =>
+          (sessionProgressMap[s.id as string] || 0) < s.duration &&
+          (!hasWeeklyDays ||
+            selectedWeeklyDay === 'Todos' ||
+            s.dayOfWeek === selectedWeeklyDay)
       ),
-    [studyCycle, sessionProgressMap]
+    [studyCycle, sessionProgressMap, hasWeeklyDays, selectedWeeklyDay]
   );
 
   const completedSessions = useMemo(
     () =>
       (studyCycle || []).filter(
-        (s) => (sessionProgressMap[s.id as string] || 0) >= s.duration
+        (s) =>
+          (sessionProgressMap[s.id as string] || 0) >= s.duration &&
+          (!hasWeeklyDays ||
+            selectedWeeklyDay === 'Todos' ||
+            s.dayOfWeek === selectedWeeklyDay)
       ),
-    [studyCycle, sessionProgressMap]
+    [studyCycle, sessionProgressMap, hasWeeklyDays, selectedWeeklyDay]
   );
 
   const nextHighlightSession = pendingSessions[0] || null;
@@ -892,7 +975,89 @@ export default function Planejamento() {
             Organize sua rotina de estudos e acompanhe o avanço de cada bloco do ciclo
           </p>
         </div>
+
+        {studyCycle && (
+          <div className="flex flex-wrap items-center gap-2.5">
+            <button
+              type="button"
+              onClick={() => {
+                const next = !isSprintMode;
+                setIsSprintMode(next);
+                localStorage.setItem('krono_sprint_mode', String(next));
+                showNotification(
+                  next
+                    ? 'Modo Sprint de Reta Final ativado! Tópicos de Peso 4 e 5 com maior ROI agora têm prioridade máxima.'
+                    : 'Modo Sprint desativado. Voltando à sequência padrão do edital.',
+                  next ? 'success' : 'info'
+                );
+              }}
+              className={`inline-flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold border transition-all ${
+                isSprintMode
+                  ? 'bg-gradient-to-r from-amber-500 to-rose-500 text-white border-amber-400 shadow-lg shadow-amber-500/25'
+                  : 'bg-white dark:bg-[#131f33] border-slate-200 dark:border-[#243552] text-slate-700 dark:text-slate-200 hover:border-amber-500/50'
+              }`}
+              title="Priorizar assuntos de alta relevância (Peso 4 e 5) pelo maior Retorno sobre Investimento (ROI) de pontos na prova"
+            >
+              <Flame className={`w-4 h-4 ${isSprintMode ? 'text-white fill-current' : 'text-amber-500'}`} />
+              <span>{isSprintMode ? 'Sprint Pós-Edital (Ativo)' : 'Modo Sprint Pós-Edital'}</span>
+            </button>
+          </div>
+        )}
       </div>
+
+      {isSprintMode && studyCycle && (
+        <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-500/15 via-rose-500/10 to-transparent border border-amber-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start gap-3">
+            <div className="w-9 h-9 rounded-xl bg-amber-500/20 text-amber-500 flex items-center justify-center shrink-0 mt-0.5">
+              <Flame className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-xs font-extrabold uppercase tracking-wider text-amber-500">
+                Modo Sprint de Reta Final (Pós-Edital) Ativo
+              </h3>
+              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
+                Em vez de seguir a ordem linear 1.1 → 1.2, o Krono está sugerindo automaticamente os tópicos de <strong>Alta Relevância (Peso 4 e 5)</strong> com maior potencial de ganho líquido de pontos na prova (ROI).
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {hasWeeklyDays && weeklyDaysAvailable.length > 0 && (
+        <div className="bg-white dark:bg-[#131f33] rounded-2xl border border-slate-200/80 dark:border-[#1f304a] p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-xs font-bold text-slate-700 dark:text-slate-200">
+            <Calendar className="w-4 h-4 text-amber-500" />
+            <span>Quadro Semanal Fixo:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setSelectedWeeklyDay('Todos')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                selectedWeeklyDay === 'Todos'
+                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                  : 'bg-slate-100 dark:bg-[#0b1320] text-slate-500 hover:text-slate-800 dark:hover:text-white'
+              }`}
+            >
+              Semana Completa
+            </button>
+            {weeklyDaysAvailable.map((day) => (
+              <button
+                key={day}
+                type="button"
+                onClick={() => setSelectedWeeklyDay(day)}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  selectedWeeklyDay === day
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-slate-100 dark:bg-[#0b1320] text-slate-500 hover:text-slate-800 dark:hover:text-white'
+                }`}
+              >
+                {day}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {studyCycle ? (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
@@ -1119,10 +1284,20 @@ export default function Planejamento() {
                         <BookOpen className="w-5 h-5" />
                       </Link>
                       <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-2 mb-1">
+                        <div className="flex items-center gap-2 mb-1 flex-wrap">
                           <span className="inline-block px-2 py-0.5 rounded text-[10px] font-extrabold uppercase tracking-wider bg-slate-900/80 text-emerald-400">
                             PRÓXIMO
                           </span>
+                          {nextHighlightSession.dayOfWeek && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">
+                              📅 {nextHighlightSession.dayOfWeek}
+                            </span>
+                          )}
+                          {isSprintMode && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                              🔥 Prioridade ROI
+                            </span>
+                          )}
                           {nextHighlightProgress > 0 && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-amber-500/20 text-amber-500 border border-amber-500/30">
                               Em andamento ({nextHighlightPct}%)

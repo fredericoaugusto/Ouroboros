@@ -18,6 +18,14 @@ export function normalizePlanFileName(fileName: string): string {
 }
 
 export function mapRowToStudyRecord(row: any): StudyRecord {
+  const rawQuestions = row.questions || { correct: 0, total: 0 };
+  const extractedErrorReasons: string[] | undefined =
+    Array.isArray(row.error_reasons) && row.error_reasons.length > 0
+      ? row.error_reasons
+      : Array.isArray(rawQuestions.errorReasons) && rawQuestions.errorReasons.length > 0
+      ? rawQuestions.errorReasons
+      : undefined;
+
   return {
     id: row.id,
     date: row.date,
@@ -25,7 +33,10 @@ export function mapRowToStudyRecord(row: any): StudyRecord {
     subject: row.subject,
     topic: row.topic,
     studyTime: row.study_time,
-    questions: row.questions || { correct: 0, total: 0 },
+    questions: {
+      correct: Number(rawQuestions.correct) || 0,
+      total: Number(rawQuestions.total) || 0,
+    },
     pages: row.pages || [],
     videos: row.videos || [],
     notes: row.notes || '',
@@ -33,10 +44,20 @@ export function mapRowToStudyRecord(row: any): StudyRecord {
     reviewPeriods: row.review_periods ?? undefined,
     teoriaFinalizada: Boolean(row.teoria_finalizada),
     countInPlanning: row.count_in_planning ?? true,
+    errorReasons: extractedErrorReasons,
   };
 }
 
 export function mapStudyRecordToRow(planId: string, userId: string, record: StudyRecord) {
+  const baseQuestions = record.questions || { correct: 0, total: 0 };
+  const questionsPayload: Record<string, any> = {
+    correct: Number(baseQuestions.correct) || 0,
+    total: Number(baseQuestions.total) || 0,
+  };
+  if (Array.isArray(record.errorReasons) && record.errorReasons.length > 0) {
+    questionsPayload.errorReasons = record.errorReasons;
+  }
+
   return {
     id: record.id || crypto.randomUUID(),
     plan_id: planId,
@@ -46,7 +67,7 @@ export function mapStudyRecordToRow(planId: string, userId: string, record: Stud
     subject: record.subject || '',
     topic: record.topic || '',
     study_time: record.studyTime || 0,
-    questions: record.questions || { correct: 0, total: 0 },
+    questions: questionsPayload,
     pages: record.pages || [],
     videos: record.videos || [],
     notes: record.notes || '',
@@ -120,14 +141,29 @@ export function mapSimuladoRecordToRow(planId: string, userId: string, record: S
 }
 
 export function mapRowToCycleData(row: any): StudyCycleData {
+  const rawProgressMap = { ...(row.session_progress_map || {}) };
+  const completedCycles =
+    typeof rawProgressMap.__meta_completedCycles === 'number'
+      ? rawProgressMap.__meta_completedCycles
+      : 0;
+  const cycleGenerationTimestamp =
+    typeof rawProgressMap.__meta_cycleGenerationTimestamp === 'number'
+      ? rawProgressMap.__meta_cycleGenerationTimestamp
+      : null;
+
+  delete rawProgressMap.__meta_completedCycles;
+  delete rawProgressMap.__meta_cycleGenerationTimestamp;
+
   return {
     studyCycle: row.study_cycle ?? null,
     studyHours: row.study_hours || '',
     weeklyQuestionsGoal: row.weekly_questions_goal || '',
     currentProgressMinutes: row.current_progress_minutes || 0,
-    sessionProgressMap: row.session_progress_map || {},
+    sessionProgressMap: rawProgressMap,
     reminderNotes: row.reminder_notes || [],
     studyDays: row.study_days || [],
+    completedCycles,
+    cycleGenerationTimestamp,
   };
 }
 

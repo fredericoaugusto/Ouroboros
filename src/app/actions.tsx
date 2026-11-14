@@ -35,6 +35,7 @@ export interface StudyRecord {
   reviewPeriods?: string[];
   teoriaFinalizada: boolean;
   countInPlanning: boolean;
+  errorReasons?: string[];
 }
 
 export interface ReviewRecord {
@@ -97,6 +98,8 @@ export interface StudyCycleData {
   sessionProgressMap: { [key: string]: number };
   reminderNotes: any[];
   studyDays: string[];
+  completedCycles?: number;
+  cycleGenerationTimestamp?: number | null;
 }
 
 async function requireStudentSession(): Promise<EffectiveStudentSession> {
@@ -126,6 +129,16 @@ export async function saveStudyCycleToFile(
     const supabase = getSupabaseAdmin();
     const normalizedPlan = normalizePlanFileName(planFileName);
 
+    const progressMapWithMeta: Record<string, any> = {
+      ...(cycleData.sessionProgressMap || {}),
+    };
+    if (typeof cycleData.completedCycles === 'number') {
+      progressMapWithMeta.__meta_completedCycles = cycleData.completedCycles;
+    }
+    if (cycleData.cycleGenerationTimestamp !== undefined) {
+      progressMapWithMeta.__meta_cycleGenerationTimestamp = cycleData.cycleGenerationTimestamp;
+    }
+
     const { error } = await supabase.from('study_cycles').upsert(
       {
         user_id: userId,
@@ -134,7 +147,7 @@ export async function saveStudyCycleToFile(
         study_hours: cycleData.studyHours || '',
         weekly_questions_goal: cycleData.weeklyQuestionsGoal || '',
         current_progress_minutes: cycleData.currentProgressMinutes || 0,
-        session_progress_map: cycleData.sessionProgressMap || {},
+        session_progress_map: progressMapWithMeta,
         reminder_notes: cycleData.reminderNotes || [],
         study_days: cycleData.studyDays || [],
       },
@@ -1148,7 +1161,8 @@ export async function importEditalMutationAction(options: {
   subjects: any[];
 }): Promise<{ success: boolean; fileName?: string; error?: string }> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const session = await requireStudentSession();
+    const userId = session.userId;
 
     const formatSubjectsWithIds = (subs: any[]): Subject[] => {
       return subs.map((s) => ({
@@ -1289,5 +1303,84 @@ export async function updateTopicDetailsAction(
   } catch (error: any) {
     console.error('Erro ao atualizar detalhes do tópico:', error);
     return { success: false, error: error.message || 'Falha ao atualizar tópico.' };
+  }
+}
+
+export async function addSubtopicAction(
+  fileName: string,
+  subjectNameOrId: string,
+  parentTopicText: string,
+  subtopicText: string
+): Promise<{ success: boolean; error?: string }> {
+  if (!fileName || !subjectNameOrId || !parentTopicText || !subtopicText.trim()) {
+    return { success: false, error: 'Parâmetros inválidos para criar subtópico.' };
+  }
+
+  try {
+    const session = await requireStudentSession();
+    const userId = session.userId;
+    const plan = await getPlanMeta(userId, fileName);
+    if (!plan) {
+      return { success: false, error: 'Plano não encontrado.' };
+    }
+
+    const subjects: Subject[] = Array.isArray(plan.subjects) ? [...plan.subjects] : [];
+    const subject = subjects.find(
+      (s) =>
+        s.id === subjectNameOrId ||
+        (s.subject || '').trim().toLowerCase() === subjectNameOrId.trim().toLowerCase()
+    );
+    if (!subject) {
+      return { success: false, error: 'Disciplina não encontrada.' };
+    }
+
+    const insertSubtopicRecursive = (topics: any[], prefix = ''): boolean => {
+      for (let i = 0; i < topics.length; i++) {
+        const currentNum = topics[i].topic_number || (prefix ? `${prefix}.${i + 1}` : `${i + 1}`);
+        if (topics[i].topic_text === parentTopicText) {
+          const existingSubs = Array.isArray(topics[i].sub_topics) ? topics[i].sub_topics : [];
+          const nextNum = `${currentNum}.${existingSubs.length + 1}`;
+          topics[i].sub_topics = [
+            ...existingSubs,
+            {
+              topic_number: nextNum,
+              topic_text: subtopicText.trim(),
+              is_grouping_topic: false,
+              is_completed: false,
+              sub_topics: [],
+            },
+          ];
+          topics[i].is_grouping_topic = true;
+          return true;
+        }
+        if (topics[i].sub_topics && insertSubtopicRecursive(topics[i].sub_topics, currentNum)) {
+          return true;
+        }
+      }
+      return false;
+    };
+
+    const inserted = insertSubtopicRecursive(subject.topics || []);
+    if (!inserted) {
+      return { success: false, error: 'Tópico pai não encontrado.' };
+    }
+
+    const supabase = getSupabaseAdmin();
+    const { error } = await supabase
+      .from('study_plans')
+      .update({ subjects })
+      .eq('id', plan.id)
+      .eq('user_id', userId);
+
+    if (error) throw error;
+    await recordStudentAudit(session, 'SUBTOPIC_CREATE', 'topic', subtopicText.trim(), {
+      fileName,
+      subjectNameOrId,
+      parentTopicText,
+    });
+    return { success: true };
+  } catch (error: any) {
+    console.error('Erro ao adicionar subtópico:', error);
+    return { success: false, error: error.message || 'Falha ao adicionar subtópico.' };
   }
 }
