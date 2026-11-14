@@ -75,6 +75,32 @@ export async function GET(req: Request) {
   var TARGET_ORIGIN = ${JSON.stringify(baseOrigin)};
   var DESIRED_PATH = ${JSON.stringify(targetPathAndQuery)};
   try {
+    // Evita SecurityError quando scripts da página tentam passar URL absoluta de outra origem no pushState/replaceState
+    var origReplaceState = window.history.replaceState;
+    var origPushState = window.history.pushState;
+    function sanitizeStateUrl(u) {
+      if (!u) return u;
+      var s = String(u);
+      if (s.indexOf('http://') === 0 || s.indexOf('https://') === 0) {
+        try {
+          var parsed = new URL(s);
+          return parsed.pathname + parsed.search + parsed.hash;
+        } catch (err) {
+          return '/';
+        }
+      }
+      return s;
+    }
+    window.history.replaceState = function(state, title, url) {
+      try {
+        return origReplaceState.call(window.history, state, title, sanitizeStateUrl(url));
+      } catch (e) {}
+    };
+    window.history.pushState = function(state, title, url) {
+      try {
+        return origPushState.call(window.history, state, title, sanitizeStateUrl(url));
+      } catch (e) {}
+    };
     if (window.location.pathname.indexOf('/api/browser-proxy') !== -1 && DESIRED_PATH) {
       window.history.replaceState(window.history.state, '', DESIRED_PATH);
     }

@@ -62,15 +62,16 @@ export default function GlobalFooterTimer() {
     return Math.pow(norm, 1.85) * 0.14;
   };
 
-  // Encontra exatamente o próximo bloco pendente na fila do ciclo
+  // Encontra exatamente o próximo bloco pendente na fila do ciclo (somente se existir um ciclo ativo!)
   const activePlanningSession = useMemo(() => {
+    if (!studyCycle || studyCycle.length === 0) return null;
     if (currentStudySession) {
+      const existsInCycle = studyCycle.some((s) => s.id === currentStudySession.id);
       const prog = sessionProgressMap?.[currentStudySession.id as string] || 0;
-      if (prog < currentStudySession.duration) {
+      if (existsInCycle && prog < currentStudySession.duration) {
         return currentStudySession;
       }
     }
-    if (!studyCycle || studyCycle.length === 0) return null;
     return (
       studyCycle.find((s) => (sessionProgressMap?.[s.id as string] || 0) < s.duration) ||
       null
@@ -78,7 +79,7 @@ export default function GlobalFooterTimer() {
   }, [currentStudySession, studyCycle, sessionProgressMap]);
 
   const plannedSubjectName =
-    activePlanningSession?.subject || 'Selecione uma matéria';
+    activePlanningSession?.subject || 'Estudo Livre (Sem Ciclo Ativo)';
   const plannedSubjectColor =
     activePlanningSession?.color || '#10b981';
 
@@ -126,15 +127,22 @@ export default function GlobalFooterTimer() {
 
   // Mantém os metadados do timer sincronizados com o bloco atual do planejamento quando o timer está parado
   useEffect(() => {
-    if (plannedSubjectName && plannedSubjectName !== 'Selecione uma matéria') {
+    if (activePlanningSession && plannedSubjectName) {
       syncGlobalTimerMetadata({
         subject: plannedSubjectName,
         topic: suggestedTopic,
         subjectColor: plannedSubjectColor,
         targetDurationMinutes: remainingBlockMinutes || undefined,
       });
+    } else if (!timerState.hasStarted) {
+      syncGlobalTimerMetadata({
+        subject: '',
+        topic: '',
+        subjectColor: '#10b981',
+        targetDurationMinutes: 0,
+      });
     }
-  }, [plannedSubjectName, suggestedTopic, plannedSubjectColor, remainingBlockMinutes]);
+  }, [activePlanningSession, plannedSubjectName, suggestedTopic, plannedSubjectColor, remainingBlockMinutes, timerState.hasStarted]);
 
   // Gerador de Ruído de Foco 100% nativo via Web Audio API (sem arquivos externos)
   useEffect(() => {
@@ -382,7 +390,7 @@ export default function GlobalFooterTimer() {
 
       {/* Barra Persistente no Rodapé */}
       <footer
-        className={`fixed bottom-0 right-0 ${
+        className={`fixed bottom-0 right-0 print:hidden ${
           isSidebarExpanded ? 'lg:left-64 left-0' : 'left-0'
         } z-40 bg-white/95 dark:bg-[#0c1421]/95 backdrop-blur-md border-t border-slate-200 dark:border-[#1a293e] px-4 py-2.5 shadow-lg transition-all duration-300`}
       >
@@ -398,9 +406,13 @@ export default function GlobalFooterTimer() {
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] font-semibold tracking-wider text-emerald-600 dark:text-emerald-400 uppercase">
-                  {timerState.hasStarted ? 'Em Estudo' : 'Pelo Planejamento'}
+                  {timerState.hasStarted
+                    ? 'Em Estudo'
+                    : activePlanningSession
+                    ? 'Pelo Planejamento'
+                    : 'Cronômetro Livre'}
                 </span>
-                {remainingBlockMinutes !== null && (
+                {activePlanningSession && remainingBlockMinutes !== null && (
                   <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-emerald-500/10 text-emerald-600 dark:text-emerald-400">
                     {remainingBlockMinutes}m restantes
                   </span>

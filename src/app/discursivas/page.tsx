@@ -26,8 +26,8 @@ import {
   Printer,
   FileCode2,
   LayoutGrid,
-  ArrowRight,
   Info,
+  GitCompare,
 } from 'lucide-react';
 import { useData } from '../../context/DataContext';
 import { useNotification } from '../../context/NotificationContext';
@@ -70,7 +70,7 @@ const BANCA_PROFILES: Record<
     defaultRule:
       'NF = NC - 2 × (NE / TL), onde NC = Nota de Conteúdo (Apresentação/Estrutura 5% a 10% + Quesitos de Conteúdo 90% a 95%), NE = Número de Erros Gramaticais e TL = Total de Linhas efetivamente escritas.',
     originExplanation:
-      'Padrão oficial retirado dos editais clássicos do Cebraspe (PRF, PF, Tribunais e Controladorias). Se o seu edital usar multiplicador diferente (ex: 4 × NE/TL ou nota máxima 20/30 pts), basta colar o trecho no "Leitor de Edital com IA" ou editar os campos abaixo.',
+      'Padrão oficial retirado dos editais clássicos do Cebraspe (PRF, PF, Tribunais e Controladorias). Se o seu edital usar multiplicador diferente (ex: 4 × NE/TL ou nota máxima 20/30 pts), escolha a Nota Máxima ao lado ou cole o trecho do seu edital abaixo.',
     defaultMaxScore: 100,
     defaultLines: 30,
   },
@@ -81,7 +81,7 @@ const BANCA_PROFILES: Record<
     defaultRule:
       'Avaliação composta por Parte Macroestrutural / Domínio do Tema e Argumentação (80% da nota) + Parte Microestrutural / Norma Culta e Coesão (20% da nota).',
     originExplanation:
-      'Baseado nos espelhos de correção da FGV (Receita Federal, Tribunais, Fazendas e Carreiras Policiais). Você pode adaptar a distribuição de pontos colando seu edital no botão "Configurar pelo Edital (IA)".',
+      'Baseado nos espelhos de correção da FGV (Receita Federal, Tribunais, Fazendas e Carreiras Policiais).',
     defaultMaxScore: 100,
     defaultLines: 30,
   },
@@ -90,9 +90,9 @@ const BANCA_PROFILES: Record<
     description:
       'Valoriza estrutura dissertativo-argumentativa clássica (tese clara na introdução, parágrafos de desenvolvimento com repertório sólido e conclusão propositiva ou sintética), clareza e correção gramatical.',
     defaultRule:
-      'Conteúdo e Desenvolvimento do Tema (60 pts) + Estrutura e Argumentação (20 pts) + Expressão e Norma Culta (20 pts) = Total 100 pts.',
+      'Conteúdo e Desenvolvimento do Tema (60% da nota) + Estrutura e Argumentação (20% da nota) + Expressão e Norma Culta (20% da nota).',
     originExplanation:
-      'Extraído da grade padrão de redação e estudos de caso da FCC (TRTs, TRFs e SEFAZ). Totalmente editável abaixo.',
+      'Extraído da grade padrão de redação e estudos de caso da FCC (TRTs, TRFs e SEFAZ).',
     defaultMaxScore: 100,
     defaultLines: 30,
   },
@@ -101,7 +101,7 @@ const BANCA_PROFILES: Record<
     description:
       'Exige texto dissertativo-argumentativo com adequação ao tema, articulação de ideias, repertório sociocultural produtivo e respeito rigoroso às margens e limite de linhas.',
     defaultRule:
-      'Adequação ao tema e tipologia (20%) + Argumentação e Coerência (30%) + Coesão textual (20%) + Modalidade escrita formal (30%) = 100 pts.',
+      'Adequação ao tema e tipologia (20%) + Argumentação e Coerência (30%) + Coesão textual (20%) + Modalidade escrita formal (30%).',
     originExplanation:
       'Baseado na matriz de referência da Cesgranrio (CNU, Banco do Brasil, Caixa e Petrobras).',
     defaultMaxScore: 100,
@@ -112,7 +112,7 @@ const BANCA_PROFILES: Record<
     description:
       'Foco em fidelidade aos textos motivadores sem cópia literal, resposta completa a cada item do comando e rigor com regência, concordância e pontuação.',
     defaultRule:
-      'Tema e Visão Crítica (40%) + Estrutura e Coerência/Coesão (30%) + Norma-Padrão da Língua Portuguesa (30%) = 100 pts.',
+      'Tema e Visão Crítica (40%) + Estrutura e Coerência/Coesão (30%) + Norma-Padrão da Língua Portuguesa (30%).',
     originExplanation:
       'Baseado nos critérios oficiais da Vunesp (TJ-SP, PC-SP e Prefeituras/Câmaras).',
     defaultMaxScore: 100,
@@ -122,7 +122,8 @@ const BANCA_PROFILES: Record<
     label: 'Extraída do Seu Edital (Personalizada via IA)',
     description:
       'Regras, pesos e critérios extraídos diretamente do texto do seu edital pela Inteligência Artificial ou ajustados manualmente por você.',
-    defaultRule: 'Cole o trecho do seu edital no Leitor de Edital com IA ou digite sua regra personalizada aqui.',
+    defaultRule:
+      'Cole o trecho do seu edital no Leitor de Edital com IA ou digite sua regra personalizada aqui.',
     originExplanation:
       'Configuração personalizada ativa: segue exatamente a fórmula e os limites extraídos do seu próprio edital.',
     defaultMaxScore: 100,
@@ -130,11 +131,296 @@ const BANCA_PROFILES: Record<
   },
 };
 
+/**
+ * Gera uma janela A4 limpa e dedicada para Impressão / Salvar em PDF (sem sidebar, sem footer e sem cortes!)
+ */
+function openDedicatedPrintPdfWindow(
+  parsed: StructuredDiscursiveReport,
+  bancaLabel: string,
+  themeTitle?: string,
+  studentEssay?: string
+) {
+  if (typeof window === 'undefined') return;
+  const fmt = (n: number) => Number(n || 0).toFixed(2).replace('.', ',');
+  const esc = (s: string) =>
+    String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <title>Laudo Oficial de Correção - ${esc(themeTitle || bancaLabel)}</title>
+  <style>
+    @page { size: A4 portrait; margin: 14mm; }
+    * { box-sizing: border-box; -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      color: #0f172a;
+      background: #ffffff;
+      margin: 0;
+      padding: 0;
+      font-size: 11.5px;
+      line-height: 1.5;
+    }
+    .header {
+      border-bottom: 2px solid #10b981;
+      padding-bottom: 10px;
+      margin-bottom: 14px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .header h1 { margin: 0; font-size: 17px; color: #0f172a; }
+    .header p { margin: 3px 0 0; font-size: 11px; color: #475569; }
+    .badge-nf {
+      background: #ecfdf5;
+      border: 2px solid #10b981;
+      color: #047857;
+      padding: 8px 14px;
+      border-radius: 10px;
+      text-align: right;
+    }
+    .badge-nf .lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; display: block; }
+    .badge-nf .val { font-size: 20px; font-weight: 900; }
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 8px;
+      margin-bottom: 16px;
+    }
+    .kpi-card {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #f8fafc;
+    }
+    .kpi-card .k-lbl { font-size: 9px; font-weight: 800; text-transform: uppercase; color: #64748b; display: block; }
+    .kpi-card .k-val { font-size: 15px; font-weight: 800; color: #0f172a; margin-top: 2px; }
+    h2 {
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #0f172a;
+      border-left: 4px solid #6366f1;
+      padding-left: 8px;
+      margin: 16px 0 8px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 12px;
+      font-size: 11px;
+    }
+    th, td {
+      border: 1px solid #cbd5e1;
+      padding: 6px 8px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #f1f5f9;
+      font-size: 9.5px;
+      font-weight: 800;
+      text-transform: uppercase;
+      color: #334155;
+    }
+    .strike { color: #be123c; text-decoration: line-through; background: #ffe4e6; padding: 1px 4px; border-radius: 3px; }
+    .corr { color: #047857; font-weight: 700; background: #d1fae5; padding: 1px 4px; border-radius: 3px; }
+    .box {
+      border: 1px solid #cbd5e1;
+      border-radius: 8px;
+      padding: 10px 12px;
+      background: #f8fafc;
+      margin-bottom: 10px;
+      white-space: pre-wrap;
+    }
+    .box-green {
+      border: 1px solid #6ee7b7;
+      background: #f0fdf4;
+    }
+    .para-card {
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      page-break-inside: avoid;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>LAUDO OFICIAL DE CORREÇÃO DISCURSIVA • ${esc(bancaLabel)}</h1>
+      <p><strong>Tema:</strong> ${esc(themeTitle || 'Treino Discursivo')} • <strong>Fórmula:</strong> ${esc(parsed.formulaSummary)}</p>
+    </div>
+    <div class="badge-nf">
+      <span class="lbl">Nota Final Líquida</span>
+      <span class="val">${fmt(parsed.finalNetScore)} / ${fmt(parsed.maxScore)}</span>
+    </div>
+  </div>
+
+  <div class="kpi-grid">
+    <div class="kpi-card">
+      <span class="k-lbl">Nota de Conteúdo (NC)</span>
+      <div class="k-val">${fmt(parsed.contentScore)} / ${fmt(parsed.maxScore)}</div>
+    </div>
+    <div class="kpi-card">
+      <span class="k-lbl">Linhas Escritas (TL)</span>
+      <div class="k-val">${parsed.totalLines} linhas</div>
+    </div>
+    <div class="kpi-card">
+      <span class="k-lbl">Desvios Gramaticais (NE)</span>
+      <div class="k-val">${parsed.grammarErrorsCount} desvios</div>
+    </div>
+    <div class="kpi-card">
+      <span class="k-lbl">Desconto Gramatical</span>
+      <div class="k-val" style="color:#e11d48;">-${fmt(parsed.grammarDeduction)} pts</div>
+    </div>
+  </div>
+
+  ${
+    parsed.criteria.length > 0
+      ? `<h2>1. Desempenho por Quesito do Espelho (Macroestrutura)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Quesito Avaliado</th>
+            <th style="width:90px;">Nota Obtida</th>
+            <th style="width:80px;">Saldo</th>
+            <th>Diagnóstico do Examinador</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${parsed.criteria
+            .map(
+              (c) => `<tr>
+              <td><strong>${esc(c.title)}</strong></td>
+              <td><strong>${fmt(c.obtained)} / ${fmt(c.max)}</strong></td>
+              <td style="color:${c.deduction > 0 ? '#e11d48' : '#047857'};font-weight:700;">
+                ${c.deduction > 0 ? `-${fmt(c.deduction)} pts` : 'Gabaritou'}
+              </td>
+              <td>${esc(c.feedback)}</td>
+            </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>`
+      : ''
+  }
+
+  <h2>2. Correção Microestrutural Linha a Linha (${parsed.lineErrors.length} apontamentos)</h2>
+  ${
+    parsed.lineErrors.length === 0
+      ? `<div class="box box-green"><strong>✅ 0 Desvios Gramaticais Detectados!</strong> Seu texto respeitou integralmente a norma-padrão (Pontuação, Regência, Concordância e Ortografia).</div>`
+      : `<table>
+        <thead>
+          <tr>
+            <th style="width:65px;">Linha</th>
+            <th style="width:120px;">Categoria</th>
+            <th>Como Você Escreveu</th>
+            <th>Correção Recomendada</th>
+            <th>Regra / Justificativa</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${parsed.lineErrors
+            .map(
+              (err) => `<tr>
+              <td><strong>${esc(err.line)}</strong></td>
+              <td>${esc(err.category)}</td>
+              <td><span class="strike">${esc(err.original)}</span></td>
+              <td><span class="corr">${esc(err.correction)}</span></td>
+              <td>${esc(err.explanation)}</td>
+            </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>`
+  }
+
+  ${
+    parsed.paragraphAnalysis.length > 0
+      ? `<h2>3. Diagnóstico de Conteúdo e Argumentação por Parágrafo</h2>
+      ${parsed.paragraphAnalysis
+        .map(
+          (p) => `<div class="para-card">
+          <strong>${esc(p.paragraph)}</strong><br/>
+          ${p.strengths ? `<span><strong>Pontos Fortes:</strong> ${esc(p.strengths)}</span><br/>` : ''}
+          ${p.improvements ? `<span><strong>Como Aprofundar:</strong> ${esc(p.improvements)}</span>` : ''}
+        </div>`
+        )
+        .join('')}`
+      : ''
+  }
+
+  ${
+    parsed.modelRewrite
+      ? `<h2>4. Versão Nota Máxima (Reescrita Modelo no Padrão ${esc(bancaLabel)})</h2>
+      <div class="box box-green">${esc(parsed.modelRewrite)}</div>`
+      : ''
+  }
+
+  ${
+    parsed.modelRewriteComparison && parsed.modelRewriteComparison.length > 0
+      ? `<h2>5. Raio-X Comparativo: Sua Redação vs. Versão Nota Máxima (O que melhorar)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th style="width:130px;">Aspecto / Parágrafo</th>
+            <th>Como Estava no Seu Texto</th>
+            <th>Como Ficou na Versão Nota Máxima</th>
+            <th>Por que melhora a nota</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${parsed.modelRewriteComparison
+            .map(
+              (d) => `<tr>
+              <td><strong>${esc(d.aspect)}</strong></td>
+              <td>${esc(d.studentVersion)}</td>
+              <td><strong>${esc(d.modelVersion)}</strong></td>
+              <td>${esc(d.whyBetter)}</td>
+            </tr>`
+            )
+            .join('')}
+        </tbody>
+      </table>`
+      : ''
+  }
+
+  ${
+    studentEssay
+      ? `<h2>Anexo: Texto Original Enviado pelo Aluno</h2>
+      <div class="box">${esc(studentEssay)}</div>`
+      : ''
+  }
+
+  <script>
+    window.onload = function() {
+      setTimeout(function() { window.print(); }, 250);
+    };
+  </script>
+</body>
+</html>`;
+
+  const printWin = window.open('', '_blank', 'width=960,height=840');
+  if (printWin) {
+    printWin.document.open();
+    printWin.document.write(html);
+    printWin.document.close();
+  }
+}
+
 function VisualCorrectionReportCard({
   reportText,
   bancaLabel,
   defaultMaxScore,
   defaultLines,
+  themeTitle,
+  studentEssay,
   onCopyRaw,
   copied,
 }: {
@@ -142,6 +428,8 @@ function VisualCorrectionReportCard({
   bancaLabel: string;
   defaultMaxScore: number;
   defaultLines: number;
+  themeTitle?: string;
+  studentEssay?: string;
   onCopyRaw?: () => void;
   copied?: boolean;
 }) {
@@ -161,7 +449,7 @@ function VisualCorrectionReportCard({
       .replace('.', ',');
 
   return (
-    <div className="space-y-6 print:bg-white print:text-black">
+    <div className="space-y-6">
       {/* Barra de Topo do Laudo */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 dark:border-[#1f304a] pb-4">
         <div className="flex items-center gap-2.5">
@@ -178,7 +466,7 @@ function VisualCorrectionReportCard({
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2 print:hidden">
+        <div className="flex flex-wrap items-center gap-2">
           <div className="inline-flex rounded-xl bg-slate-100 dark:bg-[#0b1320] p-1 border border-slate-200 dark:border-[#1f304a]">
             <button
               type="button"
@@ -208,12 +496,14 @@ function VisualCorrectionReportCard({
 
           <button
             type="button"
-            onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/30 text-xs font-bold text-indigo-500"
-            title="Imprimir ou Salvar Laudo Formatado em PDF"
+            onClick={() =>
+              openDedicatedPrintPdfWindow(parsed, bancaLabel, themeTitle, studentEssay)
+            }
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-sm transition-all"
+            title="Gera uma folha A4 dedicada e limpa (sem barra lateral) pronta para salvar em PDF ou imprimir"
           >
             <Printer size={13} />
-            Imprimir / PDF
+            Gerar PDF Limpo (A4)
           </button>
 
           {onCopyRaw && (
@@ -415,14 +705,21 @@ function VisualCorrectionReportCard({
           )}
 
           {/* 4. Tabela Visual de Correção Microestrutural Linha a Linha */}
-          {parsed.lineErrors.length > 0 && (
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                  🔍 Correção Microestrutural Linha a Linha ({parsed.lineErrors.length} apontamentos)
-                </h4>
-              </div>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                🔍 Correção Microestrutural Linha a Linha ({parsed.lineErrors.length} apontamentos)
+              </h4>
+            </div>
 
+            {parsed.lineErrors.length === 0 ? (
+              <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center gap-3 text-xs text-emerald-600 dark:text-emerald-300 font-semibold">
+                <CheckCircle2 size={18} className="text-emerald-500 shrink-0" />
+                <span>
+                  Parabéns! Nenhum desvio gramatical, ortográfico ou de pontuação foi detectado nas linhas escritas (NE = 0).
+                </span>
+              </div>
+            ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-[#1f304a]">
                 <table className="w-full text-left border-collapse text-xs">
                   <thead>
@@ -463,8 +760,8 @@ function VisualCorrectionReportCard({
                   </tbody>
                 </table>
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* 5. Análise de Conteúdo e Argumentação por Parágrafo */}
           {parsed.paragraphAnalysis.length > 0 && (
@@ -521,28 +818,81 @@ function VisualCorrectionReportCard({
             </div>
           )}
 
-          {/* 7. Reescrita Modelo Nota Máxima */}
+          {/* 7. Reescrita Modelo Nota Máxima + Comparativo Direto (Sua Redação vs. Versão Nota Máxima) */}
           {parsed.modelRewrite && (
-            <div className="p-5 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/30 space-y-2.5">
-              <div className="flex items-center justify-between">
-                <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
-                  🏆 Versão Nota Máxima (Reescrita Modelo no Padrão {bancaLabel})
-                </h4>
+            <div className="p-5 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/30 space-y-5">
+              <div className="space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-extrabold uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+                    🏆 Versão Nota Máxima (Reescrita Modelo no Padrão {bancaLabel})
+                  </h4>
+                </div>
+                <div className="p-4 rounded-xl bg-white dark:bg-[#09111e] border border-emerald-500/20 text-xs sm:text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
+                  {parsed.modelRewrite}
+                </div>
               </div>
-              <div className="p-4 rounded-xl bg-white dark:bg-[#09111e] border border-emerald-500/20 text-xs sm:text-sm text-slate-800 dark:text-slate-100 whitespace-pre-wrap leading-relaxed">
-                {parsed.modelRewrite}
-              </div>
+
+              {/* Comparativo Ponto a Ponto: Sua Redação vs. Versão Nota Máxima */}
+              {parsed.modelRewriteComparison && parsed.modelRewriteComparison.length > 0 && (
+                <div className="pt-4 border-t border-emerald-500/25 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <GitCompare size={16} className="text-indigo-400" />
+                    <h5 className="text-xs font-extrabold uppercase tracking-wider text-indigo-400">
+                      🔄 O que mudou da Sua Redação para a Versão Nota Máxima (Comparativo para Evoluir)
+                    </h5>
+                  </div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Veja exatamente quais trechos, termos e conexões foram aprimorados na versão nota máxima em relação ao texto que você enviou:
+                  </p>
+
+                  <div className="space-y-2.5">
+                    {parsed.modelRewriteComparison.map((diff, idx) => (
+                      <div
+                        key={idx}
+                        className="p-3.5 rounded-xl bg-white dark:bg-[#09111e] border border-slate-200 dark:border-[#1f304a] grid grid-cols-1 lg:grid-cols-12 gap-3"
+                      >
+                        <div className="lg:col-span-3">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block">
+                            Ponto Comparado
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 dark:text-white mt-0.5 block">
+                            {diff.aspect}
+                          </span>
+                        </div>
+
+                        <div className="lg:col-span-3 p-2.5 rounded-lg bg-rose-500/[0.06] border border-rose-500/20">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-rose-400 block mb-1">
+                            📝 Na Sua Redação
+                          </span>
+                          <p className="text-xs text-slate-700 dark:text-slate-300 leading-relaxed">
+                            {diff.studentVersion}
+                          </p>
+                        </div>
+
+                        <div className="lg:col-span-3 p-2.5 rounded-lg bg-emerald-500/[0.08] border border-emerald-500/25">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400 block mb-1">
+                            🏆 Na Versão Nota Máxima
+                          </span>
+                          <p className="text-xs font-semibold text-slate-800 dark:text-slate-100 leading-relaxed">
+                            {diff.modelVersion}
+                          </p>
+                        </div>
+
+                        <div className="lg:col-span-3 p-2.5 rounded-lg bg-indigo-500/[0.06] border border-indigo-500/20">
+                          <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-400 block mb-1">
+                            💡 O que melhorar / Ganho
+                          </span>
+                          <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">
+                            {diff.whyBetter}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           )}
-
-          {/* Caso seja um texto livre que não caiu em nenhuma seção acima, mostra formatado */}
-          {parsed.criteria.length === 0 &&
-            parsed.lineErrors.length === 0 &&
-            parsed.paragraphAnalysis.length === 0 && (
-              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs sm:text-sm text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-                {parsed.rawText || reportText}
-              </div>
-            )}
         </div>
       )}
     </div>
@@ -635,9 +985,6 @@ export default function DiscursivasIAPage() {
         const parsedHist = JSON.parse(savedHist);
         if (Array.isArray(parsedHist)) {
           setHistoryList(parsedHist);
-          if (parsedHist.length > 0 && !aiCorrectionReport) {
-            setAiCorrectionReport(parsedHist[0].correctionReport);
-          }
         }
       }
     } catch {}
@@ -678,7 +1025,7 @@ export default function DiscursivasIAPage() {
     return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
   };
 
-  // Divide o texto do aluno em linhas numeradas (estimando ~82 caracteres por linha de folha oficial ou quebras explícitas)
+  // Divide o texto do aluno em linhas numeradas
   const numberedLinesPreview = useMemo(() => {
     if (!studentEssay.trim()) return [];
     const paragraphs = studentEssay.split('\n');
@@ -720,7 +1067,7 @@ export default function DiscursivasIAPage() {
           userPrompt: `Analise o seguinte trecho de edital sobre a Prova Discursiva / Redação e extraia exatamente um objeto JSON com as chaves:
 {
   "bancaDetectada": "nome da banca (ex: cebraspe, fgv, fcc, vunesp, cesgranrio ou personalizada)",
-  "maxScore": numero_da_nota_maxima (ex: 100 ou 20 ou 10),
+  "maxScore": numero_da_nota_maxima (ex: 100 ou 50 ou 30 ou 20 ou 10),
   "minLines": numero_minimo_de_linhas (ex: 20),
   "maxLines": numero_maximo_de_linhas (ex: 30),
   "formulaOuRegraDeCorrecao": "resumo técnico exato de como a nota é calculada, pesos de conteúdo vs gramática e descontos por erro/linha segundo este edital",
@@ -744,9 +1091,9 @@ ${rawEditalExcerpt}`,
         const parsed = JSON.parse(cleaned);
         const nextRule = parsed.formulaOuRegraDeCorrecao || editalRule;
         const nextGuide = parsed.guiaParaOAluno || '';
-        const nextMaxScore = Number(parsed.maxScore) || 100;
-        const nextMinLines = Number(parsed.minLines) || 20;
-        const nextMaxLines = Number(parsed.maxLines) || 30;
+        const nextMaxScore = Number(parsed.maxScore) || maxScore;
+        const nextMinLines = Number(parsed.minLines) || minLines;
+        const nextMaxLines = Number(parsed.maxLines) || maxLines;
 
         setEditalRule(nextRule);
         setEditalAiGuidance(nextGuide);
@@ -754,6 +1101,7 @@ ${rawEditalExcerpt}`,
         setMinLines(nextMinLines);
         setMaxLines(nextMaxLines);
         setBanca('personalizada');
+        setIsConfigExpanded(false);
 
         saveConfigToStorage({
           banca: 'personalizada',
@@ -763,7 +1111,10 @@ ${rawEditalExcerpt}`,
           minLines: nextMinLines,
           maxLines: nextMaxLines,
         });
-        showNotification('Edital analisado! As regras de correção e o seu Guia Estratégico foram configurados.', 'success');
+        showNotification(
+          `Regras do Edital configuradas! Nota Máxima: ${nextMaxScore} pts (${nextMinLines} a ${nextMaxLines} linhas).`,
+          'success'
+        );
       } catch {
         setEditalRule(cleaned);
         setEditalAiGuidance(cleaned);
@@ -821,7 +1172,7 @@ Para cada tema, apresente:
     }
   };
 
-  // 3. Gerar Proposta Completa + Textos Motivadores + Espelho Oficial com IA
+  // 3. Gerar Proposta Completa + Título do Tema + Textos Motivadores + Espelho Oficial com IA
   const handleGenerateFullPromptWithAi = async () => {
     setIsLoadingAi('generate_prompt');
     try {
@@ -842,16 +1193,16 @@ Para cada tema, apresente:
             themeTitle ? ` sobre o tema específico: "${themeTitle}"` : ''
           }${cargoTarget ? ` voltada para o cargo de ${cargoTarget}` : ''}.
 - Limite de linhas: de ${minLines} a ${maxLines} linhas.
-- Nota Máxima: ${maxScore} pontos.
+- Nota Máxima da Prova Discursiva neste Edital: ${maxScore} pontos.
 - Regra do Edital: ${editalRule}
 
-Separe sua resposta EXATAMENTE em duas partes usando o marcador ===ESPELHO_OFICIAL=== no meio:
-Na Parte 1 (antes de ===ESPELHO_OFICIAL===), escreva:
-- **TEXTO(S) MOTIVADOR(ES) / SITUAÇÃO-PROBLEMA**
-- **TEMA E COMANDO DA PROPOSTA (com os quesitos A, B, C e a pontuação de cada quesito)**.
-
-Na Parte 2 (depois de ===ESPELHO_OFICIAL===), escreva:
-- **ESPELHO OFICIAL DE CORREÇÃO (PADRÃO DE RESPOSTA DA BANCA)**: o que o candidato precisa abordar em cada parágrafo/quesito, repertório ou fundamentação legal/jurisprudencial esperada para gabaritar.`,
+Separe sua resposta EXATAMENTE em três partes usando os marcadores ===TEXTOS_E_COMANDO=== e ===ESPELHO_OFICIAL===:
+1. Na Parte 1 (antes de ===TEXTOS_E_COMANDO===), escreva APENAS uma única linha com o TÍTULO DO TEMA / ASSUNTO CENTRAL (sem aspas e sem prefixos como "Tema:").
+2. Na Parte 2 (entre ===TEXTOS_E_COMANDO=== e ===ESPELHO_OFICIAL===), escreva:
+   - **TEXTO(S) MOTIVADOR(ES) / SITUAÇÃO-PROBLEMA**
+   - **COMANDO DA PROPOSTA (com os quesitos A, B, C e a pontuação de cada quesito somando ${maxScore} pontos)**.
+3. Na Parte 3 (depois de ===ESPELHO_OFICIAL===), escreva:
+   - **ESPELHO OFICIAL DE CORREÇÃO (PADRÃO DE RESPOSTA DA BANCA)**: o que o candidato precisa abordar em cada parágrafo/quesito, repertório ou fundamentação legal/jurisprudencial esperada para gabaritar.`,
           temperature: 0.45,
         }),
       });
@@ -859,12 +1210,43 @@ Na Parte 2 (depois de ===ESPELHO_OFICIAL===), escreva:
       if (!res.ok || data.error) {
         showNotification(data.error || 'Erro ao gerar proposta com IA.', 'error');
       } else if (data.content) {
-        const parts = String(data.content).split('===ESPELHO_OFICIAL===');
-        setThemePromptText(parts[0]?.trim() || data.content);
-        setOfficialRubricText(parts[1]?.trim() || '');
+        const rawContent = String(data.content);
+        const partsEspelho = rawContent.split('===ESPELHO_OFICIAL===');
+        const beforeEspelho = partsEspelho[0]?.trim() || rawContent;
+        const rubricPart = partsEspelho[1]?.trim() || '';
+
+        let extractedTitle = themeTitle.trim();
+        let promptBody = beforeEspelho;
+
+        if (beforeEspelho.includes('===TEXTOS_E_COMANDO===')) {
+          const [titleChunk, bodyChunk] = beforeEspelho.split('===TEXTOS_E_COMANDO===');
+          const cleanTitle = (titleChunk || '')
+            .replace(/^(t[íi]tulo do tema|tema|assunto)\s*:\s*/i, '')
+            .replace(/\*\*/g, '')
+            .replace(/^["']|["']$/g, '')
+            .trim();
+          if (cleanTitle) extractedTitle = cleanTitle;
+          promptBody = (bodyChunk || '').trim();
+        } else if (!extractedTitle) {
+          // Fallback caso a IA não tenha usado o separador ===TEXTOS_E_COMANDO===
+          const themeMatch =
+            beforeEspelho.match(/(?:TEMA|T[ÍI]TULO DO TEMA|PROPOSTA)\s*:\s*([^\n]+)/i) ||
+            beforeEspelho.match(/\*\*([^*]{12,140})\*\*/);
+          if (themeMatch && themeMatch[1]) {
+            extractedTitle = themeMatch[1].replace(/\*\*/g, '').trim();
+          }
+        }
+
+        if (extractedTitle) {
+          setThemeTitle(extractedTitle);
+        }
+        setThemePromptText(promptBody);
+        setOfficialRubricText(rubricPart);
         setShowRubric(false);
+        // Limpa eventual laudo da redação anterior para iniciar o novo treino limpo
+        setAiCorrectionReport('');
         showNotification(
-          'Proposta gerada! O Espelho Oficial ficou oculto para você consultar só depois de escrever.',
+          'Tema, Textos Motivadores e Espelho Oficial preenchidos automaticamente!',
           'success'
         );
       }
@@ -875,7 +1257,7 @@ Na Parte 2 (depois de ===ESPELHO_OFICIAL===), escreva:
     }
   };
 
-  // 4. Corrigir Redação / Discursiva Linha a Linha com IA (Retornando JSON Estruturado + Comparativo Histórico)
+  // 4. Corrigir Redação / Discursiva Linha a Linha com IA
   const handleEvaluateEssayWithAi = async () => {
     if (inputMode === 'typed' && !studentEssay.trim()) {
       showNotification('Digite sua redação/resposta na folha antes de pedir a correção.', 'warning');
@@ -907,8 +1289,9 @@ Na Parte 2 (depois de ===ESPELHO_OFICIAL===), escreva:
 
 DADOS E REGRAS DO EDITAL DO ALUNO:
 - Banca / Estilo: ${profile.label} (${profile.description})
-- Regra de Cálculo e Critérios do Edital: ${editalRule}
-- Nota Máxima: ${maxScore} pontos | Mínimo de linhas: ${minLines} | Máximo de linhas: ${maxLines}
+- Regra de Cálculo e Critérios Específicos do Edital: ${editalRule}
+- VALOR TOTAL (NOTA MÁXIMA DESTA PROVA): ${maxScore} pontos (Calcule todas as notas e quesitos proporcionalmente para que a soma máxima seja EXATAMENTE ${maxScore} pontos!)
+- Limite de linhas: Mínimo ${minLines} | Máximo ${maxLines}
 - Total de linhas efetivamente escritas pelo candidato (TL): ${totalWrittenLines} linhas
 ${themeTitle ? `- Tema: ${themeTitle}\n` : ''}${
         themePromptText ? `- Proposta / Quesitos:\n${themePromptText}\n` : ''
@@ -918,23 +1301,29 @@ ${historicalIntel.promptContextForAi ? `\n${historicalIntel.promptContextForAi}\
 TEXTO DO CANDIDATO NUMERADO LINHA A LINHA:
 ${formattedNumberedEssay}
 
-Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`json) seguindo exatamente esta estrutura para renderização no painel visual:
+REGRAS CRÍTICAS DE FORMATAÇÃO (OBRIGATÓRIO):
+1. Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`json).
+2. EM "lineErrors": Liste SOMENTE erros reais (gramaticais, ortográficos, de pontuação, regência ou imprecisão vocabular grave) que de fato ocorram na linha citada. Se o texto do aluno não tiver erros gramaticais, retorne "lineErrors": [] e "grammarErrorsCount": 0.
+3. É TERMINANTEMENTE PROIBIDO escrever seu raciocínio interno, dúvidas ou rascunhos (ex: "Não há erro...", "Reavaliando...", "Mas a estrutura exige lineErrors...") dentro de "explanation". Escreva apenas a justificativa gramatical direta (máximo 2 frases curtas por erro).
+4. EM "modelRewriteComparison": Compare diretamente de 3 a 4 pontos específicos entre o texto enviado pelo aluno e a "modelRewrite" (Versão Nota Máxima), mostrando lado a lado como o aluno escreveu, como ficou na versão nota máxima e o que ele precisa melhorar para atingir aquele nível.
+
+Estrutura exata do JSON:
 {
-  "contentScore": numero_da_nota_de_conteudo_NC,
+  "contentScore": numero_da_nota_de_conteudo_NC_respeitando_maximo_${maxScore},
   "maxScore": ${maxScore},
   "totalLines": ${totalWrittenLines},
-  "grammarErrorsCount": numero_total_de_erros_gramaticais_NE,
+  "grammarErrorsCount": numero_total_de_erros_reais_NE,
   "grammarDeduction": valor_numerico_do_desconto_gramatical,
-  "finalNetScore": nota_final_liquida_NF,
-  "formulaSummary": "ex: NF = 86,00 - (2 × 11 / 29) = 85,24 pontos",
+  "finalNetScore": nota_final_liquida_NF_de_0_a_${maxScore},
+  "formulaSummary": "ex: NF = ${maxScore === 20 ? '18,50 - (2 × 3 / 29) = 18,29' : '86,00 - (2 × 4 / 29) = 85,72'} pontos",
   "historicalComparison": {
-    "summary": "Síntese comparando o desempenho atual com o histórico anterior do aluno (se houver)",
+    "summary": "Síntese comparando o desempenho atual com o histórico anterior do aluno",
     "improvedPoints": ["Ponto em que o aluno evoluiu em relação às redações passadas"],
     "recurringAlerts": ["Erro constante/recorrente que voltou a aparecer neste texto"]
   },
   "criteria": [
     {
-      "title": "Nome do Quesito (ex: 1. Apresentação e Estrutura Textual ou Quesito 2.1 - Papel da PRF)",
+      "title": "Nome do Quesito (a soma dos 'max' de todos os quesitos deve ser igual a ${maxScore})",
       "max": valor_maximo_do_quesito,
       "obtained": nota_obtida_pelo_aluno,
       "feedback": "Explicação objetiva do que acertou e do que faltou para gabaritar o quesito"
@@ -942,11 +1331,11 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
   ],
   "lineErrors": [
     {
-      "line": "Linha 01",
+      "line": "Linha XX",
       "category": "Propriedade Vocabular | Pontuação / Vírgula | Regência & Crase | Concordância | Coesão & Repetição | Ortografia & Acentuação | Morfossintaxe & Nexo",
-      "original": "trecho exato com desvio",
-      "correction": "trecho corrigido",
-      "explanation": "explicação gramatical direta e didática"
+      "original": "trecho exato do aluno que contém erro",
+      "correction": "trecho corrigido diferente do original",
+      "explanation": "explicação direta em até 2 frases curtas (sem monólogo interno)"
     }
   ],
   "paragraphAnalysis": [
@@ -961,7 +1350,15 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
     "Foco prioritário 2 para a próxima redação",
     "Foco prioritário 3 para a próxima redação"
   ],
-  "modelRewrite": "Reescrita completa da redação (4 parágrafos) no padrão nota máxima da banca ${profile.label}, mantendo a essência dos argumentos do aluno mas com vocabulário técnico, coesão e subsunção perfeitos."
+  "modelRewrite": "Reescrita completa da redação (4 parágrafos) no padrão nota máxima (${maxScore} pts) da banca ${profile.label}.",
+  "modelRewriteComparison": [
+    {
+      "aspect": "1º Parágrafo / Abordagem Inicial (ou Quesito Específico / Vocabulário)",
+      "studentVersion": "Trecho ou estratégia usada na redação enviada pelo aluno",
+      "modelVersion": "Como foi reescrito na Versão Nota Máxima acima",
+      "whyBetter": "Explicação clara do que mudou e por que essa construção garante a nota máxima na banca"
+    }
+  ]
 }`;
 
       const res = await fetch('/api/ai/deepseek', {
@@ -969,9 +1366,9 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemPrompt:
-            'Você é um examinador oficial de provas discursivas e redações de concursos públicos. Responda sempre em JSON puro e válido seguindo a estrutura solicitada.',
+            'Você é um examinador oficial de provas discursivas e redações de concursos públicos. Responda sempre em JSON puro e válido, sem jamais incluir rascunhos de pensamento ou monólogos internos nos valores do JSON.',
           userPrompt: prompt,
-          temperature: 0.2,
+          temperature: 0.15,
         }),
       });
       const data = await res.json();
@@ -1028,7 +1425,7 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
   return (
     <div className="max-w-7xl mx-auto space-y-6 pb-16">
       {/* Cabeçalho Principal */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm print:hidden">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm">
         <div className="flex items-start gap-4">
           <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-500 to-emerald-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/20 shrink-0">
             <Award size={24} />
@@ -1038,21 +1435,32 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
               Laboratório de Redação & Discursivas com IA
             </h1>
             <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-              Correção estruturada linha a linha, adaptação automática às regras do seu edital e radar de evolução histórica
+              Configure quanto vale sua discursiva no edital (10, 20, 30, 50 ou 100 pts), cole regras específicas e receba correção linha a linha
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => setIsConfigExpanded((v) => !v)}
-            className="inline-flex items-center gap-2 px-3.5 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/40 text-indigo-600 dark:text-indigo-300 text-xs font-extrabold transition-all shadow-sm"
-          >
-            <Sliders size={14} />
-            {isConfigExpanded ? 'Ocultar Leitor de Edital' : '📜 Meu Edital é Diferente? Configurar c/ IA'}
-          </button>
-
+          {(themeTitle || themePromptText || studentEssay || aiCorrectionReport) && (
+            <button
+              type="button"
+              onClick={() => {
+                setThemeTitle('');
+                setThemePromptText('');
+                setOfficialRubricText('');
+                setStudentEssay('');
+                setHandwrittenPhotoDataUrl(null);
+                setAiCorrectionReport('');
+                setIsEssayTimerRunning(false);
+                setEssayTimerSec(0);
+                showNotification('Campos limpos para iniciar uma nova redação!', 'success');
+              }}
+              className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-100 dark:bg-[#0b1320] hover:bg-rose-500/15 border border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-300 hover:text-rose-400 text-xs font-bold transition-all"
+            >
+              <RotateCcw size={14} />
+              Nova Redação (Limpar Tela)
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setIsAiKeyModalOpen(true)}
@@ -1064,16 +1472,16 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
         </div>
       </div>
 
-      {/* Painel de Evolução & Radar de Erros Constantes (exibido assim que houver 1+ redações no histórico) */}
+      {/* Painel de Evolução & Radar de Erros Constantes */}
       {historyList.length > 0 && (
-        <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-5 print:hidden">
+        <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <h2 className="text-sm font-extrabold uppercase tracking-wider text-indigo-400 flex items-center gap-2">
                 <TrendingUp size={17} className="text-emerald-400" /> Inteligência de Evolução & Radar de Erros Constantes
               </h2>
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                O sistema analisa todas as suas {historyList.length} redações corrigidas, mapeia seus vícios recorrentes e envia esse histórico para a IA cobrar sua evolução na próxima redação!
+                Analisamos suas {historyList.length} redações salvas para mapear seus erros recorrentes e alimentar a próxima correção!
               </p>
             </div>
             <div className="flex items-center gap-3">
@@ -1105,7 +1513,6 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-            {/* Linha do Tempo de Notas */}
             <div className="lg:col-span-6 p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] space-y-3">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 block">
                 📈 Curva de Evolução das Notas ({historicalIntel.timeline.length} treinos)
@@ -1133,14 +1540,13 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
               </div>
             </div>
 
-            {/* Radar de Erros Constantes / Recorrentes */}
             <div className="lg:col-span-6 p-4 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] space-y-3">
               <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
                 <AlertTriangle size={13} /> Radar de Vícios & Erros Mais Recorrentes
               </span>
               {historicalIntel.recurringCategories.length === 0 ? (
                 <p className="text-xs text-slate-400">
-                  Corrija suas redações para mapearmos automaticamente os seus padrões de erro.
+                  Nenhum vício recorrente detectado até o momento. Continue treinando!
                 </p>
               ) : (
                 <div className="space-y-2.5">
@@ -1174,70 +1580,14 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
         </div>
       )}
 
-      {/* Seção Expansível: Leitor de Edital com IA (Extrai Regras + Guia Estratégico) */}
-      {isConfigExpanded && (
-        <div className="p-6 rounded-2xl bg-indigo-500/[0.06] border-2 border-indigo-500/40 space-y-4 animate-fadeIn print:hidden">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-extrabold uppercase tracking-wider text-indigo-400 flex items-center gap-2">
-                <Sparkles size={16} /> Configurar Correção Lendo o Seu Edital com IA
-              </h2>
-              <p className="text-xs text-slate-600 dark:text-slate-300 mt-0.5">
-                O seu edital tem pontuação diferente (ex: vale 20 ou 30 pontos) ou critérios específicos? Cole abaixo o item do edital sobre a Prova Discursiva. A IA vai atualizar a fórmula automaticamente!
-              </p>
-            </div>
-          </div>
-
-          <textarea
-            value={rawEditalExcerpt}
-            onChange={(e) => setRawEditalExcerpt(e.target.value)}
-            rows={5}
-            placeholder="Cole aqui o trecho do seu edital (ex: '9. DA PROVA DISCURSIVA: A prova discursiva valerá 20,00 pontos e consistirá da redação de texto dissertativo, de até 30 linhas, aplicando-se a fórmula NF = NC - 4 × (NE / TL)...')"
-            className="w-full p-3.5 rounded-xl bg-white dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          />
-
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={handleAnalyzeEditalWithAi}
-              disabled={isLoadingAi !== null}
-              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-bold shadow-md transition-all"
-            >
-              <Sparkles size={15} />
-              {isLoadingAi === 'edital'
-                ? 'Lendo Edital e Extraindo Critérios...'
-                : '🤖 Ler Edital com IA e Atualizar Critérios'}
-            </button>
-          </div>
+      {/* Passo 1: Escolha da Modalidade, Banca, Valor da Prova no Edital e Regras Específicas */}
+      <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-5">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-2">
+            <Sliders size={16} className="text-indigo-400" /> Passo 1 • Banca, Valor da Redação no Edital e Regras de Correção
+          </h2>
         </div>
-      )}
 
-      {/* Guia Estratégico Personalizado da IA (se já extraído do edital) */}
-      {editalAiGuidance && (
-        <div className="p-5 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/30 space-y-2 print:hidden">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-              <CheckCircle2 size={15} /> Instruções da IA Baseadas no Seu Edital (Como Estruturar Sua Prova)
-            </span>
-            <button
-              type="button"
-              onClick={() => {
-                setEditalAiGuidance('');
-                saveConfigToStorage({ editalAiGuidance: '' });
-              }}
-              className="text-[11px] text-slate-400 hover:text-rose-400"
-            >
-              Limpar guia
-            </button>
-          </div>
-          <div className="text-xs text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
-            {editalAiGuidance}
-          </div>
-        </div>
-      )}
-
-      {/* Passo 1: Escolha da Modalidade, Banca e Parâmetros */}
-      <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-5 print:hidden">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           {[
             {
@@ -1272,10 +1622,10 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
           ))}
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
-          <div className="md:col-span-4">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Banca Examinadora
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-end">
+          <div className="lg:col-span-4">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
+              1. Banca Examinadora
             </label>
             <select
               value={banca}
@@ -1284,15 +1634,13 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
                 setBanca(nextB);
                 if (BANCA_PROFILES[nextB] && nextB !== 'personalizada') {
                   setEditalRule(BANCA_PROFILES[nextB].defaultRule);
-                  setMaxScore(BANCA_PROFILES[nextB].defaultMaxScore);
-                  setMaxLines(BANCA_PROFILES[nextB].defaultLines);
                   saveConfigToStorage({
                     banca: nextB,
                     editalRule: BANCA_PROFILES[nextB].defaultRule,
                   });
                 }
               }}
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs font-semibold text-slate-800 dark:text-white"
+              className="w-full px-3 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs font-semibold text-slate-800 dark:text-white"
             >
               {Object.entries(BANCA_PROFILES).map(([k, v]) => (
                 <option key={k} value={k}>
@@ -1302,27 +1650,29 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
             </select>
           </div>
 
-          <div className="md:col-span-3">
-            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-              Cargo / Área (Opcional)
+          {/* Seletor Destacado de Quanto Vale a Redação no Edital (20, 30, 50, 100 pts) */}
+          <div className="lg:col-span-5">
+            <label className="text-[11px] font-bold uppercase tracking-wider text-emerald-400 block mb-1.5">
+              2. Quanto vale a Redação no seu Edital? (Nota Máxima)
             </label>
-            <input
-              type="text"
-              value={cargoTarget}
-              onChange={(e) => {
-                setCargoTarget(e.target.value);
-                saveConfigToStorage({ cargoTarget: e.target.value });
-              }}
-              placeholder="Ex: PRF, Analista Judiciário, Auditor..."
-              className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-white"
-            />
-          </div>
-
-          <div className="md:col-span-5 grid grid-cols-3 gap-2">
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Nota Máx.
-              </label>
+            <div className="flex items-center gap-1.5">
+              {[10, 20, 30, 50, 100].map((val) => (
+                <button
+                  key={val}
+                  type="button"
+                  onClick={() => {
+                    setMaxScore(val);
+                    saveConfigToStorage({ maxScore: val });
+                  }}
+                  className={`px-2.5 py-2 rounded-xl text-xs font-extrabold border transition-all ${
+                    maxScore === val
+                      ? 'bg-emerald-500 text-slate-950 border-emerald-500 shadow-sm'
+                      : 'bg-slate-50 dark:bg-[#0b1320] border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-300 hover:border-emerald-500/40'
+                  }`}
+                >
+                  {val} pts
+                </button>
+              ))}
               <input
                 type="number"
                 min={1}
@@ -1333,11 +1683,15 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
                   setMaxScore(v);
                   saveConfigToStorage({ maxScore: v });
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-slate-800 dark:text-white"
+                title="Ou digite qualquer valor máximo personalizado do seu edital"
+                className="w-20 px-2.5 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-slate-800 dark:text-white"
               />
             </div>
+          </div>
+
+          <div className="lg:col-span-3 grid grid-cols-2 gap-2">
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
                 Mín. Linhas
               </label>
               <input
@@ -1354,7 +1708,7 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
               />
             </div>
             <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
                 Máx. Linhas
               </label>
               <input
@@ -1373,93 +1727,109 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
           </div>
         </div>
 
-        {/* Explicação transparente de onde vêm os critérios da banca + atalho de personalização */}
-        <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-start gap-2.5 text-xs text-slate-600 dark:text-slate-300">
-            <Info size={16} className="text-indigo-400 shrink-0 mt-0.5" />
-            <div>
-              <strong className="text-slate-800 dark:text-white">
-                De onde vêm esses critérios ({activeBancaProfile.label}):
-              </strong>{' '}
-              {activeBancaProfile.originExplanation}
+        {/* Caixa Clara e Autoexplicativa: Onde colocar as Regras Específicas do seu Edital */}
+        <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-start gap-2">
+              <Info size={16} className="text-indigo-400 shrink-0 mt-0.5" />
+              <div>
+                <span className="text-xs font-extrabold text-slate-800 dark:text-white block">
+                  3. Regras e Fórmula de Correção do Edital ({activeBancaProfile.label})
+                </span>
+                <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                  {activeBancaProfile.originExplanation}
+                </span>
+              </div>
             </div>
-          </div>
-          {!isConfigExpanded && (
+
             <button
               type="button"
-              onClick={() => setIsConfigExpanded(true)}
-              className="shrink-0 inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 text-indigo-400 text-[11px] font-bold transition-all"
+              onClick={() => setIsConfigExpanded((v) => !v)}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow-sm transition-all"
             >
-              Colar Meu Edital <ArrowRight size={12} />
+              <Sparkles size={13} />
+              {isConfigExpanded
+                ? 'Fechar Leitor de Edital'
+                : '📜 Colar Trecho do Meu Edital p/ IA Configurar'}
             </button>
+          </div>
+
+          {/* Se o aluno clicou em "Colar Trecho do Meu Edital", abre aqui mesmo de forma super clara */}
+          {isConfigExpanded && (
+            <div className="p-4 rounded-xl bg-indigo-500/[0.08] border border-indigo-500/30 space-y-3 animate-fadeIn">
+              <p className="text-xs text-indigo-300 font-medium">
+                👇 <strong>É exatamente aqui!</strong> Cole abaixo a parte do seu edital que fala da Prova Discursiva / Redação. A IA vai ler as regras específicas desse edital, descobrir quanto vale a prova, qual a fórmula de desconto e configurar a correção para você:
+              </p>
+              <textarea
+                value={rawEditalExcerpt}
+                onChange={(e) => setRawEditalExcerpt(e.target.value)}
+                rows={4}
+                placeholder="Exemplo: '9. DA PROVA DISCURSIVA: A prova discursiva valerá 20,00 pontos e consistirá da redação de texto dissertativo, de até 30 linhas, aplicando-se a fórmula NF = NC - 4 × (NE / TL)...'"
+                className="w-full p-3 rounded-xl bg-white dark:bg-[#09111e] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleAnalyzeEditalWithAi}
+                  disabled={isLoadingAi !== null}
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 text-xs font-extrabold shadow-md transition-all"
+                >
+                  <Sparkles size={14} />
+                  {isLoadingAi === 'edital'
+                    ? 'Lendo Regras do Edital...'
+                    : '🤖 Ler Regras do Edital e Aplicar na Correção'}
+                </button>
+              </div>
+            </div>
           )}
+
+          <div>
+            <label className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 block mb-1">
+              Regra / Critérios Ativos que a IA usará na correção (você também pode digitar ou alterar direto neste campo):
+            </label>
+            <input
+              type="text"
+              value={editalRule}
+              onChange={(e) => {
+                setEditalRule(e.target.value);
+                saveConfigToStorage({ editalRule: e.target.value });
+              }}
+              className="w-full px-3 py-2 rounded-xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-700 dark:text-slate-200"
+            />
+          </div>
         </div>
 
-        {/* Se for Questão Discursiva ou Peça Prática, permite vincular Disciplina e Tópico do Edital */}
-        {modality !== 'redacao' && subjectsList.length > 0 && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Disciplina do Edital
-              </label>
-              <select
-                value={selectedSubject}
-                onChange={(e) => {
-                  setSelectedSubject(e.target.value);
-                  setSelectedTopic('');
+        {/* Guia Estratégico Personalizado da IA (se já extraído do edital) */}
+        {editalAiGuidance && (
+          <div className="p-4 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/30 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-extrabold uppercase tracking-wider text-emerald-500 flex items-center gap-1.5">
+                <CheckCircle2 size={14} /> Guia Extraído do Seu Edital
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditalAiGuidance('');
+                  saveConfigToStorage({ editalAiGuidance: '' });
                 }}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-white"
+                className="text-[11px] text-slate-400 hover:text-rose-400"
               >
-                <option value="">Todas / Geral</option>
-                {subjectsList.map((s) => (
-                  <option key={s.subject} value={s.subject}>
-                    {s.subject}
-                  </option>
-                ))}
-              </select>
+                Ocultar
+              </button>
             </div>
-            <div>
-              <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-                Tópico Específico (Opcional)
-              </label>
-              <select
-                value={selectedTopic}
-                onChange={(e) => setSelectedTopic(e.target.value)}
-                className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-white"
-              >
-                <option value="">Qualquer tópico da disciplina</option>
-                {topicsForSelectedSubject.map((t) => (
-                  <option key={t} value={t}>
-                    {t}
-                  </option>
-                ))}
-              </select>
+            <div className="text-xs text-slate-700 dark:text-slate-200 whitespace-pre-wrap leading-relaxed">
+              {editalAiGuidance}
             </div>
           </div>
         )}
-
-        <div>
-          <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
-            Fórmula / Critérios de Correção Ativos (Você pode editar manualmente aqui a qualquer momento)
-          </label>
-          <input
-            type="text"
-            value={editalRule}
-            onChange={(e) => {
-              setEditalRule(e.target.value);
-              saveConfigToStorage({ editalRule: e.target.value });
-            }}
-            className="w-full px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-700 dark:text-slate-200"
-          />
-        </div>
       </div>
 
       {/* Passo 2: Tema da Redação / Enunciado + Pesquisa de Temas da Banca */}
-      <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-4 print:hidden">
+      <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-800 dark:text-slate-100 flex items-center gap-2">
-              <BookOpen size={16} className="text-emerald-500" /> Tema da Redação / Enunciado da Questão
+              <BookOpen size={16} className="text-emerald-500" /> Passo 2 • Tema da Redação e Textos Motivadores / Quesitos
             </h2>
             <p className="text-xs text-slate-500 dark:text-slate-400">
               Digite o seu tema (mesmo sem textos motivadores), pesquise temas já cobrados pela banca ou gere uma proposta completa
@@ -1493,7 +1863,7 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
           </div>
         </div>
 
-        {/* Lista de Temas Cobrados pela Banca (se pesquisado) */}
+        {/* Lista de Temas Cobrados pela Banca */}
         {previousThemesSuggestions && (
           <div className="p-4 rounded-xl bg-indigo-500/[0.05] border border-indigo-500/25 space-y-2">
             <div className="flex items-center justify-between">
@@ -1515,21 +1885,31 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
         )}
 
         <div className="space-y-3">
-          <input
-            type="text"
-            value={themeTitle}
-            onChange={(e) => setThemeTitle(e.target.value)}
-            placeholder="Título do Tema (ex: Os desafios da segurança viária e o enfrentamento aos crimes transfronteiriços no Brasil)..."
-            className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs font-semibold text-slate-800 dark:text-white"
-          />
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+              Título do Tema da Redação / Assunto Central
+            </label>
+            <input
+              type="text"
+              value={themeTitle}
+              onChange={(e) => setThemeTitle(e.target.value)}
+              placeholder="Ex: Os desafios da proteção de dados pessoais e segurança cibernética no serviço público..."
+              className="w-full px-3.5 py-2.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs font-semibold text-slate-800 dark:text-white"
+            />
+          </div>
 
-          <textarea
-            value={themePromptText}
-            onChange={(e) => setThemePromptText(e.target.value)}
-            rows={4}
-            placeholder="(Opcional) Cole ou gere aqui os Textos Motivadores e os Quesitos A, B e C da prova..."
-            className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-700 dark:text-slate-200 leading-relaxed"
-          />
+          <div>
+            <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1">
+              Textos Motivadores e Quesitos A, B, C da Prova (Opcional)
+            </label>
+            <textarea
+              value={themePromptText}
+              onChange={(e) => setThemePromptText(e.target.value)}
+              rows={4}
+              placeholder="(Opcional) Cole aqui os Textos Motivadores e os Quesitos A, B e C da proposta, ou clique em 'Gerar Proposta + Espelho com IA' acima..."
+              className="w-full p-3.5 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-700 dark:text-slate-200 leading-relaxed"
+            />
+          </div>
 
           {officialRubricText && (
             <div className="p-3.5 rounded-xl bg-amber-500/5 border border-amber-500/25">
@@ -1557,7 +1937,7 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
       </div>
 
       {/* Passo 3: Folha Oficial Numerada Linha a Linha + Cronômetro de Prova */}
-      <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-4 print:hidden">
+      <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-2">
             <button
@@ -1586,7 +1966,6 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
             </button>
           </div>
 
-          {/* Cronômetro de Prova Discursiva + Contador de Linhas */}
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
               <Clock size={14} className="text-emerald-500" />
@@ -1652,7 +2031,6 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
           </div>
         )}
 
-        {/* Editor Lado a Lado com Folha Oficial Numerada (1 a maxLines) */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           <div>
             <label className="text-[11px] font-bold uppercase tracking-wider text-slate-400 block mb-1.5">
@@ -1707,13 +2085,13 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
           >
             <Sparkles size={16} />
             {isLoadingAi === 'evaluate'
-              ? 'Corrigindo Linha a Linha e Comparando Evolução (aguarde ~15s)...'
-              : `⚡ Corrigir Agora no Padrão ${activeBancaProfile.label}`}
+              ? 'Corrigindo Linha a Linha e Comparando com Versão Nota Máxima (~15s)...'
+              : `⚡ Corrigir Agora (Valendo ${maxScore} pts • ${activeBancaProfile.label})`}
           </button>
         </div>
       </div>
 
-      {/* Laudo Oficial de Correção da IA (Painel Visual Estruturado) */}
+      {/* Laudo Oficial de Correção da IA */}
       {aiCorrectionReport && (
         <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border-2 border-emerald-500/40 shadow-lg animate-fadeIn">
           <VisualCorrectionReportCard
@@ -1721,6 +2099,8 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
             bancaLabel={activeBancaProfile.label}
             defaultMaxScore={maxScore}
             defaultLines={numberedLinesPreview.length || 29}
+            themeTitle={themeTitle}
+            studentEssay={studentEssay}
             copied={copiedId === 'current'}
             onCopyRaw={() => {
               navigator.clipboard.writeText(aiCorrectionReport);
@@ -1733,7 +2113,7 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
 
       {/* Histórico de Redações e Discursivas Corrigidas */}
       {historyList.length > 0 && (
-        <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-4 print:hidden">
+        <div className="bg-white dark:bg-[#131f33] p-6 rounded-2xl border border-slate-200 dark:border-[#1f304a] shadow-sm space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200 flex items-center gap-2">
               <History size={16} className="text-indigo-400" /> Histórico Completo de Textos Corrigidos ({historyList.length})
@@ -1809,6 +2189,8 @@ Responda EXCLUSIVAMENTE com um objeto JSON válido (sem blocos markdown \`\`\`js
                       bancaLabel={item.banca}
                       defaultMaxScore={itemParsed.maxScore || 100}
                       defaultLines={itemParsed.totalLines || 29}
+                      themeTitle={item.themeTitle}
+                      studentEssay={item.studentEssay}
                     />
                   </div>
                 </details>

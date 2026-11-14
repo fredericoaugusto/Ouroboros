@@ -98,7 +98,7 @@ const Sidebar = () => {
   return (
     <>
       <aside
-        className={`fixed inset-y-0 left-0 transform ${
+        className={`fixed inset-y-0 left-0 transform print:hidden ${
           isSidebarExpanded ? 'translate-x-0' : '-translate-x-full'
         } bg-white dark:bg-[#0c1421] text-slate-700 dark:text-slate-200 w-64 border-r border-slate-200 dark:border-[#1a293e] transition-transform duration-300 ease-in-out z-50 flex flex-col shadow-xl`}
       >

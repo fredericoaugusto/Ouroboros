@@ -614,18 +614,21 @@ export default function TopicCockpitModal({
                   Abrir Caderno em Nova Aba
                 </button>
 
-                <button
-                  type="button"
-                  onClick={() => {
-                    setStudioInitialTab('studio');
-                    setIsStudioModalOpen(true);
-                  }}
-                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all"
-                  title="Abrir Navegador e Estúdio Interativo em Tela Cheia (rolar página, selecionar texto p/ Notas, grifar texto e recortar prints)"
-                >
-                  <Sparkles size={14} />
-                  Abrir Navegador & Estúdio em Tela Cheia
-                </button>
+                {/* Botão do Navegador/Estúdio temporariamente desabilitado na interface (lógica preservada para futura integração/extensão) */}
+                {false && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStudioInitialTab('studio');
+                      setIsStudioModalOpen(true);
+                    }}
+                    className="w-full py-2.5 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all"
+                    title="Abrir Navegador e Estúdio Interativo em Tela Cheia (rolar página, selecionar texto p/ Notas, grifar texto e recortar prints)"
+                  >
+                    <Sparkles size={14} />
+                    Abrir Navegador & Estúdio em Tela Cheia
+                  </button>
+                )}
               </div>
             </div>
 

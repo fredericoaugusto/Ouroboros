@@ -246,6 +246,7 @@ export function computeTopicScore(
     simuladoRecords = extraArg?.simuladoRecords || [];
     hasSavedNotes = Boolean(extraArg?.hasNotes);
     isCompletedFlag = Boolean(extraArg?.isCompleted);
+    examDate = extraArg?.examDate || null;
 
     topic = {
       topic_text: extraArg?.topicText || topicRecords[0]?.topic || 'Tópico',
@@ -615,7 +616,9 @@ export function computeTopicScore(
     prev.qTotal += r.questions?.total || 0;
     prev.qCorrect += r.questions?.correct || 0;
     prev.mins += (r.studyTime || 0) / 60000;
-    if (r.category === 'questoes' || r.category === 'revisao' || (r.questions?.total || 0) > 0) {
+    // Ajuste Krono v3.2 Final: Recuperação ativa exige atividade efetiva de recordação medida (questões resolvidas > 0).
+    // Uma sessão de categoria 'revisao' com 0 questões não deve assumir qualidade de recuperação de 65% sem medição.
+    if ((r.questions?.total || 0) > 0) {
       prev.activeRecall = true;
     }
     dayGroups.set(key, prev);
@@ -647,16 +650,13 @@ export function computeTopicScore(
     const rRev =
       i === 0 ? 0.90 : Math.pow(1 + (19 / 81) * (deltaDays / Math.max(1.0, S)), -0.5);
 
-    if (day.activeRecall) {
-      // A. SESSÃO COM RECUPERAÇÃO ATIVA (Questões / Revisão Ativa)
+    if (day.activeRecall && day.qTotal > 0) {
+      // A. SESSÃO COM RECUPERAÇÃO ATIVA MEDIDA (Q_day > 0)
       // Qualidade da recuperação q_k in [0, 1] suavizada pelo tamanho da amostra do dia
-      const qK =
-        day.qTotal > 0
-          ? clamp((day.qCorrect + 2.0 * 0.65) / (day.qTotal + 2.0), 0.05, 1.0)
-          : clamp(0.55 + (mastery - 3) * 0.05, 0.45, 0.72);
+      const qK = clamp((day.qCorrect + 2.0 * 0.65) / (day.qTotal + 2.0), 0.05, 1.0);
 
       // Atualiza D_memory com base na recuperação observada (separada de D_topic!)
-      const credDay = day.qTotal > 0 ? 1 - Math.exp(-day.qTotal / 6) : 0.35;
+      const credDay = 1 - Math.exp(-day.qTotal / 6);
       dMemory = clamp(dMemory - 0.55 * credDay * (qK - 0.65), 1.0, 5.0);
 
       if (i === 0) {
@@ -741,7 +741,10 @@ export function computeTopicScore(
 
   let nextReviewDays = clamp(rawIntervalDays, 1, 60);
 
-  // Censura pelo Horizonte da Prova (Exam Date Censoring)
+  // Censura pelo Horizonte da Prova e Multiplicador de Reta Final B_exam (Krono v3.2 Final)
+  // Regra formal de B_exam:
+  // - Sem data de prova cadastrada ou faltando > 60 dias: B_exam = 1.00 (neutro)
+  // - Faltando 1 a 60 dias: B_exam = 1 + 0.25 * ((60 - D_exam) / 60), limitado ao intervalo [1.00, 1.25]
   let examUrgencyBoost = 1.0;
   if (examDate) {
     const examDt = parseLocalDate(examDate);
@@ -750,7 +753,7 @@ export function computeTopicScore(
       nextReviewDays = Math.max(1, daysToExam - 1);
     }
     if (daysToExam > 0 && daysToExam <= 60) {
-      examUrgencyBoost = 1 + 0.25 * ((60 - daysToExam) / 60);
+      examUrgencyBoost = clamp(1 + 0.25 * ((60 - daysToExam) / 60), 1.0, 1.25);
     }
   }
 
@@ -758,7 +761,7 @@ export function computeTopicScore(
   const nextReviewDate = formatYMD(nextDateObj);
 
   // 7. KRONO PRIORITY ENGINE v3.2: Separação entre UrgencyScore e PriorityROI
-  // A. UrgencyScore (0-100): Urgência temporal de revisão (queda de retenção + importância + atraso + proximidade da prova)
+  // A. UrgencyScore (0-100): Urgência temporal de revisão (queda de retenção + importância + atraso + B_exam)
   const overdueRatio = clamp(daysSinceLastStudy / Math.max(1, nextReviewDays), 0, 2);
   const urgencyScore = clamp(
     Math.round(
@@ -768,11 +771,17 @@ export function computeTopicScore(
     99
   );
 
-  // B. PriorityROI (0-100): Retorno esperado de pontos na prova por hora de estudo investida
-  // P(cobrança_i) ~ (importance / 5)^1.20
-  // Delta P(acerto_i) ~ margem de evolução esperada = (100 - currentScore) * (0.45 + 0.55 * (1 - confidenceFactor * 0.5))
-  // Horas necessárias ~ esforço estimado combinando D_topic e lacuna atual
-  const incidenceFactor = Math.pow(Math.max(1, importance) / 5, 1.20);
+  // B. PriorityROI (0-100): Estimativa heurística de retorno de estudo por hora investida
+  // - Se houver incidência histórica real da banca cadastrada no tópico (0..1), utiliza-a;
+  // - Caso contrário, utiliza a relevância do edital (importance / 5)^1.20 como aproximação operacional.
+  const realBancaIncidence =
+    typeof topic?.bancaIncidenceRate === 'number' && topic.bancaIncidenceRate > 0
+      ? clamp(topic.bancaIncidenceRate, 0.05, 1.0)
+      : null;
+  const incidenceFactor =
+    realBancaIncidence !== null
+      ? realBancaIncidence
+      : Math.pow(Math.max(1, importance) / 5, 1.20);
   const expectedAccuracyGain =
     (100 - currentScore) * (0.55 + 0.45 * (1 - confidenceFactor * 0.4));
   const estimatedHoursToImprove = clamp(

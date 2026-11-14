@@ -20,6 +20,13 @@ export interface ParagraphAnalysisItem {
   improvements: string;
 }
 
+export interface RewriteDifferenceItem {
+  aspect: string;
+  studentVersion: string;
+  modelVersion: string;
+  whyBetter: string;
+}
+
 export interface StructuredDiscursiveReport {
   contentScore: number; // NC
   maxScore: number;
@@ -38,6 +45,7 @@ export interface StructuredDiscursiveReport {
   paragraphAnalysis: ParagraphAnalysisItem[];
   actionPlan: string[];
   modelRewrite: string;
+  modelRewriteComparison: RewriteDifferenceItem[];
   rawText?: string;
 }
 
@@ -60,28 +68,165 @@ function parsePtNumber(val: any, fallback = 0): number {
 
 export function categorizeErrorText(text: string): string {
   const lower = text.toLowerCase();
-  if (lower.includes('vocabular') || lower.includes('coloquial') || lower.includes('imprecis') || lower.includes('semântic') || lower.includes('semantic')) {
+  if (
+    lower.includes('vocabular') ||
+    lower.includes('coloquial') ||
+    lower.includes('imprecis') ||
+    lower.includes('semântic') ||
+    lower.includes('semantic')
+  ) {
     return 'Propriedade Vocabular';
   }
-  if (lower.includes('vírgula') || lower.includes('virgula') || lower.includes('pontuação') || lower.includes('pontuacao')) {
+  if (
+    lower.includes('vírgula') ||
+    lower.includes('virgula') ||
+    lower.includes('pontuação') ||
+    lower.includes('pontuacao')
+  ) {
     return 'Pontuação / Vírgula';
   }
-  if (lower.includes('regência') || lower.includes('regencia') || lower.includes('crase') || lower.includes('preposição')) {
+  if (
+    lower.includes('regência') ||
+    lower.includes('regencia') ||
+    lower.includes('crase') ||
+    lower.includes('preposição')
+  ) {
     return 'Regência & Crase';
   }
-  if (lower.includes('concordância') || lower.includes('concordancia') || lower.includes('plural') || lower.includes('singular')) {
+  if (
+    lower.includes('concordância') ||
+    lower.includes('concordancia') ||
+    lower.includes('plural') ||
+    lower.includes('singular')
+  ) {
     return 'Concordância';
   }
-  if (lower.includes('repeti') || lower.includes('coesão') || lower.includes('coesao') || lower.includes('conectiv')) {
+  if (
+    lower.includes('repeti') ||
+    lower.includes('coesão') ||
+    lower.includes('coesao') ||
+    lower.includes('conectiv')
+  ) {
     return 'Coesão & Repetição';
   }
-  if (lower.includes('ortograf') || lower.includes('acento') || lower.includes('acentuação') || lower.includes('grafia') || lower.includes('hífen')) {
+  if (
+    lower.includes('ortograf') ||
+    lower.includes('acento') ||
+    lower.includes('acentuação') ||
+    lower.includes('grafia') ||
+    lower.includes('hífen')
+  ) {
     return 'Ortografia & Acentuação';
   }
-  if (lower.includes('paralelismo') || lower.includes('sintax') || lower.includes('morfossintax') || lower.includes('truncad') || lower.includes('nexo')) {
+  if (
+    lower.includes('paralelismo') ||
+    lower.includes('sintax') ||
+    lower.includes('morfossintax') ||
+    lower.includes('truncad') ||
+    lower.includes('nexo')
+  ) {
     return 'Morfossintaxe & Nexo';
   }
   return 'Norma Culta / Gramática';
+}
+
+/**
+ * Remove qualquer monólogo interno acidental da IA ("Não há erro...", "Reavaliando:", "Mas a estrutura exige lineErrors...")
+ * e descarta falsos apontamentos onde o trecho original é idêntico à correção.
+ */
+function sanitizeLineErrors(rawErrors: any[]): LineErrorItem[] {
+  if (!Array.isArray(rawErrors)) return [];
+  const cleanedList: LineErrorItem[] = [];
+
+  for (const e of rawErrors) {
+    const orig = String(e?.original || '').trim();
+    const corr = String(e?.correction || '').trim();
+    let expl = String(e?.explanation || '').trim();
+
+    // Detecta se a IA despejou rascunho de pensamento ("Mas a estrutura exige lineErrors", "Reavaliando:", "Não há erro")
+    const hasAiMonologue =
+      /n[ãa]o h[áa] erro|reavaliando:|mas a estrutura (exige|pede) lineerrors|vou considerar que n[ãa]o h[áa] erros|vou gerar o json final/i.test(
+        expl
+      );
+
+    if (hasAiMonologue) {
+      // Se o original e a correção forem iguais e a IA disse que não há erro, descarta o falso apontamento
+      if (orig.toLowerCase() === corr.toLowerCase()) {
+        continue;
+      }
+      // Caso contrário, corta tudo a partir do rascunho de pensamento
+      expl = expl
+        .split(/reavaliando:|mas a estrutura|portanto,\s*ne\s*=|vou considerar/i)[0]
+        .replace(/^n[ãa]o h[áa] erro\.?\s*/i, '')
+        .trim();
+    }
+
+    if (!orig && !corr) continue;
+    if (orig.toLowerCase() === corr.toLowerCase() && (!expl || /est[áa] corret[oa]/i.test(expl))) {
+      continue;
+    }
+
+    // Limita explicações excessivamente longas a no máximo 280 caracteres
+    if (expl.length > 320) {
+      expl = expl.slice(0, 317).trim() + '...';
+    }
+
+    cleanedList.push({
+      line: String(e?.line || '—'),
+      category: String(e?.category || categorizeErrorText(expl)),
+      original: orig,
+      correction: corr,
+      explanation: expl || 'Ajuste recomendado para maior precisão gramatical e vocabular.',
+    });
+  }
+
+  return cleanedList;
+}
+
+function buildFallbackComparison(
+  paragraphAnalysis: ParagraphAnalysisItem[],
+  criteria: CriterionEvaluation[],
+  lineErrors: LineErrorItem[]
+): RewriteDifferenceItem[] {
+  const diffs: RewriteDifferenceItem[] = [];
+
+  for (const p of paragraphAnalysis) {
+    if (p.improvements && p.improvements.trim().length > 10) {
+      diffs.push({
+        aspect: p.paragraph,
+        studentVersion:
+          p.strengths || 'Abordagem inicial do argumento, porém com menor densidade técnica ou exemplos menos detalhados.',
+        modelVersion: p.improvements,
+        whyBetter:
+          'Conecta diretamente o argumento ao comando do espelho da banca com terminologia técnica e subsunção explícita.',
+      });
+    }
+  }
+
+  if (diffs.length === 0 && criteria.length > 0) {
+    for (const c of criteria) {
+      if (c.deduction > 0 && c.feedback) {
+        diffs.push({
+          aspect: c.title,
+          studentVersion: `Perdeu ${c.deduction.toFixed(2).replace('.', ',')} pts por abordar de forma parcial ou sem o aprofundamento exigido.`,
+          modelVersion: c.feedback,
+          whyBetter: 'Garante a pontuação máxima do quesito no espelho oficial de correção.',
+        });
+      }
+    }
+  }
+
+  if (lineErrors.length > 0 && diffs.length < 4) {
+    const firstErr = lineErrors[0];
+    diffs.push({
+      aspect: `Norma Culta & Precisão Vocabular (${firstErr.line})`,
+      studentVersion: `"${firstErr.original}"`,
+      modelVersion: `"${firstErr.correction}"`,
+      whyBetter: firstErr.explanation,
+    });
+  }
+
+  return diffs;
 }
 
 /**
@@ -106,12 +251,54 @@ export function parseDiscursiveReport(
     try {
       const parsed = JSON.parse(jsonCandidate);
       if (parsed && (parsed.finalNetScore !== undefined || parsed.criteria || parsed.lineErrors)) {
+        const sanitizedErrors = sanitizeLineErrors(parsed.lineErrors || []);
         const maxS = parsePtNumber(parsed.maxScore, defaultMaxScore);
         const nc = parsePtNumber(parsed.contentScore, 0);
         const tl = parsePtNumber(parsed.totalLines, defaultLines);
-        const ne = parsePtNumber(parsed.grammarErrorsCount, (parsed.lineErrors || []).length);
-        const ded = Math.abs(parsePtNumber(parsed.grammarDeduction, 0));
-        const nf = parsePtNumber(parsed.finalNetScore, Math.max(0, nc - ded));
+        const ne =
+          parsed.lineErrors && parsed.lineErrors.length > 0 && sanitizedErrors.length === 0
+            ? 0
+            : parsePtNumber(parsed.grammarErrorsCount, sanitizedErrors.length);
+        const ded = ne === 0 ? 0 : Math.abs(parsePtNumber(parsed.grammarDeduction, 0));
+        const nf =
+          ne === 0
+            ? nc
+            : parsePtNumber(parsed.finalNetScore, Math.max(0, nc - ded));
+
+        const criteria: CriterionEvaluation[] = Array.isArray(parsed.criteria)
+          ? parsed.criteria.map((c: any) => {
+              const obt = parsePtNumber(c.obtained, 0);
+              const mx = parsePtNumber(c.max, 25);
+              return {
+                title: String(c.title || 'Quesito Avaliado'),
+                obtained: obt,
+                max: mx,
+                deduction: Math.max(0, Number((mx - obt).toFixed(2))),
+                feedback: String(c.feedback || ''),
+              };
+            })
+          : [];
+
+        const paragraphAnalysis: ParagraphAnalysisItem[] = Array.isArray(parsed.paragraphAnalysis)
+          ? parsed.paragraphAnalysis.map((p: any) => ({
+              paragraph: String(p.paragraph || 'Parágrafo'),
+              strengths: String(p.strengths || ''),
+              improvements: String(p.improvements || ''),
+            }))
+          : [];
+
+        const explicitComparison: RewriteDifferenceItem[] = Array.isArray(
+          parsed.modelRewriteComparison
+        )
+          ? parsed.modelRewriteComparison
+              .map((d: any) => ({
+                aspect: String(d.aspect || 'Ponto de Melhoria'),
+                studentVersion: String(d.studentVersion || ''),
+                modelVersion: String(d.modelVersion || ''),
+                whyBetter: String(d.whyBetter || ''),
+              }))
+              .filter((d: RewriteDifferenceItem) => d.studentVersion || d.modelVersion)
+          : [];
 
         return {
           contentScore: nc,
@@ -121,8 +308,10 @@ export function parseDiscursiveReport(
           grammarDeduction: ded,
           finalNetScore: nf,
           formulaSummary:
-            parsed.formulaSummary ||
-            `NF = ${nc.toFixed(2).replace('.', ',')} - ${ded.toFixed(2).replace('.', ',')} = ${nf.toFixed(2).replace('.', ',')}`,
+            ne === 0
+              ? `NF = ${nc.toFixed(2).replace('.', ',')} - 0,00 (0 erros em ${tl} linhas) = ${nf.toFixed(2).replace('.', ',')} pontos`
+              : parsed.formulaSummary ||
+                `NF = ${nc.toFixed(2).replace('.', ',')} - ${ded.toFixed(2).replace('.', ',')} = ${nf.toFixed(2).replace('.', ',')}`,
           historicalComparison: parsed.historicalComparison
             ? {
                 improvedPoints: Array.isArray(parsed.historicalComparison.improvedPoints)
@@ -134,37 +323,15 @@ export function parseDiscursiveReport(
                 summary: parsed.historicalComparison.summary || '',
               }
             : undefined,
-          criteria: Array.isArray(parsed.criteria)
-            ? parsed.criteria.map((c: any) => {
-                const obt = parsePtNumber(c.obtained, 0);
-                const mx = parsePtNumber(c.max, 25);
-                return {
-                  title: String(c.title || 'Quesito Avaliado'),
-                  obtained: obt,
-                  max: mx,
-                  deduction: Math.max(0, Number((mx - obt).toFixed(2))),
-                  feedback: String(c.feedback || ''),
-                };
-              })
-            : [],
-          lineErrors: Array.isArray(parsed.lineErrors)
-            ? parsed.lineErrors.map((e: any) => ({
-                line: String(e.line || '—'),
-                category: String(e.category || categorizeErrorText(String(e.explanation || ''))),
-                original: String(e.original || ''),
-                correction: String(e.correction || ''),
-                explanation: String(e.explanation || ''),
-              }))
-            : [],
-          paragraphAnalysis: Array.isArray(parsed.paragraphAnalysis)
-            ? parsed.paragraphAnalysis.map((p: any) => ({
-                paragraph: String(p.paragraph || 'Parágrafo'),
-                strengths: String(p.strengths || ''),
-                improvements: String(p.improvements || ''),
-              }))
-            : [],
+          criteria,
+          lineErrors: sanitizedErrors,
+          paragraphAnalysis,
           actionPlan: Array.isArray(parsed.actionPlan) ? parsed.actionPlan.map(String) : [],
           modelRewrite: String(parsed.modelRewrite || ''),
+          modelRewriteComparison:
+            explicitComparison.length > 0
+              ? explicitComparison
+              : buildFallbackComparison(paragraphAnalysis, criteria, sanitizedErrors),
           rawText: trimmed,
         };
       }
@@ -181,14 +348,15 @@ export function parseDiscursiveReport(
     .replace(/\\frac\{([^}]+)\}\{([^}]+)\}/g, '($1 / $2)')
     .replace(/\\approx/g, '≈');
 
-  // Extrai NC, TL, NE, Desconto e NF
   const ncMatch =
     cleanMd.match(/Nota de Conte[úu]do\s*\(NC\)[^0-9]*(\d+[.,]?\d*)\s*\/\s*(\d+[.,]?\d*)/i) ||
     cleanMd.match(/NC\s*=\s*(\d+[.,]?\d*)/i);
   const contentScore = ncMatch ? parsePtNumber(ncMatch[1], 85) : 85;
-  const maxScore = ncMatch && ncMatch[2] ? parsePtNumber(ncMatch[2], defaultMaxScore) : defaultMaxScore;
+  const maxScore =
+    ncMatch && ncMatch[2] ? parsePtNumber(ncMatch[2], defaultMaxScore) : defaultMaxScore;
 
-  const tlMatch = cleanMd.match(/\(TL\)[^0-9]*(\d+)/i) || cleanMd.match(/(\d+)\s*linhas efetivamente/i);
+  const tlMatch =
+    cleanMd.match(/\(TL\)[^0-9]*(\d+)/i) || cleanMd.match(/(\d+)\s*linhas efetivamente/i);
   const totalLines = tlMatch ? parsePtNumber(tlMatch[1], defaultLines) : defaultLines;
 
   const neMatch = cleanMd.match(/\(NE\)[^0-9]*(\d+)/i) || cleanMd.match(/(\d+)\s*erros/i);
@@ -197,7 +365,6 @@ export function parseDiscursiveReport(
     cleanMd.match(/NOTA FINAL L[ÍI]QUIDA\s*\(NF\)[^0-9]*(\d+[.,]?\d*)/i) ||
     cleanMd.match(/NF\s*=\s*(\d+[.,]?\d*)\s*pontos/i);
 
-  // Extrai Quesitos da tabela ou listas markdown
   const criteria: CriterionEvaluation[] = [];
   const tableLines = cleanMd.split('\n');
   for (const line of tableLines) {
@@ -224,9 +391,9 @@ export function parseDiscursiveReport(
     }
   }
 
-  // Extrai Erros Linha a Linha
   const lineErrors: LineErrorItem[] = [];
-  const lineErrorRegex = /\*\*Linha\s*(\d+)\*\*\s*\|\s*`?([^`|]+)`?\s*(?:→|->)\s*\*\*`?([^`*|]+)`?\*\*\s*\|\s*(.+)/gi;
+  const lineErrorRegex =
+    /\*\*Linha\s*(\d+)\*\*\s*\|\s*`?([^`|]+)`?\s*(?:→|->)\s*\*\*`?([^`*|]+)`?\*\*\s*\|\s*(.+)/gi;
   let m: RegExpExecArray | null;
   while ((m = lineErrorRegex.exec(cleanMd)) !== null) {
     const explanation = m[4].replace(/\*\*/g, '').trim();
@@ -239,14 +406,16 @@ export function parseDiscursiveReport(
     });
   }
 
-  const grammarErrorsCount = neMatch ? parsePtNumber(neMatch[1], lineErrors.length) : lineErrors.length;
+  const sanitizedMdErrors = sanitizeLineErrors(lineErrors);
+  const grammarErrorsCount = neMatch
+    ? parsePtNumber(neMatch[1], sanitizedMdErrors.length)
+    : sanitizedMdErrors.length;
   const computedDeduction =
     totalLines > 0 ? Number(((2 * grammarErrorsCount) / totalLines).toFixed(2)) : 0;
   const finalNetScore = nfMatch
     ? parsePtNumber(nfMatch[1], Math.max(0, contentScore - computedDeduction))
     : Math.max(0, Number((contentScore - computedDeduction).toFixed(2)));
 
-  // Extrai Análise por Parágrafo
   const paragraphAnalysis: ParagraphAnalysisItem[] = [];
   const paraBlocks = cleanMd.split(/###\s*\*\*(\d+º\s*Par[áa]grafo[^*]*)\*\*/i);
   if (paraBlocks.length > 1) {
@@ -265,7 +434,6 @@ export function parseDiscursiveReport(
     }
   }
 
-  // Extrai Reescrita Modelo
   let modelRewrite = '';
   const rewriteSplit = cleanMd.split(/VERS[ÃA]O NOTA M[ÁA]XIMA[^\n]*/i);
   if (rewriteSplit.length > 1) {
@@ -281,11 +449,12 @@ export function parseDiscursiveReport(
     maxScore,
     totalLines,
     grammarErrorsCount,
-    grammarDeduction: Number(Math.max(0, contentScore - finalNetScore).toFixed(2)) || computedDeduction,
+    grammarDeduction:
+      Number(Math.max(0, contentScore - finalNetScore).toFixed(2)) || computedDeduction,
     finalNetScore,
     formulaSummary: `NF = ${contentScore.toFixed(2).replace('.', ',')} - (2 × ${grammarErrorsCount} / ${totalLines}) = ${finalNetScore.toFixed(2).replace('.', ',')}`,
     criteria,
-    lineErrors,
+    lineErrors: sanitizedMdErrors,
     paragraphAnalysis,
     actionPlan: [
       'Substituir termos coloquiais ou vagos por terminologia técnica e objetiva da disciplina.',
@@ -293,6 +462,11 @@ export function parseDiscursiveReport(
       'Revisar pontuação (especialmente vírgulas em adjuntos deslocados) e evitar repetição de palavras no mesmo parágrafo.',
     ],
     modelRewrite,
+    modelRewriteComparison: buildFallbackComparison(
+      paragraphAnalysis,
+      criteria,
+      sanitizedMdErrors
+    ),
     rawText: cleanMd,
   };
 }
@@ -323,10 +497,12 @@ export function buildHistoricalIntelligence(
     };
   }
 
-  // Do mais antigo para o mais recente para o gráfico de evolução
   const chronological = [...historyList].reverse().map((item, idx) => {
     const parsed = parseDiscursiveReport(item.correctionReport);
-    const pct = parsed.maxScore > 0 ? Math.round((parsed.finalNetScore / parsed.maxScore) * 100) : parsed.finalNetScore;
+    const pct =
+      parsed.maxScore > 0
+        ? Math.round((parsed.finalNetScore / parsed.maxScore) * 100)
+        : parsed.finalNetScore;
     return {
       index: idx + 1,
       id: item.id,
@@ -347,7 +523,6 @@ export function buildHistoricalIntelligence(
   const scoreDelta =
     scores.length >= 2 ? Number((scores[scores.length - 1] - scores[0]).toFixed(2)) : 0;
 
-  // Contabiliza frequência de categorias de erro em todas as redações
   const catCounter: Record<string, number> = {};
   let totalCategorizedErrors = 0;
 
@@ -357,12 +532,17 @@ export function buildHistoricalIntelligence(
       catCounter[cat] = (catCounter[cat] || 0) + 1;
       totalCategorizedErrors++;
     }
-    // Verifica também quedas nos quesitos de conteúdo
     for (const crit of item.parsed.criteria) {
       if (crit.deduction > 0) {
         const lower = (crit.title + ' ' + crit.feedback).toLowerCase();
-        if (lower.includes('exemplo') || lower.includes('aprofund') || lower.includes('superficial') || lower.includes('nexo')) {
-          catCounter['Repertório / Nexo Argumentativo'] = (catCounter['Repertório / Nexo Argumentativo'] || 0) + 1;
+        if (
+          lower.includes('exemplo') ||
+          lower.includes('aprofund') ||
+          lower.includes('superficial') ||
+          lower.includes('nexo')
+        ) {
+          catCounter['Repertório / Nexo Argumentativo'] =
+            (catCounter['Repertório / Nexo Argumentativo'] || 0) + 1;
           totalCategorizedErrors++;
         }
       }
@@ -371,7 +551,7 @@ export function buildHistoricalIntelligence(
 
   const ADVICE_MAP: Record<string, string> = {
     'Propriedade Vocabular':
-      'Evite expressões coloquiais ou hiperbólicas ("de suma importância", " patamar astronômico"). Prefira verbos e substantivos técnicos diretos.',
+      'Evite expressões coloquiais ou hiperbólicas ("de suma importância", "patamar astronômico"). Prefira verbos e substantivos técnicos diretos.',
     'Pontuação / Vírgula':
       'Atenção redobrada às vírgulas obrigatórias após locuções adverbiais deslocadas e antes de orações coordenadas adversativas.',
     'Regência & Crase':
@@ -394,13 +574,13 @@ export function buildHistoricalIntelligence(
     .map(([category, count]) => ({
       category,
       count,
-      percentage: totalCategorizedErrors > 0 ? Math.round((count / totalCategorizedErrors) * 100) : 0,
+      percentage:
+        totalCategorizedErrors > 0 ? Math.round((count / totalCategorizedErrors) * 100) : 0,
       advice:
         ADVICE_MAP[category] ||
         'Revise este aspecto na leitura final antes de passar o rascunho a limpo.',
     }));
 
-  // Gera o resumo para injetar no prompt da próxima correção
   const recentSlice = chronological.slice(-4);
   const recentScoresSummary = recentSlice
     .map(

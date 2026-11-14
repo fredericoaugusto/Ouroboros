@@ -20,6 +20,7 @@ import {
   ArrowRight,
 } from 'lucide-react';
 import { useNotification } from '../context/NotificationContext';
+import { useSidebar } from '../context/SidebarContext';
 
 interface QuestionStudioModalProps {
   isOpen: boolean;
@@ -51,9 +52,10 @@ export default function QuestionStudioModal({
   onAppendToNotes,
 }: QuestionStudioModalProps) {
   const { showNotification } = useNotification();
+  const { setSidebarExpanded } = useSidebar();
 
-  // Modo de Fonte: Navegador Web Interativo | Leitor de Texto/Questões | Espelhamento de Aba
-  const [sourceMode, setSourceMode] = useState<SourceMode>('web');
+  // Modo de Fonte: Leitor de Texto/Prints (padrão confiável) | Leitor Web de Leis Públicas
+  const [sourceMode, setSourceMode] = useState<SourceMode>('reader');
   const [urlInput, setUrlInput] = useState<string>(
     notebookUrl || 'https://www.planalto.gov.br/ccivil_03/constituicao/constituicao.htm'
   );
@@ -93,9 +95,10 @@ export default function QuestionStudioModal({
     'Questão / Jurisprudência' | 'Bizu / Comentário' | 'Pegadinha de Banca' | 'Lei Seca Grifada'
   >('Bizu / Comentário');
 
-  // Inicializa URL ao abrir
+  // Inicializa URL ao abrir e MINIMIZA AUTOMATICAMENTE A SIDEBAR LATERAL
   useEffect(() => {
     if (isOpen) {
+      setSidebarExpanded(false);
       const initial = notebookUrl?.trim()
         ? notebookUrl.startsWith('http')
           ? notebookUrl
@@ -105,7 +108,7 @@ export default function QuestionStudioModal({
       setActiveProxyUrl(`/api/browser-proxy?url=${encodeURIComponent(initial)}`);
       setTool('interact');
     }
-  }, [isOpen, notebookUrl]);
+  }, [isOpen, notebookUrl, setSidebarExpanded]);
 
   // Escuta mensagens vindas de dentro do iframe do navegador interno (Seleção de Texto e Navegação de Links)
   useEffect(() => {
@@ -227,19 +230,11 @@ export default function QuestionStudioModal({
   useEffect(() => {
     if (!isOpen) return;
     const handlePaste = (e: ClipboardEvent) => {
-      const activeEl = document.activeElement;
-      if (
-        activeEl &&
-        (activeEl.tagName === 'TEXTAREA' ||
-          activeEl.tagName === 'INPUT' ||
-          (activeEl as HTMLElement).isContentEditable)
-      ) {
-        return;
-      }
       const items = e.clipboardData?.items;
       if (!items) return;
       for (const item of Array.from(items)) {
         if (item.type.startsWith('image/')) {
+          e.preventDefault();
           const file = item.getAsFile();
           if (file) {
             const reader = new FileReader();
@@ -247,12 +242,13 @@ export default function QuestionStudioModal({
               const dataUrl = ev.target?.result as string;
               if (dataUrl) {
                 setPastedBgImage(dataUrl);
-                setSourceMode('mirror');
+                setSourceMode('reader');
                 showNotification('Print colado em tela cheia! Use o Marca-Texto Reto ou Recortar.', 'success');
               }
             };
             reader.readAsDataURL(file);
           }
+          return;
         }
       }
     };
@@ -465,22 +461,6 @@ export default function QuestionStudioModal({
             <button
               type="button"
               onClick={() => {
-                setSourceMode('web');
-                setTool('interact');
-              }}
-              className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                sourceMode === 'web'
-                  ? 'bg-emerald-500 text-slate-950 shadow-sm'
-                  : 'text-slate-400 hover:text-white'
-              }`}
-              title="Navegar na página, rolar, clicar e selecionar texto direto para as Notas"
-            >
-              <Globe size={13} />
-              Navegador Web
-            </button>
-            <button
-              type="button"
-              onClick={() => {
                 setSourceMode('reader');
                 setTool('interact');
               }}
@@ -489,40 +469,60 @@ export default function QuestionStudioModal({
                   ? 'bg-emerald-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="Cole qualquer questão, PDF ou texto para ler, grifar texto real e enviar seleção para as Notas"
+              title="Cole qualquer questão, PDF, texto ou print (Ctrl+V) para grifar e enviar seleção para as Notas"
             >
               <FileText size={13} />
-              Leitor & Grifo de Texto
+              Leitor & Quadro de Prints (Ctrl+V)
             </button>
             <button
               type="button"
-              onClick={() => setSourceMode('mirror')}
+              onClick={() => {
+                setSourceMode('web');
+                setTool('interact');
+              }}
               className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition-all ${
-                sourceMode === 'mirror'
+                sourceMode === 'web'
                   ? 'bg-emerald-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="Espelhar aba externa com login ou colar print"
+              title="Abrir páginas públicas de Lei Seca (Planalto) ou lançar janela Pop-out Lado a Lado para sites com login"
             >
-              <MonitorPlay size={13} />
-              Espelhar Aba / Print
+              <Globe size={13} />
+              Lei Seca (Planalto) & Pop-out
             </button>
           </div>
 
           {sourceMode === 'web' && (
-            <form onSubmit={handleLoadUrl} className="flex items-center gap-1.5 flex-1 max-w-xl">
+            <form onSubmit={handleLoadUrl} className="flex items-center gap-1.5 flex-1 max-w-2xl">
               <input
                 type="text"
                 value={urlInput}
                 onChange={(e) => setUrlInput(e.target.value)}
-                placeholder="Digite qualquer URL (Planalto, Wikipedia, Caderno, Site)..."
+                placeholder="URL de Lei Seca (Planalto) ou link do seu caderno (QConcursos / Caveira)..."
                 className="flex-1 px-3 py-1.5 rounded-xl bg-[#090e1a] border border-slate-700 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
               />
               <button
                 type="submit"
-                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1"
+                className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold flex items-center gap-1 shrink-0"
               >
-                Ir <ArrowRight size={12} />
+                Abrir Aqui <ArrowRight size={12} />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const w = Math.min(1100, Math.round(window.screen.availWidth * 0.55));
+                  const h = Math.round(window.screen.availHeight * 0.9);
+                  window.open(
+                    urlInput,
+                    'krono_side_study',
+                    `width=${w},height=${h},left=0,top=40,resizable=yes,scrollbars=yes`
+                  );
+                }}
+                className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center gap-1 shrink-0"
+                title="Abre o QConcursos, Caveira ou TEC em uma janela limpa lado a lado usando seu login real sem bloqueio da Cloudflare"
+              >
+                <ExternalLink size={12} />
+                Janela Pop-out (c/ Login)
               </button>
               <button
                 type="button"
@@ -531,14 +531,6 @@ export default function QuestionStudioModal({
                 title="Recarregar página"
               >
                 <RotateCcw size={13} />
-              </button>
-              <button
-                type="button"
-                onClick={() => window.open(urlInput, '_blank', 'noopener,noreferrer')}
-                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300"
-                title="Abrir em nova aba externa"
-              >
-                <ExternalLink size={13} />
               </button>
             </form>
           )}
@@ -724,91 +716,48 @@ export default function QuestionStudioModal({
                 >
                   📌 Enviar Texto Selecionado para as Notas
                 </button>
+                {pastedBgImage && (
+                  <button
+                    type="button"
+                    onClick={() => setPastedBgImage(null)}
+                    className="px-2.5 py-1 rounded-lg bg-rose-500/20 text-rose-400 text-xs font-bold"
+                  >
+                    ✕ Remover Print Colado
+                  </button>
+                )}
               </div>
             </div>
 
-            <div
-              ref={readerContainerRef}
-              contentEditable
-              suppressContentEditableWarning
-              onMouseUp={() => {
-                const sel = window.getSelection();
-                const txt = sel ? sel.toString().trim() : '';
-                if (txt) setSelectedReaderText(txt);
-              }}
-              onInput={(e) => setReaderHtml((e.target as HTMLDivElement).innerHTML)}
-              className="flex-1 w-full p-8 overflow-y-auto text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-relaxed focus:outline-none max-w-5xl mx-auto"
-              style={{ minHeight: '100%' }}
-              dangerouslySetInnerHTML={
-                readerHtml
-                  ? undefined
-                  : {
-                      __html: `<p style="color:#64748b;">Cole aqui (<kbd>Ctrl+V</kbd>) o enunciado da questão, comentários de professores ou artigos de lei seca para ler em tela cheia, grifar com marca-texto real e enviar trechos selecionados direto para as suas Notas de <strong>${topicName}</strong>...</p>`,
-                    }
-              }
-            />
-          </div>
-        )}
-
-        {/* MODO 3: Espelhamento de Aba ou Print Colado */}
-        {sourceMode === 'mirror' && (
-          <div className="w-full h-full relative flex items-center justify-center bg-[#050911]">
-            <video
-              ref={videoRef}
-              className={`w-full h-full object-contain ${isMirroring ? 'block' : 'hidden'}`}
-              playsInline
-              muted
-            />
-            {!isMirroring && pastedBgImage && (
-              <img
-                id="studio-pasted-bg"
-                src={pastedBgImage}
-                alt="Print colado"
-                className="w-full h-full object-contain select-none pointer-events-none"
-              />
-            )}
-            {!isMirroring && !pastedBgImage && (
-              <div className="max-w-lg text-center p-6 space-y-4">
-                <MonitorPlay size={42} className="text-indigo-400 mx-auto" />
-                <h3 className="text-base font-bold text-white">
-                  Espelhar Aba Externa ou Colar Print (<kbd>Ctrl+V</kbd>)
-                </h3>
-                <p className="text-xs text-slate-400 leading-relaxed">
-                  Para sites abertos em outra aba com sessão privada, clique abaixo para espelhar em tela cheia ou dê <kbd className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-200">Ctrl+V</kbd> em qualquer print para grifar com o Marca-Texto Reto e recortar para as Notas.
-                </p>
-                <div className="flex justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleStartMirroring}
-                    className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold"
-                  >
-                    🖥️ Escolher Aba para Espelhar
-                  </button>
-                  {notebookUrl && (
-                    <button
-                      type="button"
-                      onClick={() =>
-                        window.open(
-                          notebookUrl.startsWith('http') ? notebookUrl : `https://${notebookUrl}`,
-                          '_blank'
-                        )
-                      }
-                      className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold"
-                    >
-                      🔗 Abrir Caderno em Nova Aba
-                    </button>
-                  )}
-                </div>
+            {pastedBgImage ? (
+              <div className="flex-1 w-full relative flex items-center justify-center bg-[#050911] overflow-hidden">
+                <img
+                  id="studio-pasted-bg"
+                  src={pastedBgImage}
+                  alt="Print colado"
+                  className="w-full h-full object-contain select-none pointer-events-none"
+                />
               </div>
-            )}
-            {isMirroring && (
-              <button
-                type="button"
-                onClick={stopMirroring}
-                className="absolute top-3 right-3 z-30 px-3 py-1.5 rounded-xl bg-rose-500 text-white text-xs font-bold flex items-center gap-1.5 shadow-lg"
-              >
-                <StopCircle size={14} /> Parar Espelhamento
-              </button>
+            ) : (
+              <div
+                ref={readerContainerRef}
+                contentEditable
+                suppressContentEditableWarning
+                onMouseUp={() => {
+                  const sel = window.getSelection();
+                  const txt = sel ? sel.toString().trim() : '';
+                  if (txt) setSelectedReaderText(txt);
+                }}
+                onInput={(e) => setReaderHtml((e.target as HTMLDivElement).innerHTML)}
+                className="flex-1 w-full p-8 overflow-y-auto text-slate-800 dark:text-slate-100 text-sm sm:text-base leading-relaxed focus:outline-none max-w-5xl mx-auto"
+                style={{ minHeight: '100%' }}
+                dangerouslySetInnerHTML={
+                  readerHtml
+                    ? undefined
+                    : {
+                        __html: `<p style="color:#64748b;">Cole aqui (<kbd>Ctrl+V</kbd>) qualquer <strong>texto de questão / lei seca</strong> para grifar e enviar trechos para as Notas, ou dê <kbd>Ctrl+V</kbd> em um <strong>Print de Tela</strong> para rabiscar e recortar direto para as Notas de <strong>${topicName}</strong>...</p>`,
+                      }
+                }
+              />
             )}
           </div>
         )}
