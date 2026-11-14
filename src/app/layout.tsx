@@ -7,6 +7,7 @@ import { NotificationProvider } from "../context/NotificationContext";
 import Sidebar from "../components/Sidebar";
 import MainContentWrapper from "../components/MainContentWrapper";
 import ClientLayoutWrapper from "@/components/ClientLayoutWrapper";
+import ImpersonationBanner from "@/components/ImpersonationBanner";
 import { Providers } from "./providers";
 import "./globals.css";
 
@@ -35,6 +36,7 @@ export default function RootLayout({
                 <DataProvider>
                   <Sidebar />
                   <MainContentWrapper>
+                    <ImpersonationBanner />
                     <ClientLayoutWrapper>{children}</ClientLayoutWrapper>
                   </MainContentWrapper>
                 </DataProvider>

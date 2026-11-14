@@ -37,10 +37,13 @@ export default function RegisterPage() {
       const data = await response.json();
 
       if (response.ok) {
-        setSuccess('Conta criada com sucesso! Redirecionando para o login...');
+        setSuccess(
+          data.message ||
+            'Cadastro realizado! Aguarde a aprovação de um administrador para acessar.'
+        );
         setTimeout(() => {
           router.push('/login');
-        }, 1500);
+        }, 3000);
       } else {
         setError(data.message || 'Erro ao registrar. Tente novamente.');
       }

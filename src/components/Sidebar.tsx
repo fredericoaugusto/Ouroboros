@@ -37,7 +37,7 @@ const Sidebar = () => {
     setIsImportModalOpen(false);
   }, [pathname]);
 
-  if (['/login', '/register'].includes(pathname)) {
+  if (['/login', '/register'].includes(pathname) || pathname.startsWith('/admin')) {
     return null;
   }
 

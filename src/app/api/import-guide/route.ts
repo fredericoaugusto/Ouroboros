@@ -1,11 +1,10 @@
 import { NextResponse } from 'next/server';
 import puppeteer from 'puppeteer';
-import { getServerSession } from 'next-auth/next';
-import { authOptions } from '../auth/[...nextauth]/route';
-import fs from 'fs/promises';
-import path from 'path';
 import fetch from 'node-fetch'; // Importa node-fetch no topo
 import crypto from 'crypto'; // Importa a biblioteca crypto para gerar UUIDs
+import { upsertFullPlanData } from '@/lib/studyPlansRepo';
+import { getEffectiveStudentSession } from '@/lib/adminAuth';
+import { recordStudentAudit } from '@/lib/auditLogger';
 
 // Interfaces para os dados do plano
 interface Topic {
@@ -49,18 +48,6 @@ function slugify(text: string): string {
     .replace(/--+/g, '-');
 }
 
-// Lógica de getUserDataDirectory duplicada aqui para garantir que funcione no build de produção
-async function getImportUserDataDirectory(): Promise<string> {
-  const session = await getServerSession(authOptions);
-  if (!session || !session.user || !session.user.id) {
-    throw new Error('Usuário não autenticado na função de diretório de dados.');
-  }
-  const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-  const userDir = path.join(dataDir, session.user.id);
-  await fs.mkdir(userDir, { recursive: true });
-  return userDir;
-}
-
 // Função para converter URL de imagem para Base64
 async function urlToBase64(url: string): Promise<string | undefined> {
   if (!url) return undefined;
@@ -81,9 +68,9 @@ async function urlToBase64(url: string): Promise<string | undefined> {
 
 // Função principal da API
 export async function POST(req: Request) {
-  const session = await getServerSession(authOptions);
+  const session = await getEffectiveStudentSession();
 
-  if (!session || !session.user || !session.user.id) {
+  if (!session || !session.userId) {
     return NextResponse.json({ error: 'Não autorizado. Faça login para importar um guia.' }, { status: 401 });
   }
 
@@ -308,13 +295,20 @@ export async function POST(req: Request) {
     const bancaTopicWeights = extractTopicWeights(finalSubjects);
     const planData: PlanData = { ...headerData, subjects: finalSubjects, bancaTopicWeights };
 
-    const userDir = await getImportUserDataDirectory(); // Usa a função duplicada
-    
     const fileName = `${slugify(planData.name)}.json`;
-    const filePath = path.join(userDir, fileName);
-
-    await fs.writeFile(filePath, JSON.stringify(planData, null, 2), 'utf-8');
-    console.log(`Plano salvo em: ${filePath}`);
+    await upsertFullPlanData(session.userId, fileName, {
+      ...planData,
+      observations: '',
+      subjects: planData.subjects as any,
+      records: [],
+      reviewRecords: [],
+      simuladoRecords: [],
+    });
+    await recordStudentAudit(session, 'GUIDE_IMPORT', 'plan', fileName, {
+      name: planData.name,
+      subjectsCount: finalSubjects.length,
+    });
+    console.log(`Plano salvo no Supabase: ${fileName}`);
 
     return NextResponse.json({ message: 'Guia importado com sucesso!', plan: planData });
 
