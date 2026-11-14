@@ -1,0 +1,515 @@
+/* Krono Companion - Floating HUD & Studio Styles (Isolated Namespace) */
+
+#krono-ext-hud-root,
+#krono-ext-selection-pill,
+#krono-ext-crop-overlay,
+#krono-ext-modal-backdrop,
+#krono-ext-toast {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif !important;
+  box-sizing: border-box !important;
+  line-height: 1.4 !important;
+  -webkit-font-smoothing: antialiased !important;
+}
+
+#krono-ext-hud-root *,
+#krono-ext-selection-pill *,
+#krono-ext-crop-overlay *,
+#krono-ext-modal-backdrop *,
+#krono-ext-toast * {
+  box-sizing: border-box !important;
+  font-family: inherit !important;
+}
+
+/* Canvas Overlay for Straight Highlighter & Freehand Pen */
+#krono-ext-drawing-canvas {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  z-index: 2147483630 !important;
+  pointer-events: none !important;
+}
+
+#krono-ext-drawing-canvas.krono-ext-canvas-interactive {
+  pointer-events: auto !important;
+  cursor: crosshair !important;
+}
+
+/* Main Floating Bar (Estilo Bússola) */
+#krono-ext-hud-root {
+  position: fixed !important;
+  top: 14px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  z-index: 2147483640 !important;
+  background: rgba(15, 23, 42, 0.95) !important;
+  backdrop-filter: blur(14px) !important;
+  border: 1px solid rgba(16, 185, 129, 0.35) !important;
+  border-radius: 14px !important;
+  padding: 6px 10px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.55), 0 0 0 1px rgba(255, 255, 255, 0.05) !important;
+  color: #f8fafc !important;
+  user-select: none !important;
+  max-width: 98vw !important;
+  flex-wrap: nowrap !important;
+}
+
+#krono-ext-hud-root.krono-ext-hidden {
+  display: none !important;
+}
+
+#krono-ext-hud-root.krono-ext-minimized {
+  padding: 5px 10px !important;
+  border-radius: 999px !important;
+}
+
+.krono-ext-drag-handle {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  cursor: grab !important;
+  padding: 4px 6px !important;
+  border-radius: 8px !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  border: 1px solid rgba(16, 185, 129, 0.28) !important;
+}
+
+.krono-ext-drag-handle:active {
+  cursor: grabbing !important;
+}
+
+.krono-ext-brand-dot {
+  width: 8px !important;
+  height: 8px !important;
+  border-radius: 50% !important;
+  background: #10b981 !important;
+  box-shadow: 0 0 8px #10b981 !important;
+}
+
+.krono-ext-brand-title {
+  font-size: 11px !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.04em !important;
+  color: #34d399 !important;
+  text-transform: uppercase !important;
+}
+
+/* Timer Pill */
+.krono-ext-timer-box {
+  display: flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  background: rgba(2, 6, 23, 0.75) !important;
+  border: 1px solid rgba(51, 65, 85, 0.8) !important;
+  border-radius: 10px !important;
+  padding: 3px 8px !important;
+}
+
+.krono-ext-timer-digits {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace !important;
+  font-size: 13px !important;
+  font-weight: 800 !important;
+  color: #34d399 !important;
+  letter-spacing: 0.04em !important;
+  min-width: 64px !important;
+  text-align: center !important;
+}
+
+.krono-ext-timer-digits.krono-ext-paused {
+  color: #fbbf24 !important;
+}
+
+.krono-ext-timer-btn {
+  width: 22px !important;
+  height: 22px !important;
+  border-radius: 6px !important;
+  border: none !important;
+  background: #10b981 !important;
+  color: #022c22 !important;
+  font-size: 11px !important;
+  font-weight: 900 !important;
+  cursor: pointer !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  transition: transform 0.12s ease, background 0.15s ease !important;
+}
+
+.krono-ext-timer-btn:hover {
+  background: #34d399 !important;
+  transform: scale(1.05) !important;
+}
+
+/* Active Topic Context Pill */
+.krono-ext-context-btn {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  background: rgba(30, 41, 59, 0.75) !important;
+  border: 1px solid rgba(71, 85, 105, 0.65) !important;
+  border-radius: 9px !important;
+  padding: 2px 9px !important;
+  cursor: pointer !important;
+  max-width: 210px !important;
+  text-align: left !important;
+  transition: border-color 0.15s ease, background 0.15s ease !important;
+}
+
+.krono-ext-context-btn:hover {
+  border-color: #10b981 !important;
+  background: rgba(30, 41, 59, 0.95) !important;
+}
+
+.krono-ext-context-sub {
+  font-size: 9px !important;
+  font-weight: 800 !important;
+  color: #34d399 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.04em !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 192px !important;
+}
+
+.krono-ext-context-top {
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  color: #e2e8f0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  max-width: 192px !important;
+}
+
+.krono-ext-divider {
+  width: 1px !important;
+  height: 22px !important;
+  background: rgba(51, 65, 85, 0.85) !important;
+}
+
+/* Tool Buttons */
+.krono-ext-btn {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  padding: 5px 9px !important;
+  border-radius: 8px !important;
+  border: 1px solid rgba(71, 85, 105, 0.6) !important;
+  background: rgba(30, 41, 59, 0.7) !important;
+  color: #cbd5e1 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+  white-space: nowrap !important;
+  transition: all 0.15s ease !important;
+}
+
+.krono-ext-btn:hover {
+  background: rgba(51, 65, 85, 0.85) !important;
+  color: #ffffff !important;
+}
+
+.krono-ext-btn.krono-ext-active {
+  background: rgba(16, 185, 129, 0.22) !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+}
+
+.krono-ext-btn-crop {
+  background: rgba(245, 158, 11, 0.16) !important;
+  border-color: rgba(245, 158, 11, 0.45) !important;
+  color: #fbbf24 !important;
+}
+
+.krono-ext-btn-crop:hover {
+  background: rgba(245, 158, 11, 0.28) !important;
+  color: #fde68a !important;
+}
+
+.krono-ext-btn-note {
+  background: rgba(16, 185, 129, 0.16) !important;
+  border-color: rgba(16, 185, 129, 0.45) !important;
+  color: #34d399 !important;
+}
+
+.krono-ext-btn-note:hover {
+  background: rgba(16, 185, 129, 0.28) !important;
+  color: #6ee7b7 !important;
+}
+
+.krono-ext-btn-close:hover {
+  background: rgba(244, 63, 94, 0.22) !important;
+  border-color: rgba(244, 63, 94, 0.5) !important;
+  color: #fda4af !important;
+}
+
+/* Color Swatches */
+.krono-ext-colors {
+  display: flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  padding: 0 2px !important;
+}
+
+.krono-ext-swatch {
+  width: 16px !important;
+  height: 16px !important;
+  border-radius: 50% !important;
+  border: 2px solid transparent !important;
+  cursor: pointer !important;
+  transition: transform 0.12s ease !important;
+}
+
+.krono-ext-swatch:hover {
+  transform: scale(1.15) !important;
+}
+
+.krono-ext-swatch.krono-ext-swatch-active {
+  border-color: #ffffff !important;
+  transform: scale(1.18) !important;
+}
+
+/* Floating Text Selection Pill */
+#krono-ext-selection-pill {
+  position: fixed !important;
+  z-index: 2147483645 !important;
+  background: rgba(15, 23, 42, 0.97) !important;
+  border: 1px solid rgba(16, 185, 129, 0.5) !important;
+  border-radius: 10px !important;
+  padding: 4px 6px !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 5px !important;
+  box-shadow: 0 10px 25px rgba(0, 0, 0, 0.55) !important;
+}
+
+#krono-ext-selection-pill.krono-ext-hidden {
+  display: none !important;
+}
+
+/* Screenshot Crop Overlay */
+#krono-ext-crop-overlay {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483646 !important;
+  background: rgba(2, 6, 23, 0.35) !important;
+  cursor: crosshair !important;
+  user-select: none !important;
+}
+
+#krono-ext-crop-overlay.krono-ext-hidden {
+  display: none !important;
+}
+
+.krono-ext-crop-banner {
+  position: fixed !important;
+  top: 18px !important;
+  left: 50% !important;
+  transform: translateX(-50%) !important;
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 1px solid #f59e0b !important;
+  color: #fde68a !important;
+  padding: 8px 16px !important;
+  border-radius: 999px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5) !important;
+  pointer-events: none !important;
+}
+
+#krono-ext-crop-box {
+  position: fixed !important;
+  border: 2px dashed #10b981 !important;
+  background: rgba(16, 185, 129, 0.12) !important;
+  box-shadow: 0 0 0 9999px rgba(2, 6, 23, 0.52) !important;
+  pointer-events: none !important;
+}
+
+/* Modal Backdrop & Dialog (Preview Print / Nota / Trocar Tópico) */
+#krono-ext-modal-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 2147483647 !important;
+  background: rgba(2, 6, 23, 0.75) !important;
+  backdrop-filter: blur(6px) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: 16px !important;
+}
+
+#krono-ext-modal-backdrop.krono-ext-hidden {
+  display: none !important;
+}
+
+.krono-ext-modal {
+  width: 100% !important;
+  max-width: 540px !important;
+  background: #0f172a !important;
+  border: 1px solid rgba(16, 185, 129, 0.35) !important;
+  border-radius: 16px !important;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.75) !important;
+  color: #f8fafc !important;
+  overflow: hidden !important;
+  display: flex !important;
+  flex-direction: column !important;
+  max-height: 90vh !important;
+}
+
+.krono-ext-modal-header {
+  padding: 14px 18px !important;
+  background: rgba(30, 41, 59, 0.65) !important;
+  border-bottom: 1px solid rgba(51, 65, 85, 0.8) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+}
+
+.krono-ext-modal-title {
+  font-size: 14px !important;
+  font-weight: 800 !important;
+  color: #34d399 !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.krono-ext-modal-body {
+  padding: 16px 18px !important;
+  overflow-y: auto !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 12px !important;
+}
+
+.krono-ext-field-label {
+  font-size: 10.5px !important;
+  font-weight: 800 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.05em !important;
+  color: #94a3b8 !important;
+  margin-bottom: 4px !important;
+  display: block !important;
+}
+
+.krono-ext-select,
+.krono-ext-textarea,
+.krono-ext-input {
+  width: 100% !important;
+  background: #020617 !important;
+  border: 1px solid #334155 !important;
+  border-radius: 9px !important;
+  padding: 8px 11px !important;
+  color: #f8fafc !important;
+  font-size: 12.5px !important;
+  outline: none !important;
+}
+
+.krono-ext-select:focus,
+.krono-ext-textarea:focus,
+.krono-ext-input:focus {
+  border-color: #10b981 !important;
+}
+
+.krono-ext-preview-img-wrap {
+  background: #020617 !important;
+  border: 1px solid #1e293b !important;
+  border-radius: 10px !important;
+  padding: 8px !important;
+  text-align: center !important;
+  max-height: 220px !important;
+  overflow: auto !important;
+}
+
+.krono-ext-preview-img-wrap img {
+  max-width: 100% !important;
+  max-height: 200px !important;
+  border-radius: 6px !important;
+  object-fit: contain !important;
+}
+
+.krono-ext-tags-row {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  gap: 6px !important;
+}
+
+.krono-ext-tag-chip {
+  padding: 5px 10px !important;
+  border-radius: 8px !important;
+  border: 1px solid #334155 !important;
+  background: #1e293b !important;
+  color: #cbd5e1 !important;
+  font-size: 11px !important;
+  font-weight: 700 !important;
+  cursor: pointer !important;
+}
+
+.krono-ext-tag-chip.krono-ext-tag-selected {
+  background: rgba(16, 185, 129, 0.2) !important;
+  border-color: #10b981 !important;
+  color: #34d399 !important;
+}
+
+.krono-ext-modal-footer {
+  padding: 12px 18px !important;
+  background: rgba(15, 23, 42, 0.9) !important;
+  border-top: 1px solid rgba(51, 65, 85, 0.8) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-end !important;
+  gap: 8px !important;
+}
+
+.krono-ext-btn-primary {
+  background: #10b981 !important;
+  color: #022c22 !important;
+  border: none !important;
+  padding: 8px 16px !important;
+  border-radius: 9px !important;
+  font-size: 12px !important;
+  font-weight: 800 !important;
+  cursor: pointer !important;
+}
+
+.krono-ext-btn-primary:hover {
+  background: #34d399 !important;
+}
+
+/* Toast Notification */
+#krono-ext-toast {
+  position: fixed !important;
+  bottom: 22px !important;
+  right: 22px !important;
+  z-index: 2147483647 !important;
+  background: rgba(15, 23, 42, 0.96) !important;
+  border: 1px solid #10b981 !important;
+  color: #f8fafc !important;
+  padding: 10px 16px !important;
+  border-radius: 12px !important;
+  font-size: 12.5px !important;
+  font-weight: 700 !important;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.6) !important;
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+  transition: opacity 0.2s ease, transform 0.2s ease !important;
+}
+
+#krono-ext-toast.krono-ext-hidden {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  transform: translateY(10px) !important;
+}
+
+mark.krono-ext-dom-highlight {
+  border-radius: 3px !important;
+  padding: 1px 2px !important;
+  color: inherit !important;
+}

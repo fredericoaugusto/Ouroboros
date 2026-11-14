@@ -8,6 +8,7 @@ import ThemeToggleButton from './ThemeToggleButton';
 import PlanSelector from './PlanSelector';
 import ImportEditalModal from './ImportEditalModal';
 import UserAiKeyModal from './UserAiKeyModal';
+import ExtensionGuideModal from './ExtensionGuideModal';
 import { useData } from '../context/DataContext';
 import { useSession, signOut } from 'next-auth/react';
 import { 
@@ -30,6 +31,7 @@ import {
   SlidersHorizontal,
   KeyRound,
   Award,
+  Puzzle,
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -39,6 +41,7 @@ const Sidebar = () => {
   const { setIsRegisterModalOpen, setIsStopwatchModalOpen } = useData();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
+  const [isExtensionModalOpen, setIsExtensionModalOpen] = useState(false);
   const [isCustomizingTabs, setIsCustomizingTabs] = useState(false);
   const [hiddenHrefs, setHiddenHrefs] = useState<string[]>([]);
 
@@ -221,6 +224,16 @@ const Sidebar = () => {
             <>
               <button
                 type="button"
+                onClick={() => setIsExtensionModalOpen(true)}
+                className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-semibold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 hover:bg-indigo-500/20 border border-indigo-500/25 transition-colors"
+                title="Baixar e conectar a extensão do Krono para Brave / Chrome"
+              >
+                <Puzzle size={14} />
+                Extensão Brave / Chrome
+              </button>
+
+              <button
+                type="button"
                 onClick={() => setIsAiKeyModalOpen(true)}
                 className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 transition-colors"
                 title="Cadastrar ou atualizar sua chave pessoal de IA criptografada no banco"
@@ -251,6 +264,12 @@ const Sidebar = () => {
       <UserAiKeyModal
         isOpen={isAiKeyModalOpen}
         onClose={() => setIsAiKeyModalOpen(false)}
+      />
+
+      {/* Download & Pareamento da Extensão Brave / Chrome */}
+      <ExtensionGuideModal
+        isOpen={isExtensionModalOpen}
+        onClose={() => setIsExtensionModalOpen(false)}
       />
     </>
   );

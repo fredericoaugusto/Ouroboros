@@ -30,6 +30,7 @@ export default function GlobalFooterTimer() {
   const pathname = usePathname();
   const { isSidebarExpanded } = useSidebar();
   const {
+    selectedDataFile,
     currentStudySession,
     setIsRegisterModalOpen,
     setInitialStudyRecord,
@@ -388,8 +389,22 @@ export default function GlobalFooterTimer() {
         initialTopic={currentTopicName}
       />
 
-      {/* Barra Persistente no Rodapé */}
+      {/* Barra Persistente no Rodapé (expõe metadados ao vivo para a extensão Brave/Chrome) */}
       <footer
+        data-krono-timer-seconds={Math.floor(timerState.elapsedMs / 1000)}
+        data-krono-timer-running={String(timerState.isRunning)}
+        data-krono-timer-mode={
+          timerState.mode === 'timer' && timerState.targetDurationMs > 0 ? 'countdown' : 'stopwatch'
+        }
+        data-krono-timer-target-seconds={Math.floor((timerState.targetDurationMs || 2700000) / 1000)}
+        data-krono-timer-subject={
+          currentSubjectName === 'Estudo Livre (Sem Ciclo Ativo)' ||
+          currentSubjectName === 'Selecione uma matéria'
+            ? ''
+            : currentSubjectName
+        }
+        data-krono-timer-topic={currentTopicName || ''}
+        data-krono-timer-plan={selectedDataFile || ''}
         className={`fixed bottom-0 right-0 print:hidden ${
           isSidebarExpanded ? 'lg:left-64 left-0' : 'left-0'
         } z-40 bg-white/95 dark:bg-[#0c1421]/95 backdrop-blur-md border-t border-slate-200 dark:border-[#1a293e] px-4 py-2.5 shadow-lg transition-all duration-300`}

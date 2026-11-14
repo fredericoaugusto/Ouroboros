@@ -1,0 +1,55 @@
+{
+  "manifest_version": 3,
+  "name": "Krono Companion — Estúdio de Questões & Grifos",
+  "version": "1.0.0",
+  "description": "Barra flutuante estilo Bússola com cronômetro sincronizado ao vivo, marca-texto reto, captura de comentários e recorte de print direto para as Notas do Tópico no Krono.",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "tabs",
+    "storage",
+    "scripting"
+  ],
+  "host_permissions": [
+    "<all_urls>"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Krono Companion — Estúdio de Estudos",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*",
+        "https://*.vercel.app/*"
+      ],
+      "js": ["krono-bridge.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "exclude_matches": [
+        "http://localhost/*",
+        "http://127.0.0.1/*"
+      ],
+      "css": ["content-studio.css"],
+      "js": ["content-studio.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -78,7 +78,13 @@ export default function TopicCockpitModal({
 }: TopicCockpitModalProps) {
   const { showNotification } = useNotification();
   const { isSidebarExpanded } = useSidebar();
-  const { studyRecords: allStudyRecords, simuladoRecords, reviewRecords, stats } = useData();
+  const {
+    selectedDataFile,
+    studyRecords: allStudyRecords,
+    simuladoRecords,
+    reviewRecords,
+    stats,
+  } = useData();
 
   const normalizeStatus = (
     t: TopicData | null,
@@ -145,6 +151,51 @@ export default function TopicCockpitModal({
       setNotes(topic.notes || '');
     }
   }, [topic, currentTopicIdentity, topicRecords.length]);
+
+  // Informa à extensão Brave/Chrome qual disciplina e tópico estão abertos agora e recebe recortes ao vivo
+  React.useEffect(() => {
+    if (typeof window === 'undefined') return;
+    if (isOpen && topic) {
+      try {
+        localStorage.setItem(
+          'krono_active_cockpit_context',
+          JSON.stringify({
+            isOpen: true,
+            planFile: selectedDataFile || '',
+            subjectName,
+            topicName: topic.topic_text,
+            updatedAt: Date.now(),
+          })
+        );
+        window.dispatchEvent(new CustomEvent('krono:timer-updated'));
+      } catch {}
+    } else {
+      try {
+        localStorage.removeItem('krono_active_cockpit_context');
+        window.dispatchEvent(new CustomEvent('krono:timer-updated'));
+      } catch {}
+    }
+
+    const handleRemoteClip = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      if (!detail || !isOpen || !topic) return;
+      const sameSubject =
+        (detail.subjectName || '').trim().toLowerCase() === (subjectName || '').trim().toLowerCase();
+      const sameTopic =
+        (detail.topicName || '').trim().toLowerCase() === (topic.topic_text || '').trim().toLowerCase();
+      if (sameSubject && sameTopic && typeof detail.updatedNotes === 'string') {
+        setNotes(detail.updatedNotes);
+      }
+    };
+
+    window.addEventListener('krono:remote-clip-saved', handleRemoteClip);
+    return () => {
+      window.removeEventListener('krono:remote-clip-saved', handleRemoteClip);
+      try {
+        localStorage.removeItem('krono_active_cockpit_context');
+      } catch {}
+    };
+  }, [isOpen, topic, selectedDataFile, subjectName]);
 
   // Calcula o Score e a Retenção reais do tópico com base em todo o histórico
   const hasNotesContent = Boolean(notes && notes.replace(/<[^>]*>/g, '').trim().length > 0);

@@ -29,35 +29,79 @@ const initialState: GlobalTimerState = {
 let state: GlobalTimerState = { ...initialState };
 const listeners = new Set<() => void>();
 let ticker: ReturnType<typeof setInterval> | null = null;
+let lastTickAt = Date.now();
+let remoteListenerBound = false;
 
-function notify() {
+function persistTimerSnapshotToBridge() {
+  if (typeof window === 'undefined') return;
+  try {
+    localStorage.setItem(
+      'krono_global_timer_v1',
+      JSON.stringify({
+        isActive: state.hasStarted,
+        isPaused: !state.isRunning,
+        mode: state.mode === 'timer' && state.targetDurationMs > 0 ? 'countdown' : 'stopwatch',
+        elapsedSeconds: Math.floor(state.elapsedMs / 1000),
+        targetSeconds: Math.floor((state.targetDurationMs || 2700000) / 1000),
+        subjectName: state.subject || '',
+        topicName: state.topic || '',
+        updatedAt: Date.now(),
+      })
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
+function notify(dispatchBridgeEvent = true) {
+  persistTimerSnapshotToBridge();
+  if (dispatchBridgeEvent && typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('krono:timer-updated'));
+  }
   listeners.forEach((fn) => fn());
 }
 
+function bindRemoteTimerListener() {
+  if (typeof window === 'undefined' || remoteListenerBound) return;
+  remoteListenerBound = true;
+  window.addEventListener('krono:remote-toggle-timer', () => {
+    toggleGlobalTimer();
+  });
+}
+
 function ensureTicker() {
-  if (typeof window === 'undefined' || ticker !== null) return;
+  if (typeof window === 'undefined') return;
+  bindRemoteTimerListener();
+  if (ticker !== null) return;
+  lastTickAt = Date.now();
   ticker = setInterval(() => {
+    const now = Date.now();
+    const deltaMs = Math.max(0, Math.min(now - lastTickAt, 60000));
+    lastTickAt = now;
+    if (deltaMs < 200) return;
+
     if (state.isRunning) {
-      const nextElapsed = state.elapsedMs + 1000;
+      const nextElapsed = state.elapsedMs + deltaMs;
       if (state.mode === 'timer' && state.targetDurationMs > 0 && nextElapsed >= state.targetDurationMs) {
         state = {
           ...state,
           elapsedMs: state.targetDurationMs,
           isRunning: false,
         };
+        notify(true);
       } else {
         state = {
           ...state,
           elapsedMs: nextElapsed,
         };
+        notify(false);
       }
-      notify();
     } else if (state.hasStarted && state.elapsedMs > 0) {
       state = {
         ...state,
-        pausedMs: state.pausedMs + 1000,
+        pausedMs: state.pausedMs + deltaMs,
       };
-      notify();
+      notify(false);
     }
   }, 1000);
 }
@@ -74,6 +118,7 @@ export function startGlobalTimerSession(params: {
   autoStart?: boolean;
 }) {
   ensureTicker();
+  lastTickAt = Date.now();
   const targetMin = params.targetDurationMinutes ?? 0;
   const targetMs = targetMin > 0 ? targetMin * 60 * 1000 : 0;
   const autoStart = params.autoStart !== undefined ? params.autoStart : true;
@@ -141,6 +186,7 @@ export function syncGlobalTimerMetadata(params: {
 
 export function toggleGlobalTimer() {
   ensureTicker();
+  lastTickAt = Date.now();
   state = {
     ...state,
     hasStarted: true,
@@ -151,6 +197,7 @@ export function toggleGlobalTimer() {
 
 export function setGlobalTimerRunning(running: boolean) {
   ensureTicker();
+  lastTickAt = Date.now();
   state = {
     ...state,
     hasStarted: running ? true : state.hasStarted,

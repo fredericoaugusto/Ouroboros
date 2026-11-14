@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Krono Companion</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+    body {
+      width: 360px;
+      background: #0b1320;
+      color: #f8fafc;
+      padding: 14px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 12px;
+      padding-bottom: 10px;
+      border-bottom: 1px solid #1e293b;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .brand-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #10b981, #0d9488);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 14px;
+      color: #022c22;
+    }
+    .brand-title {
+      font-size: 14px;
+      font-weight: 800;
+      color: #ffffff;
+    }
+    .brand-sub {
+      font-size: 10px;
+      color: #34d399;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .status-badge {
+      font-size: 10px;
+      font-weight: 800;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      background: rgba(16, 185, 129, 0.12);
+      color: #34d399;
+    }
+    .status-badge.offline {
+      border-color: rgba(244, 63, 94, 0.35);
+      background: rgba(244, 63, 94, 0.12);
+      color: #fda4af;
+    }
+    .card {
+      background: #131f33;
+      border: 1px solid #1f304a;
+      border-radius: 12px;
+      padding: 11px;
+      margin-bottom: 10px;
+    }
+    .timer-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    .timer-digits {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 22px;
+      font-weight: 900;
+      color: #34d399;
+      letter-spacing: 0.04em;
+    }
+    .timer-digits.paused {
+      color: #fbbf24;
+    }
+    .btn {
+      border: 1px solid #334155;
+      background: #1e293b;
+      color: #e2e8f0;
+      border-radius: 8px;
+      padding: 7px 11px;
+      font-size: 11.5px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.15s ease;
+    }
+    .btn:hover {
+      background: #334155;
+      color: #ffffff;
+    }
+    .btn-primary {
+      background: #10b981;
+      border-color: #10b981;
+      color: #022c22;
+      font-weight: 800;
+    }
+    .btn-primary:hover {
+      background: #34d399;
+    }
+    .btn-amber {
+      background: rgba(245, 158, 11, 0.16);
+      border-color: rgba(245, 158, 11, 0.45);
+      color: #fbbf24;
+    }
+    .btn-amber:hover {
+      background: rgba(245, 158, 11, 0.28);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .label {
+      display: block;
+      font-size: 10px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+      margin-bottom: 4px;
+    }
+    select, input {
+      width: 100%;
+      background: #090f1a;
+      border: 1px solid #2a3b57;
+      border-radius: 8px;
+      color: #f8fafc;
+      padding: 7px 9px;
+      font-size: 11.5px;
+      margin-bottom: 8px;
+      outline: none;
+    }
+    select:focus, input:focus {
+      border-color: #10b981;
+    }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      font-weight: 600;
+      color: #cbd5e1;
+      cursor: pointer;
+    }
+    .toggle-row input[type="checkbox"] {
+      width: auto;
+      margin: 0;
+      accent-color: #10b981;
+      transform: scale(1.15);
+    }
+    .msg {
+      font-size: 11px;
+      margin-top: 6px;
+      padding: 6px 8px;
+      border-radius: 7px;
+      display: none;
+    }
+    .msg.ok {
+      display: block;
+      background: rgba(16, 185, 129, 0.14);
+      color: #6ee7b7;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+    .msg.err {
+      display: block;
+      background: rgba(244, 63, 94, 0.14);
+      color: #fda4af;
+      border: 1px solid rgba(244, 63, 94, 0.35);
+    }
+    details summary {
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 700;
+      color: #94a3b8;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    details[open] summary {
+      margin-bottom: 10px;
+      color: #e2e8f0;
+    }
+    .mode-pills {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .pill {
+      flex: 1;
+      padding: 5px 8px;
+      border-radius: 7px;
+      border: 1px solid #334155;
+      background: #0b1320;
+      color: #94a3b8;
+      font-size: 10.5px;
+      font-weight: 700;
+      cursor: pointer;
+      text-align: center;
+    }
+    .pill.active {
+      background: rgba(16, 185, 129, 0.16);
+      border-color: #10b981;
+      color: #34d399;
+    }
+    .site-bar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .host-badge {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      padding: 4px 8px;
+      border-radius: 6px;
+      background: #0b1320;
+      border: 1px solid #1e293b;
+      color: #e2e8f0;
+      font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+      font-size: 10.5px;
+    }
+    .rule-badge {
+      flex-shrink: 0;
+      padding: 3px 7px;
+      border-radius: 999px;
+      font-size: 10px;
+      font-weight: 700;
+      border: 1px solid #334155;
+      background: #0b1320;
+      color: #94a3b8;
+    }
+    .rule-badge.auto {
+      background: rgba(16, 185, 129, 0.14);
+      border-color: rgba(16, 185, 129, 0.45);
+      color: #34d399;
+    }
+    .rule-badge.blocked {
+      background: rgba(244, 63, 94, 0.14);
+      border-color: rgba(244, 63, 94, 0.45);
+      color: #fb7185;
+    }
+    .btn-danger-soft {
+      background: rgba(244, 63, 94, 0.14);
+      border-color: rgba(244, 63, 94, 0.42);
+      color: #fda4af;
+    }
+    .btn-danger-soft:hover {
+      background: rgba(244, 63, 94, 0.24);
+      color: #fff;
+    }
+    .site-hint {
+      font-size: 10px;
+      line-height: 1.4;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="brand">
+      <div class="brand-icon">K</div>
+      <div>
+        <div class="brand-title">Krono Companion</div>
+        <div class="brand-sub">Estúdio & Notas Ao Vivo</div>
+      </div>
+    </div>
+    <span id="statusBadge" class="status-badge offline">Desconectado</span>
+  </div>
+
+  <!-- Live Timer Card -->
+  <div class="card">
+    <div class="timer-row">
+      <div>
+        <span class="label" id="timerSubjectLabel">Aguardando Estudo Ativo</span>
+        <div id="timerDigits" class="timer-digits paused">00:00:00</div>
+      </div>
+      <button id="btnToggleTimer" class="btn btn-primary" type="button">▶ Iniciar</button>
+    </div>
+  </div>
+
+  <!-- Quick Capture Buttons -->
+  <div class="grid-2">
+    <button id="btnCropTab" class="btn btn-amber" type="button">✂️ Recortar Print (Alt+S)</button>
+    <button id="btnQuickNote" class="btn" type="button">📝 +Nota Rápida</button>
+  </div>
+
+  <!-- Active Topic Target Card -->
+  <div class="card">
+    <span class="label">Destino das Capturas & Prints</span>
+    <div class="mode-pills">
+      <button type="button" id="pillAuto" class="pill active">🟢 Seguir Krono</button>
+      <button type="button" id="pillManual" class="pill">📌 Fixar Tópico</button>
+    </div>
+    <select id="selectPlan"></select>
+    <select id="selectSubject"></select>
+    <select id="selectTopic" style="margin-bottom: 0;"></select>
+  </div>
+
+  <!-- Controle na Aba Atual & Sites Monitorados -->
+  <div class="card">
+    <span class="label">Barra Flutuante & Sites Monitorados</span>
+    <div class="site-bar">
+      <span id="tabHostLabel" class="host-badge">Verificando aba...</span>
+      <span id="tabAutoStatus" class="rule-badge">—</span>
+    </div>
+    <div class="grid-2" style="margin-bottom: 8px;">
+      <button id="btnToggleTabHud" class="btn btn-primary" type="button">
+        👁️ Abrir Barra Aqui
+      </button>
+      <button id="btnToggleSiteRule" class="btn" type="button">
+        ➕ Auto neste Site
+      </button>
+    </div>
+    <label class="label" for="selectAutoShowMode">Abertura Automática da Barra</label>
+    <select id="selectAutoShowMode" style="margin-bottom: 6px;">
+      <option value="study_sites">🎯 Só Sites de Estudo (Padrão)</option>
+      <option value="all_sites">🌐 Em Todos os Sites</option>
+      <option value="manual">👆 Apenas Manual (ícone 🧩 / Atalho)</option>
+    </select>
+    <div id="siteHintText" class="site-hint">
+      Monitora QConcursos, TEC, Caveira, Planalto, Estratégia, Gran e +8 portais. Use ✕ na barra para fechar na aba atual.
+    </div>
+  </div>
+
+  <!-- Forma B: Server URL & Pairing Token -->
+  <div class="card" style="margin-bottom: 0;">
+    <details id="pairingDetails">
+      <summary>
+        <span>🔑 Pareamento Seguro (Token / Servidor)</span>
+        <span>▼</span>
+      </summary>
+      <label class="label">Endereço do Krono</label>
+      <input type="text" id="inputServerUrl" placeholder="http://localhost:3000" />
+      <label class="label">Token da Extensão (Opcional se aba aberta)</label>
+      <input type="password" id="inputToken" placeholder="krono_ext_..." />
+      <button id="btnSync" class="btn btn-primary" style="width:100%;" type="button">
+        🔄 Conectar & Sincronizar Planos
+      </button>
+      <div id="syncMsg" class="msg"></div>
+    </details>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

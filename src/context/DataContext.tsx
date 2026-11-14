@@ -2074,6 +2074,25 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     if (!silent) setLoading(false);
   }, [authStatus]);
 
+  // Atualiza planos automaticamente quando um recorte/nota chega da extensão do navegador
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleRemoteClipSaved = (ev: Event) => {
+      const detail = (ev as CustomEvent)?.detail;
+      refreshPlans(true);
+      if (detail?.topicName) {
+        showNotification(
+          `Recorte salvo via Extensão Krono em "${detail.subjectName} → ${detail.topicName}"!`,
+          'success'
+        );
+      }
+    };
+    window.addEventListener('krono:remote-clip-saved', handleRemoteClipSaved);
+    return () => {
+      window.removeEventListener('krono:remote-clip-saved', handleRemoteClipSaved);
+    };
+  }, [refreshPlans, showNotification]);
+
   const saveSubject = useCallback(async (subjectData: { id?: string; subject: string; topics: EditalTopic[]; color: string }) => {
     if (!selectedDataFile) {
       const errorMsg = 'Nenhum plano de estudos selecionado.';
