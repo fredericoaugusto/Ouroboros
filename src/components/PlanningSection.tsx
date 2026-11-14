@@ -347,7 +347,7 @@ const PlanningSection = () => {
                       className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-lg shadow-indigo-500/25 transition-all"
                     >
                       <Play size={14} className="fill-current" />
-                      Iniciar estudo
+                      {nextSessionProgress > 0 ? 'Continuar estudo' : 'Iniciar estudo'}
                     </button>
                     <button
                       onClick={() => handleOpenManualRegister(nextSession)}

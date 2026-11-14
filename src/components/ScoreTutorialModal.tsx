@@ -31,44 +31,44 @@ interface ScoreTutorialModalProps {
 const SLIDES = [
   {
     id: 0,
-    badge: 'Slide 1 de 6 • Filosofia do Sistema',
-    title: 'O Score é quem comanda suas Revisões',
-    subtitle: 'Sem datas fixas engessadas (7, 15, 30 dias) e sem depender apenas de % isolado',
+    badge: 'Passo 1 de 6 • Ideia Principal',
+    title: 'Como o Sistema Decide o Dia Certo da Sua Revisão',
+    subtitle: 'Sem revisões fixas acumuladas (7, 15, 30 dias) — tudo se adapta ao seu ritmo real',
     icon: Sparkles,
   },
   {
     id: 1,
-    badge: 'Slide 2 de 6 • Composição Matemática',
-    title: 'Os 6 Pilares que formam o Score (0 a 100)',
-    subtitle: 'Tudo o que você faz na plataforma alimenta o cálculo em conjunto',
+    badge: 'Passo 2 de 6 • O que forma sua Nota',
+    title: 'O Que Faz Sua Nota (Score de 0 a 100) Subir ou Descer',
+    subtitle: 'Explicado de forma simples: questões, segurança no assunto e constância',
     icon: Layers,
   },
   {
     id: 2,
-    badge: 'Slide 3 de 6 • Matriz de Exigência',
-    title: 'Relevância × Dificuldade × Domínio Declarado',
-    subtitle: 'Como diferentes combinações mudam seu Score e a frequência de revisão',
+    badge: 'Passo 3 de 6 • Suas Escolhas no Tópico',
+    title: 'Relevância na Prova × Dificuldade × Seu Domínio',
+    subtitle: 'Como os botões de 0 a 5 mudam o cuidado do sistema com cada assunto',
     icon: Sliders,
   },
   {
     id: 3,
-    badge: 'Slide 4 de 6 • Visão Macro & Micro',
-    title: 'Score da Disciplina, Simulados & Retenção (%)',
-    subtitle: 'Como os Simulados entram na conta e a diferença entre Score e Retenção',
+    badge: 'Passo 4 de 6 • Nota vs. Memória Fresca',
+    title: 'Qual a Diferença entre Score (Nota) e Retenção (Memória)?',
+    subtitle: 'E como os seus Simulados ajudam a calibrar a matéria inteira',
     icon: Award,
   },
   {
     id: 4,
-    badge: 'Slide 5 de 6 • Aprendizado Individual',
-    title: 'Como o Sistema Aprende com o Seu Histórico',
-    subtitle: 'Calibração adaptativa baseada na sua retenção real ao longo do tempo',
+    badge: 'Passo 5 de 6 • Seu Ritmo Pessoal',
+    title: 'O Sistema Aprende com a Sua Memória',
+    subtitle: 'Ele percebe se você lembra bem depois de semanas ou se precisa revisar mais cedo',
     icon: UserCheck,
   },
   {
     id: 5,
-    badge: 'Slide 6 de 6 • Guia Prático de Uso',
-    title: 'Como Subir seu Score e Evitar Quedas',
-    subtitle: 'O que fazer no dia a dia para consolidar o edital até a prova',
+    badge: 'Passo 6 de 6 • Resumo Prático',
+    title: 'No Dia a Dia: O que Faz Subir vs. O que Faz Cair',
+    subtitle: 'Um guia rápido para manter suas matérias verdes até o dia da prova',
     icon: TrendingUp,
   },
 ];
@@ -196,134 +196,109 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
               <div className="p-4 rounded-2xl bg-emerald-500/[0.07] border border-emerald-500/25 space-y-2">
                 <h3 className="text-sm font-extrabold text-slate-900 dark:text-white flex items-center gap-2">
                   <Brain className="w-4 h-4 text-emerald-500" />
-                  Por que não usamos ciclos fixos (1, 7, 15, 30 dias) nem apenas % de acerto?
+                  Por que não usamos revisões fixas de 7, 15 e 30 dias?
                 </h3>
                 <p>
-                  Em plataformas tradicionais, ou você agenda revisões fixas (que viram uma bola de neve impossível de cumprir) ou olha apenas a % de questões de uma sessão isolada. Aqui o centro de tudo é o <strong>SCORE (0 a 100)</strong>.
+                  Se você estuda um assunto super fácil e acerta 95% das questões, revisar daqui a 7 dias é perda de tempo. Por outro lado, se você estudou um assunto difícil e acertou só 40%, esperar 15 dias faz você esquecer tudo!
                 </p>
                 <p>
-                  Toda vez que você registra um estudo, o sistema calcula o <strong>Novo Score daquele tópico</strong> cruzando <strong>6 variáveis</strong> do seu histórico e projeta na curva de esquecimento o <strong>dia exato</strong> (ex.: <code className="text-emerald-500 font-bold">+4d</code>, <code className="text-emerald-500 font-bold">+9d</code>, <code className="text-emerald-500 font-bold">+11d</code>, <code className="text-emerald-500 font-bold">+17d</code>, <code className="text-emerald-500 font-bold">+26d</code>) em que você precisará revisar antes de esquecer.
+                  Por isso, o <strong>Krono</strong> dá uma <strong>Nota de 0 a 100 (Score)</strong> para cada assunto e calcula sob medida daqui a quantos dias (ex.: <code className="text-emerald-500 font-bold">+3d</code>, <code className="text-emerald-500 font-bold">+8d</code>, <code className="text-emerald-500 font-bold">+14d</code>, <code className="text-emerald-500 font-bold">+25d</code>) sua memória começará a esfriar, agendando a revisão na hora certa.
                 </p>
               </div>
 
-              {/* Fluxograma Visual */}
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5">
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <span className="inline-block px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-400 font-extrabold text-[10px] mb-2">
-                    PASSO 1 • ENTRADAS
+                    1 • QUANDO VOCÊ ESTUDA
                   </span>
                   <h4 className="font-bold text-slate-900 dark:text-white text-xs mb-1">
-                    Agregação Multi-Fatorial
+                    Olha Tudo o que Você Fez
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Junta histórico do tópico + última sessão + histórico da disciplina + Simulados + Relevância/Dificuldade/Domínio + seu Perfil Pessoal.
+                    Analisa quantas questões você acertou no total, como foi seu último estudo, os simulados da matéria e se você acha o assunto fácil ou difícil.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <span className="inline-block px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-extrabold text-[10px] mb-2">
-                    PASSO 2 • MOTOR DE SCORE
+                    2 • COM O PASSAR DOS DIAS
                   </span>
                   <h4 className="font-bold text-slate-900 dark:text-white text-xs mb-1">
-                    Score (0–100) & Retenção (%)
+                    Acompanha Sua Memória
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Calcula seu <strong>Score Base</strong> e aplica a taxa de esquecimento diária (<code className="text-emerald-400">λ</code>) para obter a <strong>Retenção Atual (%)</strong> e o <strong>Score Atual</strong>.
+                    No dia em que você estuda, sua memória daquele tema está em <strong>100%</strong>. A cada dia sem ver o assunto, ela vai esfriando aos poucos, como acontece na vida real.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <span className="inline-block px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 font-extrabold text-[10px] mb-2">
-                    PASSO 3 • AGENDAMENTO EXATO
+                    3 • NA HORA DE REVISAR
                   </span>
                   <h4 className="font-bold text-slate-900 dark:text-white text-xs mb-1">
-                    Dias Quebrados Sob Medida
+                    Avisa o Dia Ideal + Dica Prática
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Resolve a equação contínua para descobrir exatamente em quantos dias (<code className="text-amber-400">3d, 6d, 11d, 14d, 23d...</code>) sua retenção cairá até o limite de segurança.
+                    Antes de você esquecer o conteúdo, o tópico entra na sua fila de Revisões já dizendo se vale mais a pena ler seu resumo, ver a teoria ou ir direto para questões.
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* SLIDE 1: OS 6 PILARES DO SCORE */}
+          {/* SLIDE 1: O QUE FORMA A NOTA */}
           {currentSlide === 1 && (
             <div className="space-y-4 animate-fadeIn">
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                O <strong>Score do Tópico (0 a 100)</strong> nunca olha um único dado isolado. Ele pondera dinamicamente os 6 pilares abaixo:
+                Sua <strong>Nota (Score de 0 a 100)</strong> não olha apenas uma coisa isolada. Veja de forma simples o que entra na conta:
               </p>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <div className="flex items-center justify-between mb-1">
-                    <strong className="text-slate-900 dark:text-white">1. Histórico Acumulado do Tópico</strong>
+                    <strong className="text-slate-900 dark:text-white">1. Seus Acertos nas Questões</strong>
                     <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-bold text-[10px]">
-                      Peso Base Alto
+                      Principal Fator
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Soma todas as questões já feitas naquele tópico em todas as sessões anteriores, suavizadas para evitar distorções quando há poucas questões.
+                    Quanto mais questões você resolve e acerta no assunto, maior fica sua nota. Se você fez poucas questões (ex: só 4 ou 5), o sistema vai com calma até você ter uma amostra maior.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <div className="flex items-center justify-between mb-1">
-                    <strong className="text-slate-900 dark:text-white">2. Último Registro / Sessão Atual</strong>
+                    <strong className="text-slate-900 dark:text-white">2. Como Você Foi no Último Estudo</strong>
                     <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-400 font-bold text-[10px]">
-                      38% das Questões
+                      Termômetro Recente
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    A última bateria registrada tem peso direto de 38% sobre o componente de questões: se hoje você foi mal num tópico que ia bem, o Score sente na hora e encurta a revisão!
+                    A última vez que você estudou tem um peso especial: se você vinha errando e hoje acertou 90%, sua nota sobe rápido. Se hoje você foi mal, o sistema antecipa a revisão para te proteger.
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <div className="flex items-center justify-between mb-1">
-                    <strong className="text-slate-900 dark:text-white">3. Contexto da Disciplina + Simulados</strong>
+                    <strong className="text-slate-900 dark:text-white">3. Seu Domínio Declarado (0 a 5)</strong>
                     <span className="px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 font-bold text-[10px]">
-                      12% a 45%
+                      Ajuda no Início
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Seu desempenho geral na matéria e nos <strong>Simulados</strong> funciona como âncora: se você domina a disciplina como um todo, tópicos novos partem de um patamar mais fiel à sua realidade.
+                    Quando você começa um tópico novo e ainda fez poucas questões, a nota que você dá para o seu próprio domínio ajuda bastante. Depois que você já fez dezenas de questões, o que manda mesmo são seus acertos reais!
                   </p>
                 </div>
 
                 <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
                   <div className="flex items-center justify-between mb-1">
-                    <strong className="text-slate-900 dark:text-white">4. Domínio Declarado (0 a 5)</strong>
+                    <strong className="text-slate-900 dark:text-white">4. Estudar em Dias Diferentes + Simulados</strong>
                     <span className="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-500 font-bold text-[10px]">
-                      10% a 55%
+                      Memória Duradoura
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Sua percepção subjetiva no Cockpit do Tópico. Tem peso maior quando você ainda fez poucas questões (até 55%) e vai cedendo espaço para os dados reais conforme você resolve baterias (10%).
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
-                  <div className="flex items-center justify-between mb-1">
-                    <strong className="text-slate-900 dark:text-white">5. Relevância (R) e Dificuldade (D)</strong>
-                    <span className="px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 font-bold text-[10px]">
-                      Modificador ±15 pts
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Altera diretamente tanto a nota do Score quanto a velocidade de esquecimento (<code className="text-rose-400">λ</code>) e a régua de exigência da revisão.
-                  </p>
-                </div>
-
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a]">
-                  <div className="flex items-center justify-between mb-1">
-                    <strong className="text-slate-900 dark:text-white">6. Tempo Tópico (82%) + Disciplina (18%)</strong>
-                    <span className="px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-400 font-bold text-[10px]">
-                      Decaimento Diário
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Avalia há quantos dias você não estuda o tópico E há quantos dias você não toca na disciplina como um todo.
+                    Revisar um assunto em 3 ou 4 dias separados fixa muito mais do que estudar 4 horas num único dia. Além disso, suas notas nos <strong>Simulados</strong> também ajudam a compor a nota da matéria!
                   </p>
                 </div>
               </div>
@@ -334,87 +309,90 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
           {currentSlide === 2 && (
             <div className="space-y-4 animate-fadeIn">
               <p className="text-xs text-slate-500 dark:text-slate-400">
-                No Cockpit de cada tópico você pode ajustar <strong>Relevância (0–5)</strong>, <strong>Dificuldade (0–5)</strong> e <strong>Domínio Declarado (0–5)</strong>. Veja como as combinações afetam o cálculo junto às questões:
+                Dentro de cada tópico (ou logo no 1º estudo), você pode marcar de 0 a 5 a <strong>Relevância na prova</strong>, a <strong>Dificuldade</strong> e o seu <strong>Domínio</strong>. Veja na prática o que cada combinação faz:
               </p>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
                 <div className="p-4 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/25 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold text-emerald-500 uppercase text-[11px]">
-                      Cenário A • Domínio Forte & Baixa Dificuldade
+                      Cenário A • Assunto Tranquilo e Dominado
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-extrabold text-[10px]">
-                      Ex.: +21d, +28d, +36d
+                      Revisão espaçada (+20d a +40d)
                     </span>
                   </div>
                   <p className="text-[11px]">
-                    <strong>Domínio Alto (4–5) + Dificuldade Baixa (1–2) + Acerto Alto (≥80%):</strong> O sistema entende que você já domina a matéria e valida isso nas questões. O Score fica alto (80–95), a curva <code className="text-emerald-400">λ</code> desacelera e você revisa bem menos.
+                    <strong>Domínio Alto (4–5) + Dificuldade Baixa (1–2) + Ótimos Acertos:</strong> O sistema vê que você já aprendeu de verdade. Sua memória segura por muitas semanas e ele não fica ocupando seu tempo à toa.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-rose-500/[0.06] border border-rose-500/25 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold text-rose-400 uppercase text-[11px]">
-                      Cenário B • Alta Relevância, Difícil & Baixo Domínio
+                      Cenário B • Cai Muito na Prova e Você Acha Difícil
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-rose-500 text-white font-extrabold text-[10px]">
-                      Ex.: +3d, +4d, +6d
+                      Revisão rápida (+2d a +5d)
                     </span>
                   </div>
                   <p className="text-[11px]">
-                    <strong>Relevância Alta (4–5) + Dificuldade Alta (4–5) + Domínio Baixo (0–2):</strong> Ponto crítico de prova! O Score sofre penalidade de cautela, a taxa <code className="text-rose-400">λ</code> acelera e a régua de retenção sobe para ~80%, chamando revisão em poucos dias.
+                    <strong>Relevância Alta (4–5) + Dificuldade Alta (4–5) + Domínio Baixo (0–2):</strong> Alerta máximo para a sua aprovação! O sistema coloca esse tópico no topo da prioridade e agenda revisões curtinhas até você dominar.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-amber-500/[0.06] border border-amber-500/25 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold text-amber-400 uppercase text-[11px]">
-                      Cenário C • Fácil, Domínio Médio, mas Alta Relevância
+                      Cenário C • Fácil, Mas Despenca na Prova
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-amber-500 text-slate-950 font-extrabold text-[10px]">
-                      Ex.: +11d, +14d, +16d
+                      Revisão média (+10d a +16d)
                     </span>
                   </div>
                   <p className="text-[11px]">
-                    <strong>Dificuldade Baixa (1–2) + Domínio Intermediário (3) + Relevância Alta (5):</strong> Mesmo sendo um assunto tranquilo, como ele despenca em prova (Relevância 5), o sistema não deixa você ficar 40 dias sem vê-lo — mantém revisões intermediárias (~11 a 16 dias).
+                    <strong>Dificuldade Baixa (1–2) + Relevância Máxima (5):</strong> Mesmo sendo fácil para você, como vale muitos pontos no edital, o sistema exige uma segurança maior na memória e não deixa você passar meses sem ver.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-indigo-500/[0.06] border border-indigo-500/25 space-y-1.5">
                   <div className="flex items-center justify-between">
                     <span className="font-extrabold text-indigo-400 uppercase text-[11px]">
-                      Cenário D • Baixa Relevância, Difícil & Baixo Domínio
+                      Cenário D • Assunto Difícil, Mas Raro na Prova
                     </span>
                     <span className="px-2 py-0.5 rounded-full bg-indigo-500 text-white font-extrabold text-[10px]">
-                      Ex.: +7d, +9d, +12d
+                      Sem sufocar seu ciclo
                     </span>
                   </div>
                   <p className="text-[11px]">
-                    <strong>Relevância Baixa (1) + Dificuldade Alta (4–5) + Domínio Baixo (1):</strong> O Score fica baixo porque você tem dificuldade, pedindo reforço, mas como a Relevância na prova é 1, a régua de retenção é mais tolerante (70%), sem sufocar os tópicos de peso 5.
+                    <strong>Relevância Baixa (1) + Dificuldade Alta (4–5):</strong> O sistema agenda reforço porque você sentiu dificuldade, mas não deixa esse tópico roubar o lugar dos assuntos de Relevância 5 que realmente decidem sua aprovação!
                   </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* SLIDE 3: SCORE DA DISCIPLINA, SIMULADOS & RETENÇÃO */}
+          {/* SLIDE 3: SCORE VS RETENÇÃO */}
           {currentSlide === 3 && (
             <div className="space-y-4 animate-fadeIn">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a] space-y-2">
                   <div className="flex items-center gap-2 text-emerald-500 font-extrabold text-xs uppercase">
                     <Award className="w-4 h-4" />
-                    Score Geral da Disciplina + Simulados
+                    Sua Nota (Score de 0 a 100)
                   </div>
                   <p className="text-[11px]">
-                    Cada matéria possui seu <strong>Score Geral da Disciplina (0 a 100)</strong>. Como nos <strong>Simulados</strong> você cadastra o resultado por disciplina (e não por subtópico), o sistema faz a fusão inteligente:
+                    Pense no <strong>Score</strong> como a sua <strong>preparação geral naquele assunto para o dia da prova</strong>:
                   </p>
                   <ul className="space-y-1.5 text-[11px] list-disc pl-4 text-slate-500 dark:text-slate-400">
                     <li>
-                      Calcula a <strong>média ponderada dos Scores dos tópicos</strong> daquela disciplina (dando mais peso aos tópicos de maior Relevância).
+                      <strong>Acima de 75 (Verde):</strong> Assunto forte e bem dominado.
                     </li>
                     <li>
-                      Integra a nota dos seus <strong>Simulados</strong> naquela matéria (28% do Score da Disciplina) E usa o resultado dos Simulados para calibrar o Score de todos os tópicos daquela matéria!
+                      <strong>Entre 50 e 74 (Amarelo):</strong> Em construção — precisa de mais questões ou revisão para ficar seguro.
+                    </li>
+                    <li>
+                      <strong>Abaixo de 50 (Vermelho):</strong> Ponto fraco ou esquecido — pede atenção prioritária.
                     </li>
                   </ul>
                 </div>
@@ -422,24 +400,27 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
                 <div className="p-4 rounded-2xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a] space-y-2">
                   <div className="flex items-center gap-2 text-indigo-400 font-extrabold text-xs uppercase">
                     <Activity className="w-4 h-4" />
-                    Score (0–100) vs. Retenção Atual (0–100%)
+                    Memória Fresca Hoje (Retenção %)
                   </div>
                   <p className="text-[11px]">
-                    Ao abrir qualquer tópico (ex.: <em>1.1 Princípios LIMPE</em>), você verá dois indicadores lado a lado:
+                    Já a <strong>Retenção (%)</strong> mostra <strong>o quão fresco aquele assunto está na sua cabeça hoje</strong>:
                   </p>
                   <ul className="space-y-1.5 text-[11px] list-disc pl-4 text-slate-500 dark:text-slate-400">
                     <li>
-                      <strong>Score (0 a 100 pts):</strong> Mede sua <strong>força competitiva real</strong> naquele assunto (qualidade de acerto + domínio + peso + memória ativa).
+                      No dia em que você estuda, ela fica perto de <strong>100%</strong>.
                     </li>
                     <li>
-                      <strong>Retenção (0% a 100%):</strong> Mede o <strong>frescor na memória hoje</strong>. No dia em que você estuda, a Retenção vai a <strong>100%</strong> e cai dia após dia segundo <code className="text-indigo-400">e^(-λ·t)</code> até atingir o ponto ideal da próxima revisão.
+                      Conforme os dias passam sem você tocar no assunto, ela vai descendo aos poucos (95%... 86%... 78%).
+                    </li>
+                    <li>
+                      Quando ela encosta no limite de segurança (por volta de 75% a 85%), o sistema te chama para revisar!
                     </li>
                   </ul>
                 </div>
               </div>
 
               <div className="p-3.5 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-[11px] text-indigo-600 dark:text-indigo-300">
-                <strong>Importante no Cockpit do Tópico:</strong> A contagem de <strong>Questões, Acertos e % de Acerto</strong> dentro da página de notas do tópico é <strong>100% automática e auditável</strong> — alimentada exclusivamente pelos seus registros reais de estudo!
+                <strong>E a Nota Geral da Disciplina?</strong> Ela junta a nota de todos os tópicos daquela matéria (dando mais importância aos tópicos que mais caem na prova) com os seus resultados nos <strong>Simulados</strong>!
               </div>
             </div>
           )}
@@ -451,10 +432,10 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <span className="text-xs font-extrabold text-emerald-500 uppercase flex items-center gap-1.5">
                     <UserCheck className="w-4 h-4" />
-                    Seu Perfil de Memória Atual no Sistema
+                    Seu Ritmo Pessoal de Memória Hoje
                   </span>
                   <span className="px-2.5 py-1 rounded-full bg-emerald-500 text-slate-950 font-extrabold text-xs">
-                    Fator Pessoal α = {userProfile.personalRetentionFactor}x
+                    Ritmo da sua memória: {userProfile.personalRetentionFactor}x
                   </span>
                 </div>
                 <p className="text-xs text-slate-700 dark:text-slate-200 font-medium">
@@ -465,19 +446,19 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a] space-y-1.5">
                   <h4 className="font-bold text-slate-900 dark:text-white text-xs">
-                    1º Contato com uma Disciplina/Tópico Novo
+                    Se você costuma lembrar bem nas revisões
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Exemplo: você estudou um tópico pela 1ª vez, fez <strong>10 questões e errou 7 (30% de acerto)</strong>. O sistema calcula imediatamente o <strong>Novo Score pós-sessão</strong> (~34 pts), cruza com seu fator pessoal <code className="text-emerald-500">α</code> e já sugere uma revisão curtíssima (ex.: <strong>3 ou 4 dias</strong>).
+                    Quando você volta para revisar um tópico depois de uma ou duas semanas e continua acertando muitas questões, o sistema percebe que sua memória fixa bem e passa a te dar intervalos mais confortáveis.
                   </p>
                 </div>
 
                 <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0d1626] border border-slate-200 dark:border-[#1f304a] space-y-1.5">
                   <h4 className="font-bold text-slate-900 dark:text-white text-xs">
-                    Aprendizado nas Revisões Seguintes
+                    Se você sentir que esqueceu rápido
                   </h4>
                   <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Quando você revisa um tópico após <code className="text-emerald-500">X dias</code>, o algoritmo compara seu % de acerto anterior com o novo: se você mantém ou sobe seu acerto após intervalos médios/longos, seu <code className="text-emerald-500">α</code> sobe (até 1.45x); se seu acerto costuma cair mais rápido que o esperado, seu <code className="text-rose-400">α</code> reduz (até 0.65x), antecipando automaticamente suas próximas revisões!
+                    Se ao fazer uma revisão seu índice de acertos cair bastante em relação à vez anterior, o sistema encurta automaticamente os prazos das próximas revisões para não deixar você esquecer o conteúdo.
                   </p>
                 </div>
               </div>
@@ -490,20 +471,17 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
               <div className="p-4 rounded-2xl bg-emerald-500/[0.06] border border-emerald-500/25 space-y-2.5">
                 <div className="flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-extrabold text-xs uppercase tracking-wider">
                   <TrendingUp className="w-4 h-4" />
-                  O que faz seu Score Subir e Durar Mais
+                  ▲ O Que Faz Sua Nota Subir e Durar Mais
                 </div>
                 <ul className="space-y-2 text-[11px] text-slate-600 dark:text-slate-300 list-disc pl-4">
                   <li>
-                    <strong>Acertar questões nas baterias recentes:</strong> Eleva o Score Base imediatamente (38% de peso na sessão mais recente + 62% no acumulado).
+                    <strong>Resolver questões e manter bom acerto:</strong> É o combustível número 1 para subir sua nota com segurança.
                   </li>
                   <li>
-                    <strong>Acumular sessões em dias distintos:</strong> O fator <code className="text-emerald-500">√N_sessões</code> reduz o decaimento <code className="text-emerald-500">λ</code> — cada revisão concluída deixa sua memória mais blindada.
+                    <strong>Revisar em dias separados:</strong> Cada vez que você revisa um assunto num dia diferente e vai bem, o tempo que sua memória aguenta aumenta (ex: de 4 dias vai para 9 dias, depois 18 dias...).
                   </li>
                   <li>
-                    <strong>Ir bem nos Simulados da Disciplina:</strong> Sobe o Score Geral da matéria e puxa positivamente a âncora de todos os tópicos dela.
-                  </li>
-                  <li>
-                    <strong>Evoluir seu Domínio Declarado (0–5)</strong> no Cockpit conforme sentir segurança real na matéria.
+                    <strong>Fazer questões tentando lembrar antes de ler o resumo:</strong> Esforçar a memória para responder questões fixa muito mais do que só reler teoria.
                   </li>
                 </ul>
               </div>
@@ -511,17 +489,17 @@ export default function ScoreTutorialModal({ isOpen, onClose }: ScoreTutorialMod
               <div className="p-4 rounded-2xl bg-rose-500/[0.06] border border-rose-500/25 space-y-2.5">
                 <div className="flex items-center gap-2 text-rose-500 font-extrabold text-xs uppercase tracking-wider">
                   <TrendingDown className="w-4 h-4" />
-                  O que faz seu Score Cair Mais Rápido
+                  ▼ O Que Faz Sua Nota Cair
                 </div>
                 <ul className="space-y-2 text-[11px] text-slate-600 dark:text-slate-300 list-disc pl-4">
                   <li>
-                    <strong>Abandonar o Tópico ou a Disciplina por semanas:</strong> A Retenção cai diariamente (<code className="text-rose-400">82% tempo do tópico + 18% tempo da disciplina</code>), reduzindo o Score Atual até entrar em Urgência.
+                    <strong>Ficar muitas semanas sem ver o assunto:</strong> A memória vai esfriando dia após dia até o tópico pedir revisão.
                   </li>
                   <li>
-                    <strong>Queda brusca na última bateria de questões:</strong> Se você errar muitas questões hoje, o peso recente derruba o Score para forçar uma revisão curta de recuperação.
+                    <strong>Errar muitas questões na última bateria:</strong> Se você tropeçar num treino recente, a nota desce para chamar uma revisão rápida de correção.
                   </li>
                   <li>
-                    <strong>Tópicos com Relevância 4–5 e Dificuldade 4–5:</strong> Possuem decaimento natural mais rigoroso para garantir que você nunca vá para a prova sem dominá-los.
+                    <strong>Estudar só teoria sem fazer nenhuma questão:</strong> Sem questões feitas, a nota fica travada num patamar moderado porque ainda falta testar na prática.
                   </li>
                 </ul>
               </div>

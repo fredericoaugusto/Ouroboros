@@ -1384,3 +1384,189 @@ export async function addSubtopicAction(
     return { success: false, error: error.message || 'Falha ao adicionar subtópico.' };
   }
 }
+
+export async function importSubjectsBagagemFromPlanAction(params: {
+  sourceFileName: string;
+  targetFileName: string;
+  subjectNames: string[];
+  copyStudyHistory?: boolean;
+}): Promise<{
+  success: boolean;
+  importedSubjectsCount?: number;
+  copiedRecordsCount?: number;
+  error?: string;
+}> {
+  const { sourceFileName, targetFileName, subjectNames, copyStudyHistory = true } = params;
+  if (!sourceFileName || !targetFileName || !Array.isArray(subjectNames) || subjectNames.length === 0) {
+    return { success: false, error: 'Selecione o plano de origem e ao menos uma disciplina.' };
+  }
+  if (normalizePlanFileName(sourceFileName) === normalizePlanFileName(targetFileName)) {
+    return { success: false, error: 'O plano de origem e o plano de destino devem ser diferentes.' };
+  }
+
+  try {
+    const session = await requireStudentSession();
+    const userId = session.userId;
+    const [sourcePlan, targetPlan] = await Promise.all([
+      getPlanMeta(userId, sourceFileName),
+      getPlanMeta(userId, targetFileName),
+    ]);
+
+    if (!sourcePlan || !targetPlan) {
+      return { success: false, error: 'Plano de origem ou de destino não encontrado.' };
+    }
+
+    const supabase = getSupabaseAdmin();
+    const selectedSet = new Set(subjectNames.map((s) => s.trim().toLowerCase()));
+    const sourceSubjects: Subject[] = (sourcePlan.subjects || []).filter((s: Subject) =>
+      selectedSet.has((s.subject || '').trim().toLowerCase())
+    );
+
+    if (sourceSubjects.length === 0) {
+      return { success: false, error: 'Nenhuma das disciplinas selecionadas foi encontrada no plano de origem.' };
+    }
+
+    const targetSubjects: Subject[] = Array.isArray(targetPlan.subjects)
+      ? [...targetPlan.subjects]
+      : [];
+
+    const mergeTopicTrees = (targetTopics: any[], sourceTopics: any[]): any[] => {
+      const sourceMap = new Map<string, any>();
+      const flattenSource = (list: any[]) => {
+        for (const t of list || []) {
+          if (t.topic_text) {
+            sourceMap.set(t.topic_text.trim().toLowerCase(), t);
+          }
+          if (t.sub_topics && t.sub_topics.length > 0) {
+            flattenSource(t.sub_topics);
+          }
+        }
+      };
+      flattenSource(sourceTopics);
+
+      const enrichTarget = (list: any[]): any[] =>
+        (list || []).map((t) => {
+          const key = (t.topic_text || '').trim().toLowerCase();
+          const match = sourceMap.get(key);
+          const mergedSubs =
+            t.sub_topics && t.sub_topics.length > 0 ? enrichTarget(t.sub_topics) : t.sub_topics;
+          if (match) {
+            return {
+              ...t,
+              is_completed: t.is_completed || match.is_completed,
+              status: t.status || match.status,
+              notes: t.notes || match.notes,
+              notebookUrl: t.notebookUrl || match.notebookUrl,
+              relevance: match.relevance ?? t.relevance,
+              difficulty: match.difficulty ?? t.difficulty,
+              perceivedMastery: match.perceivedMastery ?? match.mastery ?? t.perceivedMastery,
+              sub_topics: mergedSubs,
+            };
+          }
+          return { ...t, sub_topics: mergedSubs };
+        });
+
+      const enriched = enrichTarget(targetTopics);
+      const existingKeys = new Set(
+        enriched.map((t: any) => (t.topic_text || '').trim().toLowerCase())
+      );
+      for (const srcTop of sourceTopics || []) {
+        const k = (srcTop.topic_text || '').trim().toLowerCase();
+        if (k && !existingKeys.has(k)) {
+          enriched.push(srcTop);
+        }
+      }
+      return enriched;
+    };
+
+    const subjectIdMap = new Map<string, string>(); // sourceSubjectNameLower -> targetSubjectId
+
+    for (const srcSubj of sourceSubjects) {
+      const key = (srcSubj.subject || '').trim().toLowerCase();
+      const existingIdx = targetSubjects.findIndex(
+        (ts) => (ts.subject || '').trim().toLowerCase() === key
+      );
+
+      if (existingIdx !== -1) {
+        const targetSubj = targetSubjects[existingIdx];
+        const targetId = targetSubj.id || crypto.randomUUID();
+        targetSubjects[existingIdx] = {
+          ...targetSubj,
+          id: targetId,
+          color: targetSubj.color || srcSubj.color,
+          topics: mergeTopicTrees(targetSubj.topics || [], srcSubj.topics || []),
+        };
+        subjectIdMap.set(key, targetId);
+      } else {
+        const newId = crypto.randomUUID();
+        targetSubjects.push({
+          ...srcSubj,
+          id: newId,
+        });
+        subjectIdMap.set(key, newId);
+      }
+    }
+
+    const { error: updateErr } = await supabase
+      .from('study_plans')
+      .update({ subjects: targetSubjects })
+      .eq('id', targetPlan.id)
+      .eq('user_id', userId);
+
+    if (updateErr) throw updateErr;
+
+    let copiedRecordsCount = 0;
+    if (copyStudyHistory) {
+      const { data: srcRecords } = await supabase
+        .from('study_records')
+        .select('*')
+        .eq('plan_id', sourcePlan.id)
+        .eq('user_id', userId);
+
+      const matchingRecords = (srcRecords || []).filter((r: any) =>
+        selectedSet.has((r.subject || '').trim().toLowerCase())
+      );
+
+      if (matchingRecords.length > 0) {
+        const rowsToInsert = matchingRecords.map((r: any) => {
+          const sKey = (r.subject || '').trim().toLowerCase();
+          return {
+            id: crypto.randomUUID(),
+            plan_id: targetPlan.id,
+            user_id: userId,
+            date: r.date,
+            subject_id: subjectIdMap.get(sKey) || r.subject_id || null,
+            subject: r.subject,
+            topic: r.topic,
+            study_time: r.study_time || 0,
+            questions: r.questions || { total: 0, correct: 0 },
+            pages: r.pages || [],
+            videos: r.videos || [],
+            notes: r.notes || null,
+            category: r.category || 'teoria',
+            teoria_finalizada: Boolean(r.teoria_finalizada),
+            count_in_planning: Boolean(r.count_in_planning),
+            review_periods: r.review_periods || [],
+          };
+        });
+
+        const { error: recErr } = await supabase.from('study_records').insert(rowsToInsert);
+        if (!recErr) {
+          copiedRecordsCount = rowsToInsert.length;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      importedSubjectsCount: sourceSubjects.length,
+      copiedRecordsCount,
+    };
+  } catch (error: any) {
+    console.error('Erro ao importar bagagem entre planos:', error);
+    return {
+      success: false,
+      error: error.message || 'Falha ao importar bagagem do plano.',
+    };
+  }
+}

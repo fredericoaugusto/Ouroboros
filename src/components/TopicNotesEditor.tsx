@@ -173,10 +173,13 @@ export default function TopicNotesEditor({
     },
   });
 
-  // Só redefine o conteúdo do editor quando mudar de tópico (topicKey diferente)
+  // Redefine o conteúdo do editor quando mudar de tópico ou quando um recorte/trecho externo for anexado
   useEffect(() => {
-    if (editor && lastTopicKeyRef.current !== topicKey) {
+    if (!editor) return;
+    if (lastTopicKeyRef.current !== topicKey) {
       lastTopicKeyRef.current = topicKey;
+      editor.commands.setContent(initialContent || '');
+    } else if (!editor.isFocused && initialContent !== undefined && initialContent !== editor.getHTML()) {
       editor.commands.setContent(initialContent || '');
     }
   }, [topicKey, initialContent, editor]);

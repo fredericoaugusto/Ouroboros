@@ -8,6 +8,7 @@ import {
 } from '../lib/scoreEngine';
 import TopicNotesEditor from './TopicNotesEditor';
 import ScoreTutorialModal from './ScoreTutorialModal';
+import QuestionStudioModal from './QuestionStudioModal';
 import Breadcrumbs, { BreadcrumbItem } from './Breadcrumbs';
 import { useNotification } from '../context/NotificationContext';
 import { useSidebar } from '../context/SidebarContext';
@@ -100,6 +101,8 @@ export default function TopicCockpitModal({
   );
   const [notes, setNotes] = useState(topic?.notes || '');
   const [isScoreTutorialOpen, setIsScoreTutorialOpen] = useState(false);
+  const [isStudioModalOpen, setIsStudioModalOpen] = useState(false);
+  const [studioInitialTab, setStudioInitialTab] = useState<'studio' | 'discursive'>('studio');
 
   const currentTopicIdentity = `${subjectName}::${topic?.topic_text || ''}`;
   const lastSyncedIdentityRef = useRef<string>('');
@@ -377,7 +380,7 @@ export default function TopicCockpitModal({
               <div className="grid grid-cols-2 gap-2.5">
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    Score do Tópico
+                    Sua Nota Hoje (Score)
                   </span>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span
@@ -395,9 +398,13 @@ export default function TopicCockpitModal({
                       / 100
                     </span>
                   </div>
-                  {scoreResult.forgettingPenalty > 0 && (
-                    <span className="text-[9px] text-slate-400 block mt-0.5">
-                      Topo pós-estudo: {scoreResult.baseScore}/100 (-{scoreResult.forgettingPenalty} pelo tempo)
+                  {scoreResult.forgettingPenalty > 0 ? (
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Quando estudou era <strong>{scoreResult.baseScore}</strong> (-{scoreResult.forgettingPenalty} pelo tempo)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-slate-400 block mt-0.5">
+                      Força geral neste assunto
                     </span>
                   )}
                 </div>
@@ -405,7 +412,7 @@ export default function TopicCockpitModal({
                 <div className="p-3 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a]">
                   <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1">
                     <Activity size={11} className="text-indigo-400" />
-                    Retenção Atual
+                    Memória Fresca Hoje
                   </span>
                   <div className="flex items-baseline gap-1 mt-1">
                     <span
@@ -419,53 +426,53 @@ export default function TopicCockpitModal({
                     >
                       {scoreResult.retention}%
                     </span>
-                    <span className="text-[10px] text-slate-400">memória</span>
+                    <span className="text-[10px] text-slate-400">lembrança</span>
                   </div>
-                  <span className="text-[9px] text-slate-400 block mt-0.5">
-                    Estabilidade S: ~{scoreResult.memoryStabilityDays}d (-{scoreResult.dailyDecayPercent}%/dia)
+                  <span className="text-[10px] text-slate-400 block mt-0.5">
+                    Segura bem por ~<strong>{scoreResult.memoryStabilityDays} dias</strong>
                   </span>
                 </div>
               </div>
 
-              {/* Diagnóstico: O que está impactando o Score? */}
+              {/* Diagnóstico Intuitivo: O que está fazendo o Score subir ou cair? */}
               {scoreResult.impactFactors && scoreResult.impactFactors.length > 0 && (
-                <div className="p-3 rounded-xl bg-slate-50/90 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] space-y-2">
+                <div className="p-3.5 rounded-xl bg-slate-50/90 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] space-y-2.5">
                   <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 dark:text-slate-400 block">
-                    O que está impactando este Score?
+                    Por que sua nota está assim? (O que faz subir ou cair)
                   </span>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2">
                     {scoreResult.impactFactors.map((factor, idx) => (
                       <div
                         key={idx}
-                        className="text-[11px] leading-snug flex items-start gap-2"
+                        className="text-[11px] leading-relaxed flex items-start gap-2 p-2 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200/60 dark:border-[#1f304a]"
                       >
                         <span
-                          className={`mt-0.5 font-extrabold text-xs shrink-0 ${
+                          className={`px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase shrink-0 mt-0.5 ${
                             factor.type === 'positive'
-                              ? 'text-emerald-500'
+                              ? 'bg-emerald-500/15 text-emerald-500'
                               : factor.type === 'negative'
-                              ? 'text-rose-500'
-                              : 'text-indigo-400'
+                              ? 'bg-rose-500/15 text-rose-500'
+                              : 'bg-indigo-500/15 text-indigo-400'
                           }`}
                         >
                           {factor.type === 'positive'
-                            ? '▲'
+                            ? '▲ Sobe'
                             : factor.type === 'negative'
-                            ? '▼'
-                            : '•'}
+                            ? '▼ Cai'
+                            : '• Aviso'}
                         </span>
                         <div>
                           <strong
-                            className={
+                            className={`block ${
                               factor.type === 'positive'
                                 ? 'text-emerald-600 dark:text-emerald-400'
                                 : factor.type === 'negative'
                                 ? 'text-rose-500 dark:text-rose-400'
-                                : 'text-slate-700 dark:text-slate-200'
-                            }
+                                : 'text-slate-800 dark:text-slate-200'
+                            }`}
                           >
-                            {factor.label}:
-                          </strong>{' '}
+                            {factor.label}
+                          </strong>
                           <span className="text-slate-500 dark:text-slate-400">
                             {factor.detail}
                           </span>
@@ -597,14 +604,29 @@ export default function TopicCockpitModal({
                 className="w-full text-xs px-3 py-2 rounded-xl bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-emerald-500"
               />
 
-              <button
-                type="button"
-                onClick={handleOpenNotebook}
-                className="w-full py-2.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all"
-              >
-                <ExternalLink size={14} />
-                Abrir Caderno em Nova Aba
-              </button>
+              <div className="grid grid-cols-1 gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenNotebook}
+                  className="w-full py-2.5 px-4 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition-all"
+                >
+                  <ExternalLink size={14} />
+                  Abrir Caderno em Nova Aba
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStudioInitialTab('studio');
+                    setIsStudioModalOpen(true);
+                  }}
+                  className="w-full py-2.5 px-3 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-600 dark:text-emerald-400 text-xs font-extrabold flex items-center justify-center gap-2 transition-all"
+                  title="Abrir Navegador e Estúdio Interativo em Tela Cheia (rolar página, selecionar texto p/ Notas, grifar texto e recortar prints)"
+                >
+                  <Sparkles size={14} />
+                  Abrir Navegador & Estúdio em Tela Cheia
+                </button>
+              </div>
             </div>
 
             {/* Read-Only Questions from Study History & Next Adaptive Review Card */}
@@ -851,6 +873,21 @@ export default function TopicCockpitModal({
       <ScoreTutorialModal
         isOpen={isScoreTutorialOpen}
         onClose={() => setIsScoreTutorialOpen(false)}
+      />
+
+      <QuestionStudioModal
+        isOpen={isStudioModalOpen}
+        onClose={() => setIsStudioModalOpen(false)}
+        subjectName={subjectName}
+        topicName={topic.topic_text}
+        notebookUrl={notebookUrl}
+        currentNotes={notes}
+        initialTab={studioInitialTab}
+        onAppendToNotes={(htmlSnippet) => {
+          const nextNotes = `${notes || ''}${htmlSnippet}`;
+          setNotes(nextNotes);
+          persistChanges({ notes: nextNotes }, false);
+        }}
       />
     </div>
   );

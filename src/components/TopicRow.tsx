@@ -60,21 +60,27 @@ const TopicRow: React.FC<TopicRowProps> = ({
     [studyRecords, cleanSubj]
   );
 
+  const isCompleted = Boolean(topic.is_completed);
+
   const cleanTopicText = (topic.topic_text || '').trim().toLowerCase();
   const topicRecords = useMemo(
     () =>
       subjectRecords.filter((r) => {
         const rTop = (r.topic || '').trim().toLowerCase();
-        return (
+        const matchesTopic =
           rTop === cleanTopicText ||
           (rTop.length > 5 && (rTop.endsWith(cleanTopicText) || cleanTopicText.endsWith(rTop))) ||
-          (rTop.length > 8 && (rTop.includes(cleanTopicText) || cleanTopicText.includes(rTop)))
-        );
+          (rTop.length > 8 && (rTop.includes(cleanTopicText) || cleanTopicText.includes(rTop)));
+        if (!matchesTopic) return false;
+        const st = Number(r.studyTime) || 0;
+        const qt = Number(r.questions?.total) || 0;
+        const hasN = Boolean(r.notes && String(r.notes).trim().length > 0);
+        // Se o tópico foi desmarcado (!isCompleted), ignora registros dummy (0 min e 0 questões)
+        if (!isCompleted && st <= 0 && qt <= 0 && !hasN) return false;
+        return st > 0 || qt > 0 || Boolean(r.teoriaFinalizada) || hasN;
       }),
-    [subjectRecords, cleanTopicText]
+    [subjectRecords, cleanTopicText, isCompleted]
   );
-
-  const isCompleted = Boolean(topic.is_completed);
 
   const scoreRes = useMemo(() => {
     return computeTopicScore(

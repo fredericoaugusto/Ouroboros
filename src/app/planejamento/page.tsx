@@ -475,7 +475,7 @@ const SortableItem = ({
               title="Abrir Cronômetro em Modo Foco"
             >
               <Play className="w-3 h-3 fill-current" />
-              Iniciar
+              {currentProgress > 0 ? 'Continuar' : 'Iniciar'}
             </button>
             <button
               type="button"
@@ -1405,7 +1405,7 @@ export default function Planejamento() {
                         className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white shadow-lg shadow-indigo-500/25 transition-all"
                       >
                         <Play className="w-3.5 h-3.5 fill-current" />
-                        Iniciar estudo
+                        {nextHighlightProgress > 0 ? 'Continuar estudo' : 'Iniciar estudo'}
                       </button>
                       <button
                         onClick={() =>

@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { useData } from '../../context/DataContext';
-import { createPlanFile } from '../actions';
+import { createPlanFile, importSubjectsBagagemFromPlanAction } from '../actions';
 import Link from 'next/link';
 import CreatePlanModal from '../../components/CreatePlanModal';
 import ImportEditalModal from '../../components/ImportEditalModal';
@@ -75,6 +75,51 @@ export default function Planos() {
   const [isImportAIModalOpen, setIsImportAIModalOpen] = useState(false);
   const [isConfirmModalOpen, setIsConfirmModalOpen] = useState(false);
   const [planToDelete, setPlanToDelete] = useState<PlanInfo | null>(null);
+
+  // Reaproveitamento de Bagagem entre Planos
+  const [isBagagemModalOpen, setIsBagagemModalOpen] = useState(false);
+  const [sourceBagagemPlan, setSourceBagagemPlan] = useState<string>('');
+  const [selectedBagagemSubjects, setSelectedBagagemSubjects] = useState<string[]>([]);
+  const [copyBagagemHistory, setCopyBagagemHistory] = useState<boolean>(true);
+  const [isImportingBagagem, setIsImportingBagagem] = useState<boolean>(false);
+
+  const sourcePlanSubjects = useMemo(() => {
+    if (!sourceBagagemPlan || !availablePlans || !studyPlans) return [];
+    const idx = availablePlans.indexOf(sourceBagagemPlan);
+    if (idx === -1) return [];
+    const raw = studyPlans[idx] as any;
+    const subjectsList: Subject[] = Array.isArray(raw) ? raw : raw?.subjects || [];
+    return subjectsList.map((s) => s.subject).filter(Boolean);
+  }, [sourceBagagemPlan, availablePlans, studyPlans]);
+
+  const handleImportBagagem = async () => {
+    if (!sourceBagagemPlan || !selectedDataFile || selectedBagagemSubjects.length === 0) {
+      showNotification('Selecione o plano de origem e ao menos uma disciplina.', 'warning');
+      return;
+    }
+    setIsImportingBagagem(true);
+    try {
+      const res = await importSubjectsBagagemFromPlanAction({
+        sourceFileName: sourceBagagemPlan,
+        targetFileName: selectedDataFile,
+        subjectNames: selectedBagagemSubjects,
+        copyStudyHistory: copyBagagemHistory,
+      });
+      if (res.success) {
+        await refreshPlans(true);
+        showNotification(
+          `Bagagem importada! ${res.importedSubjectsCount} disciplina(s) e ${res.copiedRecordsCount || 0} registro(s) trazidos para o plano ativo.`,
+          'success'
+        );
+        setIsBagagemModalOpen(false);
+        setSelectedBagagemSubjects([]);
+      } else {
+        showNotification(res.error || 'Erro ao importar bagagem.', 'error');
+      }
+    } finally {
+      setIsImportingBagagem(false);
+    }
+  };
 
   const handleDeleteClick = (event: React.MouseEvent, plan: PlanInfo) => {
     event.preventDefault();
@@ -243,6 +288,24 @@ export default function Planos() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {plansToDisplay.length > 1 && (
+            <button
+              onClick={() => {
+                const otherPlan = plansToDisplay.find((p) => p.fileName !== selectedDataFile);
+                if (otherPlan) {
+                  setSourceBagagemPlan(otherPlan.fileName);
+                }
+                setSelectedBagagemSubjects([]);
+                setIsBagagemModalOpen(true);
+              }}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-600 dark:text-indigo-400 border border-indigo-500/30 transition-all"
+              title="Traga disciplinas, resumos, links de cadernos, pesos e histórico de estudo de outro plano"
+            >
+              <Layers className="w-4 h-4" />
+              Reaproveitar Bagagem de Outro Plano
+            </button>
+          )}
+
           <button
             onClick={() => setIsImportAIModalOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 transition-all"
@@ -467,6 +530,152 @@ export default function Planos() {
         confirmText="Excluir"
         cancelText="Cancelar"
       />
+
+      {/* Modal de Reaproveitamento de Bagagem entre Planos */}
+      {isBagagemModalOpen && (
+        <div
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-sm flex items-center justify-center p-4 animate-fadeIn"
+          onClick={() => setIsBagagemModalOpen(false)}
+        >
+          <div
+            className="bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase tracking-wider text-indigo-500 block">
+                  Reaproveitamento Inteligente de Bagagem
+                </span>
+                <h2 className="text-lg font-bold text-slate-900 dark:text-white mt-0.5">
+                  Importar Disciplinas, Notas e Histórico de Outro Plano
+                </h2>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                  Traga suas anotações, links de cadernos, pesos (I/D/M) e histórico de questões para o plano ativo sem começar do zero.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="text-xs font-bold text-slate-700 dark:text-slate-200 block mb-1.5">
+                  1. Copiar bagagem de qual plano?
+                </label>
+                <select
+                  value={sourceBagagemPlan}
+                  onChange={(e) => {
+                    setSourceBagagemPlan(e.target.value);
+                    setSelectedBagagemSubjects([]);
+                  }}
+                  className="w-full px-3.5 py-2.5 rounded-xl text-xs font-semibold bg-slate-50 dark:bg-[#0b1320] border border-slate-200 dark:border-[#1f304a] text-slate-800 dark:text-white"
+                >
+                  <option value="">Selecione um plano de origem...</option>
+                  {plansToDisplay
+                    .filter((p) => p.fileName !== selectedDataFile)
+                    .map((p) => (
+                      <option key={p.fileName} value={p.fileName}>
+                        {p.name} ({p.subjectCount} disciplinas)
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              {sourceBagagemPlan && (
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-bold text-slate-700 dark:text-slate-200">
+                      2. Selecione as disciplinas que deseja reaproveitar ({selectedBagagemSubjects.length}/{sourcePlanSubjects.length})
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setSelectedBagagemSubjects(
+                          selectedBagagemSubjects.length === sourcePlanSubjects.length
+                            ? []
+                            : [...sourcePlanSubjects]
+                        )
+                      }
+                      className="text-[11px] font-bold text-indigo-500 hover:underline"
+                    >
+                      {selectedBagagemSubjects.length === sourcePlanSubjects.length
+                        ? 'Desmarcar todas'
+                        : 'Selecionar todas'}
+                    </button>
+                  </div>
+
+                  <div className="max-h-52 overflow-y-auto rounded-xl border border-slate-200 dark:border-[#1f304a] bg-slate-50 dark:bg-[#0b1320] p-2.5 space-y-1.5">
+                    {sourcePlanSubjects.length === 0 ? (
+                      <p className="text-xs text-slate-400 p-2 text-center">
+                        Este plano não possui disciplinas cadastradas.
+                      </p>
+                    ) : (
+                      sourcePlanSubjects.map((subj) => {
+                        const checked = selectedBagagemSubjects.includes(subj);
+                        return (
+                          <label
+                            key={subj}
+                            className={`flex items-center gap-2.5 p-2 rounded-lg text-xs cursor-pointer transition-colors ${
+                              checked
+                                ? 'bg-indigo-500/15 text-indigo-500 font-bold'
+                                : 'text-slate-700 dark:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-[#131f33]'
+                            }`}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setSelectedBagagemSubjects((prev) =>
+                                  checked ? prev.filter((s) => s !== subj) : [...prev, subj]
+                                )
+                              }
+                              className="rounded accent-indigo-500"
+                            />
+                            <span className="truncate">{subj}</span>
+                          </label>
+                        );
+                      })
+                    )}
+                  </div>
+                </div>
+              )}
+
+              <label className="flex items-center gap-2.5 p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/20 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={copyBagagemHistory}
+                  onChange={(e) => setCopyBagagemHistory(e.target.checked)}
+                  className="rounded accent-emerald-500"
+                />
+                <div className="text-xs">
+                  <strong className="text-slate-900 dark:text-white block">
+                    Copiar também o histórico de questões e estudos dessas disciplinas
+                  </strong>
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Assim o Krono Score Engine v3.1 já mantém sua estabilidade de memória e taxa de acerto acumulada.
+                  </span>
+                </div>
+              </label>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsBagagemModalOpen(false)}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-[#1a2942]"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                disabled={isImportingBagagem || selectedBagagemSubjects.length === 0}
+                onClick={handleImportBagagem}
+                className="px-5 py-2 rounded-xl text-xs font-extrabold bg-emerald-500 hover:bg-emerald-400 disabled:opacity-50 text-slate-950 shadow-sm transition-all"
+              >
+                {isImportingBagagem ? 'Importando Bagagem...' : 'Importar Bagagem p/ Plano Ativo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

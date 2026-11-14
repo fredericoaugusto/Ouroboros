@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useMemo } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { useData } from '../context/DataContext';
 import { useSidebar } from '../context/SidebarContext';
@@ -13,6 +13,9 @@ import {
   Clock,
   Maximize2,
   Minimize2,
+  Headphones,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import StopwatchModal from './StopwatchModal';
 import {
@@ -41,6 +44,23 @@ export default function GlobalFooterTimer() {
   } = useData();
 
   const timerState = useGlobalTimer();
+
+  // Estados de Som de Foco (Web Audio API) e Alerta de 5 minutos
+  const [focusSound, setFocusSound] = useState<'off' | 'brown' | 'pink' | 'rain' | 'gamma40' | 'alpha10'>('off');
+  const [soundVolumePct, setSoundVolumePct] = useState<number>(15); // 1% a 100%, de 1 em 1%
+  const [voiceAlertEnabled, setVoiceAlertEnabled] = useState<boolean>(true);
+  const [isSoundMenuOpen, setIsSoundMenuOpen] = useState<boolean>(false);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const sourceNodeRef = useRef<AudioBufferSourceNode | null>(null);
+  const alerted5MinRef = useRef<boolean>(false);
+
+  // Curva logarítmica/quadrática suave: 1% a 15% fica um sussurro bem baixinho de fundo,
+  // e mesmo em 100% nunca fica estourado nos fones de ouvido.
+  const computeAudioGain = (pct: number) => {
+    const norm = Math.max(0.01, Math.min(1, pct / 100));
+    return Math.pow(norm, 1.85) * 0.14;
+  };
 
   // Encontra exatamente o próximo bloco pendente na fila do ciclo
   const activePlanningSession = useMemo(() => {
@@ -116,9 +136,114 @@ export default function GlobalFooterTimer() {
     }
   }, [plannedSubjectName, suggestedTopic, plannedSubjectColor, remainingBlockMinutes]);
 
-  if (['/login', '/register'].includes(pathname)) {
-    return null;
-  }
+  // Gerador de Ruído de Foco 100% nativo via Web Audio API (sem arquivos externos)
+  useEffect(() => {
+    const stopCurrentAudio = () => {
+      try {
+        sourceNodeRef.current?.stop();
+        sourceNodeRef.current?.disconnect();
+      } catch {}
+      sourceNodeRef.current = null;
+    };
+
+    if (focusSound === 'off') {
+      stopCurrentAudio();
+      return;
+    }
+
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    if (!audioCtxRef.current) {
+      audioCtxRef.current = new AudioCtx();
+    }
+    const ctx = audioCtxRef.current;
+    if (ctx.state === 'suspended') {
+      ctx.resume();
+    }
+
+    stopCurrentAudio();
+
+    const bufferSize = ctx.sampleRate * 4; // 4 segundos em loop contínuo
+    const isBinaural = focusSound === 'gamma40' || focusSound === 'alpha10';
+    const buffer = ctx.createBuffer(isBinaural ? 2 : 1, bufferSize, ctx.sampleRate);
+    const output = buffer.getChannelData(0);
+
+    if (focusSound === 'brown') {
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        output[i] = (lastOut + 0.02 * white) / 1.02;
+        lastOut = output[i];
+        output[i] *= 3.2;
+      }
+    } else if (focusSound === 'pink') {
+      let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        b0 = 0.99886 * b0 + white * 0.0555179;
+        b1 = 0.99332 * b1 + white * 0.0750759;
+        b2 = 0.96900 * b2 + white * 0.1538520;
+        b3 = 0.86650 * b3 + white * 0.3104856;
+        b4 = 0.55000 * b4 + white * 0.5329522;
+        b5 = -0.7616 * b5 - white * 0.0168980;
+        output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.08;
+        b6 = white * 0.115926;
+      }
+    } else if (focusSound === 'rain') {
+      let lastOut = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const white = Math.random() * 2 - 1;
+        lastOut = (lastOut + 0.06 * white) / 1.06;
+        const drop = Math.random() > 0.997 ? (Math.random() * 0.4) : 0;
+        output[i] = lastOut * 2.2 + drop;
+      }
+    } else if (focusSound === 'gamma40' || focusSound === 'alpha10') {
+      // Batida Binaural Estéreo (requer fones) combinada com tapete aveludado de Ruído Marrom
+      // Gama 40Hz (200Hz L / 240Hz R): Foco cognitivo intenso e memória de trabalho
+      // Alfa 10Hz (200Hz L / 210Hz R): Calma alerta e leitura fluida sem ansiedade
+      const outL = buffer.getChannelData(0);
+      const outR = buffer.getChannelData(1);
+      const baseFreq = 200;
+      const beatFreq = focusSound === 'gamma40' ? 40 : 10;
+      let lastBrownL = 0.0;
+      let lastBrownR = 0.0;
+      for (let i = 0; i < bufferSize; i++) {
+        const t = i / ctx.sampleRate;
+        const wL = Math.random() * 2 - 1;
+        const wR = Math.random() * 2 - 1;
+        lastBrownL = (lastBrownL + 0.02 * wL) / 1.02;
+        lastBrownR = (lastBrownR + 0.02 * wR) / 1.02;
+        const sineL = Math.sin(2 * Math.PI * baseFreq * t) * 0.35;
+        const sineR = Math.sin(2 * Math.PI * (baseFreq + beatFreq) * t) * 0.35;
+        outL[i] = sineL + lastBrownL * 1.4;
+        outR[i] = sineR + lastBrownR * 1.4;
+      }
+    }
+
+    const noiseSource = ctx.createBufferSource();
+    noiseSource.buffer = buffer;
+    noiseSource.loop = true;
+
+    const gainNode = ctx.createGain();
+    gainNode.gain.value = computeAudioGain(soundVolumePct);
+    gainNodeRef.current = gainNode;
+
+    noiseSource.connect(gainNode);
+    gainNode.connect(ctx.destination);
+    noiseSource.start(0);
+    sourceNodeRef.current = noiseSource;
+
+    return () => {
+      stopCurrentAudio();
+    };
+  }, [focusSound]);
+
+  useEffect(() => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = computeAudioGain(soundVolumePct);
+    }
+  }, [soundVolumePct]);
 
   const formatTimeMs = (ms: number) => {
     const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -148,6 +273,61 @@ export default function GlobalFooterTimer() {
     timerState.hasStarted && timerState.topic
       ? timerState.topic
       : suggestedTopic;
+
+  // Atualiza o título da aba do navegador (Brave/Chrome) com o cronômetro ao vivo e dispara aviso de 5 minutos
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    if (timerState.hasStarted && timerState.elapsedMs > 0) {
+      const prefix = timerState.isRunning ? '⏱' : '⏸';
+      const timeFormatted = formatTimeMs(displayMs);
+      const shortSubj =
+        currentSubjectName && currentSubjectName !== 'Selecione uma matéria'
+          ? ` • ${currentSubjectName}`
+          : '';
+      document.title = `(${timeFormatted}) ${prefix} Krono${shortSubj}`;
+    } else {
+      document.title = 'Krono • Ciclos & Estudos';
+      alerted5MinRef.current = false;
+    }
+
+    // Alerta de voz/som quando faltam exatamente 5 minutos (300 segundos) no modo regressivo
+    if (
+      voiceAlertEnabled &&
+      timerState.isRunning &&
+      timerState.mode === 'timer' &&
+      timerState.targetDurationMs >= 10 * 60 * 1000
+    ) {
+      const remainingSec = Math.floor(
+        Math.max(0, timerState.targetDurationMs - timerState.elapsedMs) / 1000
+      );
+      if (remainingSec <= 300 && remainingSec >= 295 && !alerted5MinRef.current) {
+        alerted5MinRef.current = true;
+        try {
+          if ('speechSynthesis' in window) {
+            const utter = new SpeechSynthesisUtterance(
+              `Atenção: faltam cinco minutos para concluir o bloco de ${currentSubjectName}.`
+            );
+            utter.lang = 'pt-BR';
+            utter.rate = 1.05;
+            window.speechSynthesis.speak(utter);
+          }
+        } catch {}
+      }
+    }
+  }, [
+    timerState.hasStarted,
+    timerState.isRunning,
+    timerState.elapsedMs,
+    timerState.mode,
+    timerState.targetDurationMs,
+    displayMs,
+    currentSubjectName,
+    voiceAlertEnabled,
+  ]);
+
+  if (['/login', '/register'].includes(pathname)) {
+    return null;
+  }
 
   // Calcula o tempo estudado hoje (data local YYYY-MM-DD)
   const now = new Date();
@@ -285,6 +465,95 @@ export default function GlobalFooterTimer() {
             >
               {isStopwatchModalOpen ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
             </button>
+
+            {/* Menu de Som de Foco (Ruído Marrom/Rosa/Chuva) & Alerta de Voz */}
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsSoundMenuOpen((v) => !v)}
+                className={`p-2 rounded-xl border transition-colors flex items-center gap-1 text-xs font-bold ${
+                  focusSound !== 'off'
+                    ? 'bg-indigo-500/15 border-indigo-500/40 text-indigo-500'
+                    : 'bg-slate-100 dark:bg-[#131f33] border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-300 hover:text-indigo-400'
+                }`}
+                title="Som de Foco (Ruído Marrom, Rosa, Chuva) e Alerta de 5 min"
+              >
+                <Headphones size={15} />
+              </button>
+
+              {isSoundMenuOpen && (
+                <div className="absolute bottom-12 right-0 w-64 p-3.5 rounded-2xl bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] shadow-2xl space-y-3 z-50">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 dark:text-slate-200">
+                      🎧 Som de Foco & Alertas
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsSoundMenuOpen(false)}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 dark:hover:text-white"
+                    >
+                      Fechar
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-1.5">
+                    {[
+                      { id: 'off', label: '🔇 Desligado' },
+                      { id: 'brown', label: '🤎 Ruído Marrom' },
+                      { id: 'pink', label: '🌸 Ruído Rosa' },
+                      { id: 'rain', label: '🌧️ Chuva Suave' },
+                      { id: 'gamma40', label: '🧠 Binaural 40Hz (Gama)' },
+                      { id: 'alpha10', label: '🌊 Binaural 10Hz (Alfa)' },
+                    ].map((opt) => (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setFocusSound(opt.id as any)}
+                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold text-left border transition-all ${
+                          focusSound === opt.id
+                            ? 'bg-indigo-500 text-white border-indigo-500'
+                            : 'bg-slate-50 dark:bg-[#0b1320] border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-300'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {focusSound !== 'off' && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[10px] text-slate-400">
+                        <span className="flex items-center gap-1">
+                          <Volume2 size={12} /> Volume Suave
+                        </span>
+                        <span className="font-mono font-bold text-indigo-400">{soundVolumePct}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min={1}
+                        max={100}
+                        step={1}
+                        value={soundVolumePct}
+                        onChange={(e) => setSoundVolumePct(parseInt(e.target.value, 10) || 1)}
+                        className="w-full accent-indigo-500 cursor-pointer"
+                      />
+                    </div>
+                  )}
+
+                  <label className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100 dark:border-[#1f304a] cursor-pointer">
+                    <span className="text-[11px] text-slate-600 dark:text-slate-300 font-medium">
+                      🗣️ Avisar por voz faltando 5 min
+                    </span>
+                    <input
+                      type="checkbox"
+                      checked={voiceAlertEnabled}
+                      onChange={(e) => setVoiceAlertEnabled(e.target.checked)}
+                      className="rounded accent-emerald-500"
+                    />
+                  </label>
+                </div>
+              )}
+            </div>
 
             <button
               onClick={() => handleOpenRegister()}

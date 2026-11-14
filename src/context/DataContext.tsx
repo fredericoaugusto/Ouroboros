@@ -1606,6 +1606,61 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     const minW = Math.min(...weightValues);
     const maxW = Math.max(...weightValues);
 
+    // Pré-aloca a cota de minutos por disciplina garantindo que a soma total bata exatamente com studyHours
+    const allocatedMinutesMap = new Map<string, number>();
+    if (!isQuestionsMode) {
+      const nSubj = allSelectedSubjects.length;
+      const baseFloorTotal = nSubj * minSession;
+      if (totalMinutes <= baseFloorTotal) {
+        for (const s of allSelectedSubjects) {
+          allocatedMinutesMap.set(s.id, minSession);
+        }
+      } else {
+        // Método dos Maiores Restos (Hamilton) preservando mínimo de 1 bloco por disciplina
+        const rawQuotas = allSelectedSubjects.map((s) => {
+          const w = rawWeights.get(s.id) || 1;
+          const exactBlocks = Math.max(1, (w / totalWeight) * (totalMinutes / midSession));
+          const floorBlocks = Math.max(1, Math.floor(exactBlocks));
+          return {
+            id: s.id,
+            exactBlocks,
+            blocks: floorBlocks,
+            remainder: exactBlocks - floorBlocks,
+          };
+        });
+        const targetTotalBlocks = Math.max(nSubj, Math.round(totalMinutes / midSession));
+        let currentSumBlocks = rawQuotas.reduce((acc, q) => acc + q.blocks, 0);
+
+        if (currentSumBlocks < targetTotalBlocks) {
+          const byRemDesc = [...rawQuotas].sort((a, b) => b.remainder - a.remainder);
+          let idx = 0;
+          while (currentSumBlocks < targetTotalBlocks) {
+            byRemDesc[idx % byRemDesc.length].blocks += 1;
+            currentSumBlocks += 1;
+            idx += 1;
+          }
+        } else if (currentSumBlocks > targetTotalBlocks) {
+          const byRemAsc = [...rawQuotas]
+            .filter((q) => q.blocks > 1)
+            .sort((a, b) => a.remainder - b.remainder);
+          let idx = 0;
+          while (currentSumBlocks > targetTotalBlocks && byRemAsc.length > 0) {
+            const item = byRemAsc[idx % byRemAsc.length];
+            if (item.blocks > 1) {
+              item.blocks -= 1;
+              currentSumBlocks -= 1;
+            }
+            idx += 1;
+            if (idx > byRemAsc.length * 4) break;
+          }
+        }
+
+        for (const q of rawQuotas) {
+          allocatedMinutesMap.set(q.id, Math.round(q.blocks * midSession));
+        }
+      }
+    }
+
     for (const s of allSelectedSubjects) {
       const w = rawWeights.get(s.id) || 1;
       const share = w / totalWeight;
@@ -1632,9 +1687,12 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
           });
         }
       } else {
-        const subjectTargetMinutes = Math.max(minSession, Math.round(share * totalMinutes));
+        const subjectTargetMinutes =
+          allocatedMinutesMap.get(s.id) || Math.max(minSession, Math.round(share * totalMinutes));
         const preferredBlockMin =
-          Math.round((minSession + (maxSession - minSession) * (0.25 + 0.5 * normW)) / 5) * 5;
+          minSession === maxSession
+            ? minSession
+            : Math.round((minSession + (maxSession - minSession) * (0.25 + 0.5 * normW)) / 5) * 5;
         const numBlocks = Math.max(
           1,
           Math.round(subjectTargetMinutes / Math.max(minSession, preferredBlockMin || midSession))
@@ -1665,28 +1723,34 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
       });
     }
 
-    // 3. Smooth Weighted Round-Robin (Intercalação proporcional sem repetir a mesma matéria seguida quando evitável)
+    // 3. Intercalação Proporcional Ideal (Bresenham + Proteção Anti-Adjacência no Fim do Ciclo)
     const cycle: StudySession[] = [];
     const totalBlocksToEmit = buckets.reduce((acc, b) => acc + b.blocks.length, 0);
     let lastSubjectId: string | null = null;
 
     for (let step = 0; step < totalBlocksToEmit; step++) {
+      const remainingSteps = totalBlocksToEmit - step;
       const activeBuckets = buckets.filter((b) => b.blocks.length > 0);
       if (activeBuckets.length === 0) break;
 
-      const totalActiveWeight = activeBuckets.reduce((acc, b) => acc + b.totalBlocks, 0);
-      for (const b of activeBuckets) {
-        b.currentScore += b.totalBlocks;
-      }
+      // Filtra matérias diferentes da imediatamente anterior (quando houver mais de 1 disponível)
+      const nonRepeating = activeBuckets.filter((b) => b.subjectId !== lastSubjectId);
+      const pool = nonRepeating.length > 0 ? nonRepeating : activeBuckets;
 
-      // Ordena pelo maior saldo atual; evita repetir a matéria imediatamente anterior se houver outra disponível
-      const sorted = [...activeBuckets].sort((a, b) => b.currentScore - a.currentScore);
-      let chosen = sorted[0];
-      if (chosen.subjectId === lastSubjectId && sorted.length > 1) {
-        chosen = sorted[1];
-      }
+      // Prioriza qualquer matéria que precise ser emitida agora para não acumular blocos repetidos no final
+      const urgentThreshold = Math.ceil((remainingSteps + 1) / 2);
+      const urgentPool = pool.filter((b) => b.blocks.length >= urgentThreshold);
+      const candidatePool = urgentPool.length > 0 ? urgentPool : pool;
 
-      chosen.currentScore -= totalActiveWeight;
+      // Ordena pela maior razão de blocos restantes (espaçamento uniforme no anel)
+      const sorted = [...candidatePool].sort((a, b) => {
+        const ratioA = (a.blocks.length - 0.15) / a.totalBlocks;
+        const ratioB = (b.blocks.length - 0.15) / b.totalBlocks;
+        if (Math.abs(ratioB - ratioA) > 0.001) return ratioB - ratioA;
+        return b.totalBlocks - a.totalBlocks;
+      });
+
+      const chosen = sorted[0];
       const nextBlock = chosen.blocks.shift()!;
       lastSubjectId = chosen.subjectId;
 

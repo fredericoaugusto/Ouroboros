@@ -30,10 +30,14 @@ export async function POST(request: Request) {
       details: { status: 'pending' },
     });
 
+    const isPending = created.status === 'pending';
+
     return NextResponse.json(
       {
-        message: 'Cadastro realizado! Sua conta está pendente de aprovação por um administrador.',
-        pendingApproval: true,
+        message: isPending
+          ? 'Cadastro realizado! Sua conta está pendente de aprovação por um administrador.'
+          : 'Cadastro realizado com sucesso! Você já pode fazer login.',
+        pendingApproval: isPending,
       },
       { status: 201 }
     );

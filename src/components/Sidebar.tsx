@@ -7,6 +7,7 @@ import { usePathname } from 'next/navigation';
 import ThemeToggleButton from './ThemeToggleButton';
 import PlanSelector from './PlanSelector';
 import ImportEditalModal from './ImportEditalModal';
+import UserAiKeyModal from './UserAiKeyModal';
 import { useData } from '../context/DataContext';
 import { useSession, signOut } from 'next-auth/react';
 import { 
@@ -15,6 +16,7 @@ import {
   BookOpen, 
   FileText, 
   Calendar, 
+  CalendarDays,
   History, 
   RotateCcw, 
   BarChart3, 
@@ -23,6 +25,11 @@ import {
   LogOut, 
   Sparkles, 
   X,
+  Eye,
+  EyeOff,
+  SlidersHorizontal,
+  KeyRound,
+  Award,
 } from 'lucide-react';
 
 const Sidebar = () => {
@@ -31,6 +38,28 @@ const Sidebar = () => {
   const { data: session } = useSession();
   const { setIsRegisterModalOpen, setIsStopwatchModalOpen } = useData();
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
+  const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
+  const [isCustomizingTabs, setIsCustomizingTabs] = useState(false);
+  const [hiddenHrefs, setHiddenHrefs] = useState<string[]>([]);
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('krono_hidden_sidebar_tabs');
+        if (saved) setHiddenHrefs(JSON.parse(saved));
+      } catch {}
+    }
+  }, []);
+
+  const toggleHideTab = (href: string) => {
+    setHiddenHrefs((prev) => {
+      const next = prev.includes(href) ? prev.filter((h) => h !== href) : [...prev, href];
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('krono_hidden_sidebar_tabs', JSON.stringify(next));
+      }
+      return next;
+    });
+  };
 
   // Fecha automaticamente o Importador de Edital ao mudar de página
   useEffect(() => {
@@ -53,12 +82,18 @@ const Sidebar = () => {
     { label: 'Disciplinas', href: '/materias', icon: BookOpen },
     { label: 'Edital Verticalizado', href: '/edital', icon: FileText },
     { label: 'Planejamento', href: '/planejamento', icon: Calendar },
+    { label: 'Calendário', href: '/calendario', icon: CalendarDays },
     { label: 'Histórico', href: '/historico', icon: History },
     { label: 'Revisões', href: '/revisoes', icon: RotateCcw },
+    { label: 'Redação & Discursivas IA', href: '/discursivas', icon: Award },
     { label: 'Estatísticas', href: '/estatisticas', icon: BarChart3 },
     { label: 'Simulados', href: '/simulados', icon: Trophy },
     { label: 'Backup', href: '/backup', icon: Database },
   ];
+
+  const visibleNavItems = isCustomizingTabs
+    ? navItems
+    : navItems.filter((item) => !hiddenHrefs.includes(item.href));
 
   return (
     <>
@@ -116,25 +151,61 @@ const Sidebar = () => {
 
         {/* Links de Navegação */}
         <nav className="flex-grow px-3 py-1 space-y-1 overflow-y-auto">
-          {navItems.map((item) => {
+          {visibleNavItems.map((item) => {
             const Icon = item.icon;
+            const isHidden = hiddenHrefs.includes(item.href);
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname.startsWith(item.href));
             return (
-              <Link
-                key={item.href}
-                href={item.href}
-                onClick={handleNavClick}
-                className={`flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
-                  isActive && !isImportModalOpen
-                    ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border-l-2 border-emerald-500 shadow-sm'
-                    : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#131f33] hover:text-slate-900 dark:hover:text-slate-100'
-                }`}
-              >
-                <Icon size={17} className={isActive && !isImportModalOpen ? 'text-emerald-500' : 'text-slate-400 dark:text-slate-500'} />
-                {item.label}
-              </Link>
+              <div key={item.href} className="flex items-center gap-1">
+                <Link
+                  href={item.href}
+                  onClick={handleNavClick}
+                  className={`flex-1 flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                    isHidden ? 'opacity-40 line-through' : ''
+                  } ${
+                    isActive && !isImportModalOpen
+                      ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-semibold border-l-2 border-emerald-500 shadow-sm'
+                      : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-[#131f33] hover:text-slate-900 dark:hover:text-slate-100'
+                  }`}
+                >
+                  <Icon size={17} className={isActive && !isImportModalOpen ? 'text-emerald-500' : 'text-slate-400 dark:text-slate-500'} />
+                  {item.label}
+                </Link>
+                {isCustomizingTabs && item.href !== '/dashboard' && (
+                  <button
+                    type="button"
+                    onClick={() => toggleHideTab(item.href)}
+                    className={`p-1.5 rounded-lg text-xs transition-colors ${
+                      isHidden
+                        ? 'text-rose-400 hover:bg-rose-500/10'
+                        : 'text-emerald-500 hover:bg-emerald-500/10'
+                    }`}
+                    title={isHidden ? 'Mostrar aba no menu' : 'Ocultar aba do menu'}
+                  >
+                    {isHidden ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                )}
+              </div>
             );
           })}
+
+          <div className="pt-2">
+            <button
+              type="button"
+              onClick={() => setIsCustomizingTabs((v) => !v)}
+              className="w-full flex items-center justify-between px-3 py-1.5 rounded-xl text-[11px] font-semibold text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-[#131f33] transition-colors"
+            >
+              <span className="flex items-center gap-2">
+                <SlidersHorizontal size={13} />
+                {isCustomizingTabs ? 'Concluir personalização' : 'Ocultar/Mostrar abas'}
+              </span>
+              {hiddenHrefs.length > 0 && !isCustomizingTabs && (
+                <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-slate-200 dark:bg-[#1f304a] text-slate-500 dark:text-slate-300">
+                  {hiddenHrefs.length} oculta{hiddenHrefs.length > 1 ? 's' : ''}
+                </span>
+              )}
+            </button>
+          </div>
         </nav>
 
         {/* Rodapé da Sidebar: Plano Atual, Tema e Logout */}
@@ -147,13 +218,25 @@ const Sidebar = () => {
           </div>
 
           {session && (
-            <button
-              onClick={() => signOut({ callbackUrl: '/login' })}
-              className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
-            >
-              <LogOut size={14} />
-              Sair ({session.user?.name || 'Usuário'})
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setIsAiKeyModalOpen(true)}
+                className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/25 transition-colors"
+                title="Cadastrar ou atualizar sua chave pessoal de IA criptografada no banco"
+              >
+                <KeyRound size={14} />
+                Minha Chave de IA (Criptografada)
+              </button>
+
+              <button
+                onClick={() => signOut({ callbackUrl: '/login' })}
+                className="w-full flex items-center justify-center gap-2 p-2 rounded-xl text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-rose-500/10 hover:text-rose-600 dark:hover:text-rose-400 transition-colors"
+              >
+                <LogOut size={14} />
+                Sair ({session.user?.name || 'Usuário'})
+              </button>
+            </>
           )}
         </div>
       </aside>
@@ -162,6 +245,12 @@ const Sidebar = () => {
       <ImportEditalModal
         isOpen={isImportModalOpen}
         onClose={() => setIsImportModalOpen(false)}
+      />
+
+      {/* Cofre de Chave de IA Individual Criptografada */}
+      <UserAiKeyModal
+        isOpen={isAiKeyModalOpen}
+        onClose={() => setIsAiKeyModalOpen(false)}
       />
     </>
   );

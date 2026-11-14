@@ -39,6 +39,7 @@ const EditalPage = () => {
   const {
     addStudyRecord,
     updateStudyRecord,
+    deleteStudyRecord,
     studyRecords,
     simuladoRecords,
     selectedDataFile,
@@ -62,6 +63,7 @@ const EditalPage = () => {
     color: string;
     topic: any;
   } | null>(null);
+  const [optimisticCompleted, setOptimisticCompleted] = useState<Record<string, boolean>>({});
 
   const toggleSubject = (index: number) => {
     setExpandedSubjects((prev) => ({ ...prev, [index]: !prev[index] }));
@@ -111,7 +113,11 @@ const EditalPage = () => {
     };
 
     const targetNode = subjObj ? findNode(subjObj.topics) : null;
-    const isCurrentlyCompleted = Boolean(targetNode?.is_completed);
+    const optKey = `${subjectText}::${topicText}`;
+    const isCurrentlyCompleted =
+      optKey in optimisticCompleted
+        ? optimisticCompleted[optKey]
+        : Boolean(targetNode?.is_completed);
     const nextCompletedState = !isCurrentlyCompleted;
 
     // Coleta o próprio tópico e eventuais subtópicos folhas
@@ -133,60 +139,80 @@ const EditalPage = () => {
       allTopicNames.push(topicText);
     }
 
-    // Atualiza todos os registros de estudo correspondentes
-    const matchingRecords = studyRecords.filter(
-      (record) => record.subject === subjectText && allTopicNames.includes(record.topic)
-    );
+    // 1. Atualização Otimista Instantânea (0ms de delay na tela!)
+    setOptimisticCompleted((prev) => {
+      const next = { ...prev };
+      for (const tName of allTopicNames) {
+        next[`${subjectText}::${tName}`] = nextCompletedState;
+      }
+      return next;
+    });
 
-    if (nextCompletedState) {
-      // Marcar como concluído
-      for (const leafName of leafTopicNames) {
-        const recsForLeaf = studyRecords.filter(
-          (r) => r.subject === subjectText && r.topic === leafName
+    // 2. Persiste em segundo plano sem travar o clique do usuário
+    void (async () => {
+      try {
+        const matchingRecords = studyRecords.filter(
+          (record) => record.subject === subjectText && allTopicNames.includes(record.topic)
         );
-        if (recsForLeaf.length > 0) {
-          for (const rec of recsForLeaf) {
-            if (!rec.teoriaFinalizada) {
-              await updateStudyRecord({ ...rec, teoriaFinalizada: true });
+
+        if (nextCompletedState) {
+          for (const leafName of leafTopicNames) {
+            const recsForLeaf = studyRecords.filter(
+              (r) => r.subject === subjectText && r.topic === leafName
+            );
+            if (recsForLeaf.length > 0) {
+              for (const rec of recsForLeaf) {
+                if (!rec.teoriaFinalizada) {
+                  await updateStudyRecord({ ...rec, teoriaFinalizada: true });
+                }
+              }
+            } else {
+              const newRecord: Omit<StudyRecord, 'id'> = {
+                date: new Date().toISOString().split('T')[0],
+                subjectId,
+                subject: subjectText,
+                topic: leafName,
+                studyTime: 0,
+                questions: { correct: 0, total: 0 },
+                pages: [],
+                videos: [],
+                notes: '',
+                category: 'teoria',
+                teoriaFinalizada: true,
+                countInPlanning: false,
+              };
+              await addStudyRecord(newRecord);
             }
           }
         } else {
-          const newRecord: Omit<StudyRecord, 'id'> = {
-            date: new Date().toISOString().split('T')[0],
-            subjectId,
-            subject: subjectText,
-            topic: leafName,
-            studyTime: 0,
-            questions: { correct: 0, total: 0 },
-            pages: [],
-            videos: [],
-            notes: '',
-            category: 'teoria',
-            teoriaFinalizada: true,
-            countInPlanning: false,
-          };
-          await addStudyRecord(newRecord);
+          for (const rec of matchingRecords) {
+            const isDummyCheckboxRecord =
+              (rec.studyTime || 0) === 0 &&
+              (rec.questions?.total || 0) === 0 &&
+              !rec.notes &&
+              (!rec.pages || rec.pages.length === 0) &&
+              (!rec.videos || rec.videos.length === 0);
+            if (isDummyCheckboxRecord && deleteStudyRecord) {
+              await deleteStudyRecord(rec.id);
+            } else if (rec.teoriaFinalizada) {
+              await updateStudyRecord({ ...rec, teoriaFinalizada: false });
+            }
+          }
         }
-      }
-    } else {
-      // Desmarcar como concluído
-      for (const rec of matchingRecords) {
-        if (rec.teoriaFinalizada) {
-          await updateStudyRecord({ ...rec, teoriaFinalizada: false });
-        }
-      }
-    }
 
-    // Também sincroniza o status no arquivo JSON do plano caso tenha sido marcado pelo Cockpit
-    if (selectedDataFile) {
-      for (const tName of allTopicNames) {
-        await updateTopicDetailsAction(selectedDataFile, subjectText, tName, {
-          is_completed: nextCompletedState,
-          status: nextCompletedState ? 'completed' : 'not_started',
-        });
+        if (selectedDataFile) {
+          for (const tName of allTopicNames) {
+            await updateTopicDetailsAction(selectedDataFile, subjectText, tName, {
+              is_completed: nextCompletedState,
+              status: nextCompletedState ? 'completed' : 'not_started',
+            });
+          }
+          await refreshPlans();
+        }
+      } catch (err) {
+        console.error('Erro ao salvar status do tópico:', err);
       }
-      await refreshPlans();
-    }
+    })();
   };
 
   const handleSaveTopicCockpit = async (updatedTopic: TopicMetadata) => {
@@ -227,7 +253,33 @@ const EditalPage = () => {
     }
   };
 
-  const { editalData, totalTopics, completedTopics, overallEditalProgress } = stats;
+  const { editalData: rawEditalData, totalTopics, completedTopics, overallEditalProgress } = stats;
+
+  // Aplica o estado otimista instantâneo na árvore do edital para resposta em 0ms ao clicar no checkbox
+  const editalData = useMemo(() => {
+    if (Object.keys(optimisticCompleted).length === 0) return rawEditalData;
+    const applyOptimistic = (subjName: string, topics: Topic[]): Topic[] =>
+      (topics || []).map((t) => {
+        const key = `${subjName}::${t.topic_text}`;
+        const hasSubs = t.sub_topics && t.sub_topics.length > 0;
+        const nextSubs = hasSubs ? applyOptimistic(subjName, t.sub_topics!) : [];
+        const isComp =
+          key in optimisticCompleted
+            ? optimisticCompleted[key]
+            : hasSubs
+            ? nextSubs.every((st) => Boolean(st.is_completed))
+            : Boolean(t.is_completed);
+        return {
+          ...t,
+          is_completed: isComp,
+          sub_topics: nextSubs,
+        };
+      });
+    return (rawEditalData || []).map((s) => ({
+      ...s,
+      topics: applyOptimistic(s.subject, s.topics || []),
+    }));
+  }, [rawEditalData, optimisticCompleted]);
 
   const filteredEditalData = useMemo(() => {
     if (!searchQuery.trim()) return editalData;

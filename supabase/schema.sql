@@ -212,10 +212,15 @@ CREATE TABLE IF NOT EXISTS public.study_cycles (
   session_progress_map JSONB NOT NULL DEFAULT '{}'::jsonb,
   reminder_notes JSONB NOT NULL DEFAULT '[]'::jsonb,
   study_days JSONB NOT NULL DEFAULT '[]'::jsonb,
+  completed_cycles INTEGER NOT NULL DEFAULT 0,
+  cycle_generation_timestamp BIGINT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (user_id, plan_file_name)
 );
+
+ALTER TABLE public.study_cycles ADD COLUMN IF NOT EXISTS completed_cycles INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE public.study_cycles ADD COLUMN IF NOT EXISTS cycle_generation_timestamp BIGINT;
 
 CREATE INDEX IF NOT EXISTS idx_study_cycles_user_id ON public.study_cycles(user_id);
 

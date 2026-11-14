@@ -6,7 +6,8 @@ import { importEditalMutationAction } from '../app/actions';
 import { useData } from '../context/DataContext';
 import { useNotification } from '../context/NotificationContext';
 import Breadcrumbs from './Breadcrumbs';
-import { Copy, Check, Sparkles, FileText, ArrowRight, ArrowLeft, FolderPlus, Layers } from 'lucide-react';
+import UserAiKeyModal from './UserAiKeyModal';
+import { Copy, Check, Sparkles, FileText, ArrowRight, ArrowLeft, FolderPlus, Layers, KeyRound } from 'lucide-react';
 
 interface ImportEditalModalProps {
   isOpen: boolean;
@@ -18,7 +19,11 @@ export default function ImportEditalModal({ isOpen, onClose, onSuccess }: Import
   const { selectedDataFile, setSelectedDataFile, availablePlans, studyPlans, refreshPlans } = useData();
   const { showNotification } = useNotification();
 
-  const [mode, setMode] = useState<'new' | 'append'>(selectedDataFile ? 'append' : 'new');
+  const [mode, setMode] = useState<'new' | 'append'>('new');
+  const [aiSourceMode, setAiSourceMode] = useState<'prompt' | 'deepseek'>('prompt');
+  const [isAiKeyModalOpen, setIsAiKeyModalOpen] = useState(false);
+  const [unformattedEditalText, setUnformattedEditalText] = useState('');
+  const [isGeneratingWithAI, setIsGeneratingWithAI] = useState(false);
   const [newPlanName, setNewPlanName] = useState('');
   const [cargo, setCargo] = useState('');
   const [copied, setCopied] = useState(false);
@@ -27,9 +32,45 @@ export default function ImportEditalModal({ isOpen, onClose, onSuccess }: Import
 
   useEffect(() => {
     if (isOpen) {
-      setMode(selectedDataFile ? 'append' : 'new');
+      setMode('new');
+      if (typeof window !== 'undefined') {
+        window.localStorage.removeItem('krono_deepseek_api_key');
+      }
     }
-  }, [isOpen, selectedDataFile]);
+  }, [isOpen]);
+
+  const handleGenerateWithDeepSeek = async () => {
+    if (!unformattedEditalText.trim()) {
+      showNotification('Cole o conteúdo bruto do edital para a IA estruturar.', 'error');
+      return;
+    }
+    setIsGeneratingWithAI(true);
+    try {
+      const res = await fetch('/api/ai/deepseek', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          systemPrompt: getStandardAIPrompt(),
+          userPrompt: `Estruture e verticalize o seguinte conteúdo programático de edital seguindo estritamente o formato solicitado:\n\n${unformattedEditalText}`,
+          temperature: 0.1,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.error) {
+        showNotification(data.error || 'Falha ao consultar DeepSeek IA.', 'error');
+      } else if (data.content) {
+        setRawText(data.content.replace(/```markdown|```/g, '').trim());
+        showNotification(
+          'Edital verticalizado pelo DeepSeek com sucesso! Confira o preview abaixo e clique em Confirmar e Importar.',
+          'success'
+        );
+      }
+    } catch (err: any) {
+      showNotification(err?.message || 'Erro de conexão com a API do DeepSeek.', 'error');
+    } finally {
+      setIsGeneratingWithAI(false);
+    }
+  };
 
   const currentPlanName = useMemo(() => {
     if (!selectedDataFile) return '';
@@ -154,6 +195,21 @@ export default function ImportEditalModal({ isOpen, onClose, onSuccess }: Import
               Onde deseja importar?
             </label>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <button
+                type="button"
+                onClick={() => setMode('new')}
+                className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
+                  mode === 'new' || !selectedDataFile
+                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-slate-50 dark:bg-[#0c1421] border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-400'
+                }`}
+              >
+                <FolderPlus size={18} className="flex-shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-xs font-bold block">Criar Novo Plano (Padrão)</span>
+                  <span className="text-[11px] opacity-80 block">Gera um novo plano com este edital</span>
+                </div>
+              </button>
               {selectedDataFile && (
                 <button
                   type="button"
@@ -171,21 +227,6 @@ export default function ImportEditalModal({ isOpen, onClose, onSuccess }: Import
                   </div>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setMode('new')}
-                className={`flex items-center gap-3 p-3 rounded-xl border text-left transition-all ${
-                  mode === 'new' || !selectedDataFile
-                    ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-slate-50 dark:bg-[#0c1421] border-slate-200 dark:border-[#1f304a] text-slate-600 dark:text-slate-400'
-                }`}
-              >
-                <FolderPlus size={18} className="flex-shrink-0" />
-                <div className="min-w-0">
-                  <span className="text-xs font-bold block">Criar Novo Plano</span>
-                  <span className="text-[11px] opacity-80 block">Gera um novo plano com este edital</span>
-                </div>
-              </button>
             </div>
 
             {(mode === 'new' || !selectedDataFile) && (
@@ -218,27 +259,96 @@ export default function ImportEditalModal({ isOpen, onClose, onSuccess }: Import
             )}
           </div>
 
-          {/* Passo 1: Copiar Prompt */}
-          <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1a293e] space-y-2">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
-                <FileText size={14} /> Passo 1: Copie o prompt padrão
-              </span>
+          {/* Escolha do Método: Copiar Prompt Externo vs. DeepSeek Integrado */}
+          <div className="space-y-3">
+            <div className="inline-flex p-1 rounded-xl bg-slate-100 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a]">
               <button
-                onClick={handleCopyPrompt}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm ${
-                  copied
-                    ? 'bg-emerald-600 text-white'
-                    : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                type="button"
+                onClick={() => setAiSourceMode('prompt')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  aiSourceMode === 'prompt'
+                    ? 'bg-emerald-500 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
-                {copied ? <Check size={14} /> : <Copy size={14} />}
-                {copied ? 'Prompt Copiado!' : 'Copiar Prompt para IA'}
+                📋 Copiar Prompt (Qualquer IA Gratuita)
+              </button>
+              <button
+                type="button"
+                onClick={() => setAiSourceMode('deepseek')}
+                className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                  aiSourceMode === 'deepseek'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                ⚡ DeepSeek IA Integrado (Automático)
               </button>
             </div>
-            <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Envie esse prompt para o <strong>ChatGPT, Claude ou Gemini</strong> junto com o PDF ou texto do seu edital. Depois basta dar <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">Ctrl+V</kbd> no campo abaixo.
-            </p>
+
+            {aiSourceMode === 'prompt' ? (
+              <div className="p-4 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1a293e] space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold uppercase tracking-wider text-emerald-600 dark:text-emerald-400 flex items-center gap-1.5">
+                    <FileText size={14} /> Passo 1: Copie o prompt padrão
+                  </span>
+                  <button
+                    onClick={handleCopyPrompt}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all shadow-sm ${
+                      copied
+                        ? 'bg-emerald-600 text-white'
+                        : 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                    }`}
+                  >
+                    {copied ? <Check size={14} /> : <Copy size={14} />}
+                    {copied ? 'Prompt Copiado!' : 'Copiar Prompt para IA'}
+                  </button>
+                </div>
+                <p className="text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
+                  Envie esse prompt para o <strong>ChatGPT, Claude, DeepSeek ou Gemini</strong> junto com o texto do seu edital. Depois basta dar{' '}
+                  <kbd className="px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-[10px] font-mono">
+                    Ctrl+V
+                  </kbd>{' '}
+                  no campo de confirmação abaixo.
+                </p>
+              </div>
+            ) : (
+              <div className="p-4 rounded-xl bg-indigo-500/[0.05] border border-indigo-500/25 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <span className="text-xs font-bold uppercase tracking-wider text-indigo-400 flex items-center gap-1.5">
+                    <Sparkles size={14} /> Verticalização Direta via DeepSeek API (Chave Criptografada no Banco)
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsAiKeyModalOpen(true)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-500 text-xs font-bold transition-colors"
+                  >
+                    <KeyRound size={13} />
+                    Configurar Minha Chave de IA
+                  </button>
+                </div>
+                <textarea
+                  value={unformattedEditalText}
+                  onChange={(e) => setUnformattedEditalText(e.target.value)}
+                  placeholder="Cole aqui o texto bruto do edital (do jeito que copiou do PDF do concurso)..."
+                  rows={4}
+                  className="w-full p-3 rounded-xl bg-white dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={handleGenerateWithDeepSeek}
+                    disabled={isGeneratingWithAI}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold bg-indigo-600 hover:bg-indigo-500 text-white disabled:opacity-50 transition-all shadow-sm"
+                  >
+                    <Sparkles size={14} />
+                    {isGeneratingWithAI
+                      ? 'Verticalizando com DeepSeek (aguarde ~15s)...'
+                      : '⚡ Verticalizar Edital com DeepSeek'}
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Passo 2: Colar Resposta */}
@@ -303,6 +413,11 @@ export default function ImportEditalModal({ isOpen, onClose, onSuccess }: Import
         </div>
         </div>
       </div>
+
+      <UserAiKeyModal
+        isOpen={isAiKeyModalOpen}
+        onClose={() => setIsAiKeyModalOpen(false)}
+      />
     </div>
   );
 }

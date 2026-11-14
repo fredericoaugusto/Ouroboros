@@ -242,6 +242,9 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
   const [reviewPeriods, setReviewPeriods] = useState<string[]>([]);
   const [selectedDate, setSelectedDate] = useState(getLocalYYYYMMDD());
   const [questions, setQuestions] = useState<QuestionInput[]>([{ correct: '', incorrect: '' }]);
+  const [questionsInputMode, setQuestionsInputMode] = useState<'session' | 'cumulative'>('session');
+  const [cumulativeTotalInput, setCumulativeTotalInput] = useState('');
+  const [cumulativeCorrectInput, setCumulativeCorrectInput] = useState('');
   const [selectedErrorReasons, setSelectedErrorReasons] = useState<string[]>([]);
   const [pages, setPages] = useState<PageInput[]>([{ start: '', end: '' }]);
   const [videos, setVideos] = useState<VideoInput[]>([{ title: '', start: '', end: '' }]);
@@ -302,6 +305,39 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     );
   }, [studyRecords, selectedSubject, selectedTopic, initialRecord?.id]);
 
+  const previousTopicTotals = useMemo(() => {
+    let total = 0;
+    let correct = 0;
+    for (const r of existingTopicRecords) {
+      total += r.questions?.total || 0;
+      correct += r.questions?.correct || 0;
+    }
+    return { total, correct, incorrect: Math.max(0, total - correct) };
+  }, [existingTopicRecords]);
+
+  const effectiveSessionQuestions = useMemo(() => {
+    if (questionsInputMode === 'cumulative') {
+      const cumTotal = parseInt(cumulativeTotalInput || '0', 10) || 0;
+      const cumCorr = Math.min(cumTotal, parseInt(cumulativeCorrectInput || '0', 10) || 0);
+      const deltaTotal = Math.max(0, cumTotal - previousTopicTotals.total);
+      const deltaCorr = Math.min(
+        deltaTotal,
+        Math.max(0, cumCorr - previousTopicTotals.correct)
+      );
+      const deltaInc = Math.max(0, deltaTotal - deltaCorr);
+      return { correct: deltaCorr, incorrect: deltaInc, total: deltaTotal };
+    }
+    const corr = parseInt(questions[0]?.correct || '0', 10) || 0;
+    const inc = parseInt(questions[0]?.incorrect || '0', 10) || 0;
+    return { correct: corr, incorrect: inc, total: corr + inc };
+  }, [
+    questionsInputMode,
+    cumulativeTotalInput,
+    cumulativeCorrectInput,
+    previousTopicTotals,
+    questions,
+  ]);
+
   const isFirstStudyOfTopic = Boolean(
     selectedSubject && selectedTopic && existingTopicRecords.length === 0
   );
@@ -322,8 +358,8 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
 
   // Calcula o intervalo da próxima revisão automática pelo Score completo (histórico tópico + sessão + disciplina + simulados + R/D/P + perfil pessoal)
   const smartReviewEstimate = useMemo(() => {
-    const corr = parseInt(questions[0]?.correct || '0', 10) || 0;
-    const inc = parseInt(questions[0]?.incorrect || '0', 10) || 0;
+    const corr = effectiveSessionQuestions.correct;
+    const inc = effectiveSessionQuestions.incorrect;
     const allRecs = (studyRecords || []).filter(
       (r) => !initialRecord?.id || r.id !== initialRecord.id
     );
@@ -356,7 +392,7 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
       topicName: selectedTopic,
     });
   }, [
-    questions,
+    effectiveSessionQuestions,
     studyRecords,
     simuladoRecords,
     selectedSubject,
@@ -552,8 +588,8 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
     if (!validateForm()) return;
 
     const matchedSub = subjects.find((s) => s.subject === selectedSubject);
-    const corrNum = parseInt(questions[0]?.correct || '0', 10) || 0;
-    const incNum = parseInt(questions[0]?.incorrect || '0', 10) || 0;
+    const corrNum = effectiveSessionQuestions.correct;
+    const incNum = effectiveSessionQuestions.incorrect;
 
     // Combina revisão automática pelo Score e/ou revisões manuais
     let finalReviewPeriods: string[] | undefined = undefined;
@@ -1334,43 +1370,113 @@ const StudyRegisterModal: React.FC<StudyRegisterModalProps> = ({
               <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5">
                 {/* Card Questões (4 cols) */}
                 <div className="md:col-span-4 p-3.5 rounded-xl bg-slate-50 dark:bg-[#0c1421] border border-slate-200 dark:border-[#1f304a] space-y-2.5">
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">
-                      Questões <span className="text-slate-400 font-normal">(opcional)</span>
-                    </h3>
-                    <p className="text-[10px] text-slate-400">Acertos / Erros</p>
-                  </div>
-                  {questions.map((q, index) => (
-                    <div key={index} className="grid grid-cols-2 gap-2">
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={q.correct}
-                        onChange={(e) => {
-                          const next = [...questions];
-                          next[index].correct = e.target.value.replace(/\D/g, '');
-                          setQuestions(next);
-                        }}
-                        placeholder="0"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-emerald-500 placeholder:text-emerald-500/40 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                      />
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        value={q.incorrect}
-                        onChange={(e) => {
-                          const next = [...questions];
-                          next[index].incorrect = e.target.value.replace(/\D/g, '');
-                          setQuestions(next);
-                        }}
-                        placeholder="0"
-                        className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-rose-500 placeholder:text-rose-500/40 focus:outline-none focus:ring-1 focus:ring-rose-500"
-                      />
+                  <div className="flex items-center justify-between gap-1">
+                    <div>
+                      <h3 className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                        Questões <span className="text-slate-400 font-normal">(opcional)</span>
+                      </h3>
+                      <p className="text-[10px] text-slate-400">
+                        {questionsInputMode === 'session'
+                          ? 'Acertos / Erros hoje'
+                          : 'Total Feitas / Total Certas no caderno'}
+                      </p>
                     </div>
-                  ))}
+                    <div className="inline-flex rounded-lg bg-slate-200/70 dark:bg-[#131f33] p-0.5 text-[10px] font-bold">
+                      <button
+                        type="button"
+                        onClick={() => setQuestionsInputMode('session')}
+                        className={`px-2 py-0.5 rounded-md transition-all ${
+                          questionsInputMode === 'session'
+                            ? 'bg-emerald-500 text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                        title="Lançar apenas as questões feitas hoje nesta sessão"
+                      >
+                        Hoje
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setQuestionsInputMode('cumulative')}
+                        className={`px-2 py-0.5 rounded-md transition-all ${
+                          questionsInputMode === 'cumulative'
+                            ? 'bg-indigo-500 text-white shadow-sm'
+                            : 'text-slate-500 dark:text-slate-400'
+                        }`}
+                        title="Lançar o número acumulado do caderno (o sistema calcula a diferença automaticamente)"
+                      >
+                        Acumulado
+                      </button>
+                    </div>
+                  </div>
+
+                  {questionsInputMode === 'session' ? (
+                    questions.map((q, index) => (
+                      <div key={index} className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={q.correct}
+                          onChange={(e) => {
+                            const next = [...questions];
+                            next[index].correct = e.target.value.replace(/\D/g, '');
+                            setQuestions(next);
+                          }}
+                          placeholder="0 certas"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-emerald-500 placeholder:text-emerald-500/40 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={q.incorrect}
+                          onChange={(e) => {
+                            const next = [...questions];
+                            next[index].incorrect = e.target.value.replace(/\D/g, '');
+                            setQuestions(next);
+                          }}
+                          placeholder="0 erradas"
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-rose-500 placeholder:text-rose-500/40 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                        />
+                      </div>
+                    ))
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="text-[10px] text-slate-500 dark:text-slate-400 flex items-center justify-between bg-white/60 dark:bg-[#131f33]/60 px-2 py-1 rounded-md border border-slate-200/60 dark:border-[#1f304a]">
+                        <span>Acumulado anterior no tópico:</span>
+                        <strong className="text-indigo-400">
+                          {previousTopicTotals.total} feitas ({previousTopicTotals.correct} certas)
+                        </strong>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={cumulativeTotalInput}
+                          onChange={(e) =>
+                            setCumulativeTotalInput(e.target.value.replace(/\D/g, ''))
+                          }
+                          placeholder={`Total (>${previousTopicTotals.total})`}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-indigo-400 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          value={cumulativeCorrectInput}
+                          onChange={(e) =>
+                            setCumulativeCorrectInput(e.target.value.replace(/\D/g, ''))
+                          }
+                          placeholder={`Certas (>${previousTopicTotals.correct})`}
+                          className="w-full px-2.5 py-1.5 rounded-lg bg-white dark:bg-[#131f33] border border-slate-200 dark:border-[#1f304a] text-xs font-bold text-center text-emerald-500 placeholder:text-emerald-500/40 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                        />
+                      </div>
+                      <div className="text-[10px] text-emerald-500 font-semibold text-center">
+                        Saldo de hoje: +{effectiveSessionQuestions.total} questões (
+                        {effectiveSessionQuestions.correct}C / {effectiveSessionQuestions.incorrect}E)
+                      </div>
+                    </div>
+                  )}
 
                   {/* Diagnóstico de Erros (aparece se houver questões erradas) */}
-                  {parseInt(questions[0]?.incorrect || '0', 10) > 0 && (
+                  {effectiveSessionQuestions.incorrect > 0 && (
                     <div className="pt-2 border-t border-slate-200 dark:border-[#1f304a] space-y-1.5 animate-fadeIn">
                       <p className="text-[10px] font-bold uppercase tracking-wider text-rose-500 dark:text-rose-400">
                         Motivo do Erro:

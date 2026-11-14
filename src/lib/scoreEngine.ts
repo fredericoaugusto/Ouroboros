@@ -19,7 +19,8 @@ export interface TopicScoreResult {
   currentScore: number; // alias para score (0 a 100)
   baseScore: number; // 0 - 100 (Força de Armazenamento / Qualidade de Aprendizagem antes do decaimento)
   retention: number; // 0 - 100 (%) - Probabilidade estimada de recordação hoje (FSRS-4.5)
-  priorityROI: number; // 0 - 100 - Krono Priority Engine: Retorno sobre Investimento de estudar este tópico agora
+  urgencyScore?: number; // 0 - 100 - Urgência temporal de revisão (retenção + importância + proximidade da prova)
+  priorityROI: number; // 0 - 100 - Krono Priority Engine: Retorno esperado de pontos por hora investida
   level: 'strong' | 'medium' | 'weak' | 'unstarted' | 'high' | 'low';
   color: 'emerald' | 'amber' | 'rose';
   statusColor: 'green' | 'yellow' | 'red';
@@ -339,6 +340,15 @@ export function computeTopicScore(
     }
   }
 
+  // Filtra registros vazios ("fantasmas" de checkbox desmarcado com 0 min, 0 questões e teoriaFinalizada=false)
+  topicRecords = (topicRecords || []).filter(
+    (r) =>
+      (r.studyTime || 0) > 0 ||
+      (r.questions?.total || 0) > 0 ||
+      Boolean(r.teoriaFinalizada) ||
+      Boolean(r.notes && String(r.notes).trim().length > 0)
+  );
+
   // Caso Tópico Não Iniciado
   if (topicRecords.length === 0 && !isCompletedFlag) {
     const subjPrior = clamp(
@@ -441,17 +451,36 @@ export function computeTopicScore(
   let lastSessionAccuracy: number | null = null;
   let calibrationErrors: number[] = [];
 
+  // 1. DESEMPENHO BAYESIANO FORMALIZADO + EWMA PONDERADO POR CREDIBILIDADE DA SESSÃO (Krono v3.2)
+  // Nota sobre Simulados (v3.2): só aplica leve prior da disciplina com decaimento temporal quando o tópico
+  // possui poucas questões diretas (N < 15), evitando rateio artificial permanente entre tópicos.
+  const simBlendFactor = studyQTotal < 15 ? Math.max(0, (15 - studyQTotal) / 15) * 0.35 : 0;
+  const effectiveQTotal = studyQTotal + simQuestionsForTopic * simBlendFactor;
+  const effectiveQCorrect = studyQCorrect + simCorrectForTopic * simBlendFactor;
+  const rawAccuracy = studyQTotal > 0 ? (studyQCorrect / studyQTotal) * 100 : null;
+
+  // Prior Bayesiano de referência (W0 = 8, p0 = 0.60)
+  const priorWeight = 8.0;
+  const priorMean = 0.60;
+  const bayesianAccuracy =
+    ((effectiveQCorrect + priorWeight * priorMean) / (effectiveQTotal + priorWeight)) * 100;
+
+  // EWMA ponderado pela credibilidade do tamanho de cada bateria: c_k = 1 - e^(-N_k / 5)
+  // Inicialização: A_ewma^(0) = A_bayes
+  let ewmaAccState = bayesianAccuracy;
   if (recordsWithQuestions.length > 0) {
     const lastQRec = recordsWithQuestions[recordsWithQuestions.length - 1];
     lastSessionAccuracy =
       ((lastQRec.questions?.correct || 0) / (lastQRec.questions?.total || 1)) * 100;
 
-    // EWMA com alpha = 0.45 (suaviza ruído de sessão única mantendo sensibilidade à evolução recente)
-    const alpha = 0.45;
+    const alphaEwma = 0.45;
     for (let i = 0; i < recordsWithQuestions.length; i++) {
       const rec = recordsWithQuestions[i];
-      const sessAcc = ((rec.questions?.correct || 0) / (rec.questions?.total || 1)) * 100;
-      ewmaAccuracy = ewmaAccuracy === null ? sessAcc : alpha * sessAcc + (1 - alpha) * ewmaAccuracy;
+      const nK = Math.max(1, rec.questions?.total || 1);
+      const sessAcc = ((rec.questions?.correct || 0) / nK) * 100;
+      const cK = 1 - Math.exp(-nK / 5);
+      const sessAdjusted = cK * sessAcc + (1 - cK) * bayesianAccuracy;
+      ewmaAccState = alphaEwma * sessAdjusted + (1 - alphaEwma) * ewmaAccState;
 
       if (i > 0) {
         const prevRec = recordsWithQuestions[i - 1];
@@ -462,12 +491,13 @@ export function computeTopicScore(
               MS_PER_DAY
           )
         );
-        if (gap >= 2 && (rec.questions?.total || 0) >= 3) {
+        if (gap >= 2 && nK >= 3) {
           const predR = Math.pow(1 + (19 / 81) * (gap / 12), -0.5) * 100;
           calibrationErrors.push(sessAcc - predR);
         }
       }
     }
+    ewmaAccuracy = ewmaAccState;
   }
 
   const calibrationBias =
@@ -477,69 +507,57 @@ export function computeTopicScore(
         )
       : null;
 
-  // 1. DESEMPENHO BAYESIANO + EWMA CALIBRADO (Sem dupla penalização de amostra)
-  const effectiveQTotal = studyQTotal + simQuestionsForTopic * 1.5;
-  const effectiveQCorrect = studyQCorrect + simCorrectForTopic * 1.5;
-  const rawAccuracy = studyQTotal > 0 ? (studyQCorrect / studyQTotal) * 100 : null;
-
-  // Prior Bayesiano suave (W0 = 3.5, p0 = 0.68) que evita 0%/100% irreais com 1-2 questões,
-  // mas permite que quem acerta 80-100% em 8+ questões já atinja 84-96% de performance real!
-  const priorWeight = 3.5;
-  const priorMean = 0.68;
-  const bayesianAccuracy =
-    ((effectiveQCorrect + priorWeight * priorMean) / (effectiveQTotal + priorWeight)) * 100;
-
-  const blendedAccuracy =
-    ewmaAccuracy !== null
-      ? bayesianAccuracy * 0.58 + ewmaAccuracy * 0.42
-      : bayesianAccuracy;
-
-  // Credibilidade contínua informativa N / (N + 5) (sem encolher blendedAccuracy uma segunda vez!)
+  // Credibilidade global das evidências objetivas: C_N = N_eff / (N_eff + 10)
   const confidenceFactor =
-    effectiveQTotal > 0 ? effectiveQTotal / (effectiveQTotal + 5) : 0;
-  const perfComponent = effectiveQTotal > 0 ? blendedAccuracy : 62;
-
-  // 2. COMPONENTE SUBJETIVO NÃO-LINEAR + ESFORÇO ATIVO + ESPAÇAMENTO LOGARÍTMICO
-  // Se o aluno já tem alta taxa de acerto objetiva, o domínio percebido padrão (3/5) não deve puxar a nota para baixo
-  const objectiveMasteryFloor =
-    rawAccuracy !== null && studyQTotal >= 4 ? (rawAccuracy / 100) * 0.94 : 0;
-  const masteryNorm = Math.max(mastery / 5, objectiveMasteryFloor); // 0..1
-  const easeNorm = (5.5 - difficulty) / 5; // 0.1..1.0
-  const subjComponent = clamp(
-    (masteryNorm * 0.78 + easeNorm * 0.22) * 100,
-    20,
+    effectiveQTotal > 0 ? effectiveQTotal / (effectiveQTotal + 10) : 0;
+  const combinedAccuracy = 0.70 * bayesianAccuracy + 0.30 * ewmaAccState;
+  const perfComponent = clamp(
+    confidenceFactor * combinedAccuracy + (1 - confidenceFactor) * (priorMean * 100),
+    0,
     100
   );
 
-  // Retornos decrescentes calibrados por tópico individual (base 52 + ganho rápido até 1.2h e 20 questões)
-  const hoursScore = Math.min(1, Math.sqrt(activeWeightedHours / 1.2)) * 24;
-  const questionsVolumeScore = Math.min(1, Math.sqrt(effectiveQTotal / 20)) * 24;
-  const effortComponent = clamp(52 + hoursScore + questionsVolumeScore, 52, 100);
+  // 2. DOMÍNIO SUBJETIVO PURO (Separado da Dificuldade Estrutural!) + SOMA EXATA DE PESOS = 100% (v3.2)
+  // w_subj = 0.16 * e^(-N_eff / 40)
+  // w_perf = 0.78 - w_subj
+  // w_prog = 0.12 | w_cons = 0.10 => w_perf + w_subj + 0.12 + 0.10 = 1.00 (100% exato!)
+  const subjectiveWeight = 0.16 * Math.exp(-effectiveQTotal / 40);
+  const performanceWeight = 0.78 - subjectiveWeight;
 
-  // Curva logarítmica para espaçamento K (base 65 no 1º contato, subindo para 85-100 conforme repete em dias distintos)
-  const spacingComponent = clamp(
-    Math.min(100, 48 + 30 * Math.log(1 + distinctStudyDays)),
-    65,
+  // Em v3.2, P_subj reflete exclusivamente o domínio percebido pelo aluno (M/5 * 100),
+  // sem penalizar quem tem domínio 5 em um assunto estruturalmente difícil (D=5).
+  const subjComponent = clamp((mastery / 5) * 100, 10, 100);
+
+  // 3. PROGRESSO OPERACIONAL DE ESTUDO (P_prog, peso 12%) — Sem dupla contagem de questões (N_eff)!
+  // Mede horas ativas dedicadas + conclusão da teoria + diversidade de modalidades (teoria, prática, revisão/notas)
+  const cappedActiveHours = sortedRecords.reduce((acc, r) => {
+    const h = Math.min(2.5, (r.studyTime || 0) / 3600000);
+    const mult =
+      r.category === 'questoes' || r.category === 'revisao'
+        ? 1.25
+        : r.category === 'leitura_lei' || r.category === 'jurisprudencia'
+        ? 1.05
+        : 0.85;
+    return acc + h * mult;
+  }, 0);
+  const hasTheoryActivity =
+    isCompletedFlag || sortedRecords.some((r) => r.category === 'teoria' || r.category === 'leitura_lei');
+  const hasPracticeActivity = studyQTotal > 0 || sortedRecords.some((r) => r.category === 'questoes');
+  const hasReviewOrNotesActivity =
+    hasSavedNotes || sortedRecords.some((r) => r.category === 'revisao' || r.category === 'jurisprudencia');
+  const modalitiesCount =
+    (hasTheoryActivity ? 1 : 0) + (hasPracticeActivity ? 1 : 0) + (hasReviewOrNotesActivity ? 1 : 0);
+
+  const hoursProgress = Math.min(55, 28 * Math.sqrt(cappedActiveHours));
+  const theoryCompletionBonus = isCompletedFlag ? 20 : 0;
+  const modalityDiversityBonus = (modalitiesCount / 3) * 25;
+  const progressComponent = clamp(
+    hoursProgress + theoryCompletionBonus + modalityDiversityBonus,
+    15,
     100
   );
 
-  // Score Base de Armazenamento (Storage Strength S_base)
-  let baseScoreRaw =
-    effectiveQTotal > 0
-      ? perfComponent * 0.72 +
-        subjComponent * 0.12 +
-        effortComponent * 0.09 +
-        spacingComponent * 0.07
-      : subjComponent * 0.50 + effortComponent * 0.30 + spacingComponent * 0.20;
-
-  if (isCompletedFlag && baseScoreRaw < 65 && studyQTotal === 0) {
-    baseScoreRaw = Math.max(baseScoreRaw, 66);
-  }
-
-  const baseScore = Math.round(clamp(baseScoreRaw, 15, 100));
-
-  // 3. MODELO DE MEMÓRIA FSRS-4.5 PURO E CONSISTENTE
-  // Dificuldade cognitiva afeta a estabilidade (Importância na prova NÃO acelera o esquecimento cognitivo, apenas eleva R_target e Prioridade!)
+  // 4. CONSISTÊNCIA EM JANELA MÓVEL DE 30 DIAS (P_cons, peso 10%) — Sobe e desce conforme regularidade recente!
   const now = new Date();
   const lastStudyDate =
     sortedRecords.length > 0 ? parseLocalDate(sortedRecords[sortedRecords.length - 1].date) : now;
@@ -548,46 +566,158 @@ export function computeTopicScore(
     Math.floor((now.getTime() - lastStudyDate.getTime()) / MS_PER_DAY)
   );
 
-  const lambda0 = 0.022;
-  const diffFactor = clamp(1 + 0.12 * (difficulty - 2.5), 0.75, 1.35);
-  const masteryDecayFactor = clamp(1.22 - 0.82 * (baseScore / 100), 0.34, 1.20);
-  // Amortecimento exponencial suave por repetições espaçadas K
-  const spacingDecayDampener = 1 / (1 + 0.35 * Math.max(0, distinctStudyDays - 1));
-  const recentLapsePenalty =
-    lastSessionAccuracy !== null && lastSessionAccuracy < 55 ? 1.28 : 1.0;
+  let distinctDaysLast30d = 0;
+  uniqueDates.forEach((dStr) => {
+    const dObj = parseLocalDate(dStr);
+    const diffDays = Math.max(0, (now.getTime() - dObj.getTime()) / MS_PER_DAY);
+    if (diffDays <= 30) {
+      distinctDaysLast30d += 1;
+    }
+  });
 
-  const rawLambda =
-    (lambda0 * diffFactor * masteryDecayFactor * spacingDecayDampener * recentLapsePenalty) /
-    userRetentionMultiplier;
-  const lambda = clamp(rawLambda, 0.0022, 0.09);
+  const rolling30dConsistency = (1 - Math.exp(-distinctDaysLast30d / 3.0)) * 85;
+  const historicalAnchorConsistency = (1 - Math.exp(-distinctStudyDays / 6.0)) * 15;
+  const consistencyComponent = clamp(rolling30dConsistency + historicalAnchorConsistency, 10, 100);
 
-  // Estabilidade S (em dias): tempo exato para a retenção cair de 100% para 90%
-  const memoryStabilityDays = Number(clamp(-Math.log(0.9) / lambda, 1.5, 120).toFixed(1));
+  // Score Base (B_score = w_perf * P_perf + w_subj * P_subj + 0.12 * P_prog + 0.10 * P_cons; Soma de pesos = 100%)
+  let baseScoreRaw =
+    effectiveQTotal > 0
+      ? perfComponent * performanceWeight +
+        subjComponent * subjectiveWeight +
+        progressComponent * 0.12 +
+        consistencyComponent * 0.10
+      : subjComponent * 0.55 + progressComponent * 0.27 + consistencyComponent * 0.18;
+
+  if (isCompletedFlag && baseScoreRaw < 62 && studyQTotal === 0) {
+    baseScoreRaw = Math.max(baseScoreRaw, 62);
+  }
+
+  const baseScore = Math.round(clamp(baseScoreRaw, 10, 100));
+
+  // 5. MOTOR DE MEMÓRIA KRONO v3.2:
+  // - Agrupamento diário consolidado (evita inflar S com múltiplas sessões no mesmo dia)
+  // - Separação estrita entre Recuperação Ativa (questões/revisão) e Exposição Passiva (teoria/leitura)
+  // - Separação entre D_topic (dificuldade estrutural do assunto) e D_memory (dificuldade empírica de recuperação)
+  const dayGroups = new Map<
+    string,
+    { dateObj: Date; qTotal: number; qCorrect: number; mins: number; activeRecall: boolean }
+  >();
+  for (const r of sortedRecords) {
+    const key = (r.date || '').split('T')[0];
+    if (!key) continue;
+    const prev = dayGroups.get(key) || {
+      dateObj: parseLocalDate(r.date),
+      qTotal: 0,
+      qCorrect: 0,
+      mins: 0,
+      activeRecall: false,
+    };
+    prev.qTotal += r.questions?.total || 0;
+    prev.qCorrect += r.questions?.correct || 0;
+    prev.mins += (r.studyTime || 0) / 60000;
+    if (r.category === 'questoes' || r.category === 'revisao' || (r.questions?.total || 0) > 0) {
+      prev.activeRecall = true;
+    }
+    dayGroups.set(key, prev);
+  }
+
+  const orderedDays = Array.from(dayGroups.values()).sort(
+    (a, b) => a.dateObj.getTime() - b.dateObj.getTime()
+  );
+
+  // D_topic (1..5): dificuldade estrutural do assunto
+  // D_memory (1..5): dificuldade empírica de recuperação na memória
+  const dTopic = clamp(difficulty || 3, 1, 5);
+  let dMemory = clamp(0.65 * dTopic + 0.35 * (6 - mastery), 1, 5);
+
+  // Estabilidade inicial S0 conservadora (1.8 a 8.0 dias; exige revisão diagnóstica antes de intervalos longos)
+  let S = clamp(
+    2.2 + 0.9 * (mastery - 1) - 0.35 * (dTopic - 1),
+    1.8,
+    studyQTotal > 0 ? 8.5 : 5.5
+  );
+
+  for (let i = 0; i < orderedDays.length; i++) {
+    const day = orderedDays[i];
+    const deltaDays =
+      i === 0
+        ? 1.0
+        : Math.max(0.1, (day.dateObj.getTime() - orderedDays[i - 1].dateObj.getTime()) / MS_PER_DAY);
+
+    const rRev =
+      i === 0 ? 0.90 : Math.pow(1 + (19 / 81) * (deltaDays / Math.max(1.0, S)), -0.5);
+
+    if (day.activeRecall) {
+      // A. SESSÃO COM RECUPERAÇÃO ATIVA (Questões / Revisão Ativa)
+      // Qualidade da recuperação q_k in [0, 1] suavizada pelo tamanho da amostra do dia
+      const qK =
+        day.qTotal > 0
+          ? clamp((day.qCorrect + 2.0 * 0.65) / (day.qTotal + 2.0), 0.05, 1.0)
+          : clamp(0.55 + (mastery - 3) * 0.05, 0.45, 0.72);
+
+      // Atualiza D_memory com base na recuperação observada (separada de D_topic!)
+      const credDay = day.qTotal > 0 ? 1 - Math.exp(-day.qTotal / 6) : 0.35;
+      dMemory = clamp(dMemory - 0.55 * credDay * (qK - 0.65), 1.0, 5.0);
+
+      if (i === 0) {
+        // Calibração da 1ª sessão ativa
+        S = clamp(S * (0.80 + 0.45 * qK), 1.8, 12.0);
+      } else {
+        // Transição logística suave centrada em q = 0.60
+        const wQ = 1 / (1 + Math.exp(-12 * (qK - 0.60)));
+        const spacingFactor = Math.min(1.40, Math.log(1 + deltaDays) / Math.log(8));
+        const difficultyFactor = 0.55 + 0.45 * ((5 - dMemory) / 4);
+        const desirableBonus = 1 + 0.45 * Math.max(0, 0.90 - rRev) * wQ;
+
+        // Ganho bruto sem piso mínimo artificial (max(0, G_raw))
+        const gRaw = Math.max(
+          0,
+          0.62 * ((qK - 0.55) / 0.45) * spacingFactor * difficultyFactor * desirableBonus
+        );
+        const mSucc = 1 + gRaw;
+        const mFail = clamp(0.45 + 0.40 * (qK / 0.60), 0.40, 0.92);
+
+        const mTotal = (1 - wQ) * mFail + wQ * mSucc;
+        S = clamp(S * mTotal, 1.5, 120);
+      }
+    } else {
+      // B. SESSÃO EXCLUSIVAMENTE PASSIVA (Teoria / Leitura / Vídeo sem questões)
+      // Não aplica multiplicador de recuperação ativa! Apenas preserva a codificação inicial se a memória estiver caindo.
+      if (i > 0 && rRev < 0.85) {
+        S = clamp(Math.min(S * 1.04, S + 0.35), 1.8, 120);
+      }
+    }
+  }
+
+  // Modula S pelo multiplicador pessoal de retenção calibrado empiricamente
+  const memoryStabilityDays = Number(
+    clamp(S * userRetentionMultiplier, 1.8, 120).toFixed(1)
+  );
+  const lambda = clamp(-Math.log(0.9) / memoryStabilityDays, 0.0022, 0.09);
 
   // Curva FSRS-4.5 Pura e Consistente: R(t) = (1 + (19/81) * (t / S))^(-0.5)
-  // Nota: em t = S, R(S) = (1 + 19/81)^(-0.5) = (100/81)^(-0.5) = 9/10 = 90%!
   const retentionRaw = Math.pow(
     1 + (19 / 81) * (daysSinceLastStudy / memoryStabilityDays),
     -0.5
   );
-  const retention = Math.round(clamp(retentionRaw * 100, 15, 100));
+  const retention = Math.round(clamp(retentionRaw * 100, 10, 100));
 
   // Perda percentual diária média nos primeiros dias (para leitura humana intuitiva)
   const rDay1 = Math.pow(1 + (19 / 81) * (1 / memoryStabilityDays), -0.5);
   const dailyDecayPercent = Number(clamp((1 - rDay1) * 100, 0.2, 12.0).toFixed(1));
 
-  // Score Atual: reflete fielmente o Domínio Consolidado (S_base) modulado suavemente pela Retenção R(t)
-  // (Assim, um tópico com 85-95% de acerto mantém Score na casa dos 80-92 enquanto a retenção estiver saudável!)
-  const currentScore = Math.round(
-    clamp(baseScore * (0.64 + 0.36 * (retention / 100)), 10, 100)
-  );
+  // Score Atual (Krono Index): reflete o Domínio Consolidado (baseScore) modulado pela Retenção Atual
+  const retentionWeightFactor =
+    retention >= 55
+      ? 0.65 + 0.35 * (retention / 100)
+      : 0.35 + 0.89 * (retention / 100);
+  const currentScore = Math.round(clamp(baseScore * retentionWeightFactor, 10, 100));
 
-  // 4. AGENDAMENTO ANALÍTICO CONSISTENTE FSRS-4.5 + CENSURA POR DATA DA PROVA
-  // Limiar de Retenção Alvo (R_target): tópicos de alta importância (I=4,5) são revisados antes da retenção cair muito (82%-86%)
+  // 6. AGENDAMENTO ANALÍTICO CONSISTENTE FSRS-4.5 + CENSURA POR DATA DA PROVA + PROTEÇÃO ESTATÍSTICA DE PÓS-LAPSO
   const targetRetention = clamp(
-    0.80 + 0.016 * (importance - 3) - 0.035 * ((baseScore - 50) / 50),
-    0.75,
-    0.86
+    0.85 + 0.015 * (importance - 3) + 0.01 * (dMemory - 3),
+    0.80,
+    0.92
   );
 
   // Inversão Analítica Exata da curva FSRS-4.5: R(t) = R_target <=> t = S * (81/19) * (R_target^(-2) - 1)
@@ -595,36 +725,63 @@ export function computeTopicScore(
     memoryStabilityDays * (81 / 19) * (Math.pow(targetRetention, -2) - 1)
   );
 
-  if (lastSessionAccuracy !== null && lastSessionAccuracy < 45) {
+  // Exige 1ª revisão diagnóstica em até 7 dias enquanto não houver questões resolvidas
+  const lastQSampleSize =
+    recordsWithQuestions.length > 0
+      ? recordsWithQuestions[recordsWithQuestions.length - 1].questions?.total || 0
+      : 0;
+  if (studyQTotal === 0) {
+    rawIntervalDays = Math.min(rawIntervalDays, 7);
+  } else if (lastSessionAccuracy !== null && lastSessionAccuracy < 50 && lastQSampleSize >= 5) {
+    // Trava de pós-lapso com proteção estatística (amostra mínima N_last >= 5 questões)
     rawIntervalDays = Math.min(rawIntervalDays, 3);
   } else if (currentScore < 45) {
     rawIntervalDays = Math.min(rawIntervalDays, 5);
   }
 
-  let nextReviewDays = clamp(rawIntervalDays, 1, 90);
+  let nextReviewDays = clamp(rawIntervalDays, 1, 60);
 
-  // Censura pelo Horizonte da Prova (Exam Date Censoring): se houver prova marcada e o tópico for importante, garante revisão antes da prova!
+  // Censura pelo Horizonte da Prova (Exam Date Censoring)
+  let examUrgencyBoost = 1.0;
   if (examDate) {
     const examDt = parseLocalDate(examDate);
     const daysToExam = Math.floor((examDt.getTime() - now.getTime()) / MS_PER_DAY);
     if (daysToExam >= 2 && daysToExam < nextReviewDays && importance >= 3) {
       nextReviewDays = Math.max(1, daysToExam - 1);
     }
+    if (daysToExam > 0 && daysToExam <= 60) {
+      examUrgencyBoost = 1 + 0.25 * ((60 - daysToExam) / 60);
+    }
   }
 
   const nextDateObj = new Date(lastStudyDate.getTime() + nextReviewDays * MS_PER_DAY);
   const nextReviewDate = formatYMD(nextDateObj);
 
-  // 5. KRONO PRIORITY ENGINE (ROI de Pontos na Prova: 0 - 100)
-  // Responde: "Qual tópico merece minha próxima hora de estudo para maximizar minha nota na prova?"
-  const importanceWeight = 0.4 + (importance / 5) * 0.9; // 0.40 a 1.30
-  const masteryGap = 100 - currentScore; // Potencial de ganho de domínio
-  const forgettingUrgency = 100 - retention; // Urgência de recuperação na memória
-  const lowSampleBoost = studyQTotal < 15 ? (15 - studyQTotal) * 1.1 : 0;
-  const priorityROI = clamp(
+  // 7. KRONO PRIORITY ENGINE v3.2: Separação entre UrgencyScore e PriorityROI
+  // A. UrgencyScore (0-100): Urgência temporal de revisão (queda de retenção + importância + atraso + proximidade da prova)
+  const overdueRatio = clamp(daysSinceLastStudy / Math.max(1, nextReviewDays), 0, 2);
+  const urgencyScore = clamp(
     Math.round(
-      importanceWeight * (masteryGap * 0.55 + forgettingUrgency * 0.35 + lowSampleBoost)
+      ((100 - retention) * 0.55 + overdueRatio * 25 + (importance / 5) * 20) * examUrgencyBoost
     ),
+    5,
+    99
+  );
+
+  // B. PriorityROI (0-100): Retorno esperado de pontos na prova por hora de estudo investida
+  // P(cobrança_i) ~ (importance / 5)^1.20
+  // Delta P(acerto_i) ~ margem de evolução esperada = (100 - currentScore) * (0.45 + 0.55 * (1 - confidenceFactor * 0.5))
+  // Horas necessárias ~ esforço estimado combinando D_topic e lacuna atual
+  const incidenceFactor = Math.pow(Math.max(1, importance) / 5, 1.20);
+  const expectedAccuracyGain =
+    (100 - currentScore) * (0.55 + 0.45 * (1 - confidenceFactor * 0.4));
+  const estimatedHoursToImprove = clamp(
+    0.55 + 0.18 * dTopic + 0.12 * dMemory + 0.45 * ((100 - baseScore) / 100),
+    0.65,
+    2.2
+  );
+  const priorityROI = clamp(
+    Math.round(((incidenceFactor * expectedAccuracyGain) / estimatedHoursToImprove) * 1.45),
     5,
     99
   );
@@ -632,47 +789,54 @@ export function computeTopicScore(
   const level: TopicScoreResult['level'] =
     currentScore >= 75 ? 'strong' : currentScore >= 50 ? 'medium' : 'weak';
 
+  const confidenceLabel =
+    effectiveQTotal >= 30 && distinctStudyDays >= 2
+      ? 'Alta'
+      : effectiveQTotal >= 10
+      ? 'Média'
+      : 'Baixa (poucas questões)';
+
   const accText =
     rawAccuracy !== null
-      ? `${studyQCorrect}/${studyQTotal} questões (${Math.round(rawAccuracy)}%)`
-      : 'sem questões registradas';
+      ? `${studyQCorrect}/${studyQTotal} questões certas (${Math.round(rawAccuracy)}%)`
+      : 'nenhuma questão feita ainda';
 
-  const explanation = `Score ${currentScore}/100 (Base ${baseScore}, Retenção ${retention}%, ROI ${priorityROI}%). Estabilidade S: ${memoryStabilityDays}d (-${dailyDecayPercent}%/dia). Baseado em ${accText}, ${distinctStudyDays} dia(s) de estudo, Relevância ${importance}/5, Dificuldade ${difficulty}/5 e Domínio ${mastery}/5 -> próxima revisão FSRS em +${nextReviewDays} dias.`;
+  const explanation = `Nota atual: ${currentScore}/100 (logo após estudar era ${baseScore}/100 • Memória ativa hoje: ${retention}%). Baseado em ${accText} em ${distinctStudyDays} dia(s) de estudo. Próxima revisão ideal em +${nextReviewDays} dias.`;
 
   const detailedFormulaSteps = [
-    `1. Desempenho Bayesiano + EWMA: ${studyQCorrect}/${studyQTotal} questões no tópico + peso proporcional de simulados -> Acurácia suavizada de ${Math.round(blendedAccuracy)}% (Credibilidade amostral: ${Math.round(confidenceFactor * 100)}%).`,
-    `2. Score Base de Armazenamento (${baseScore}/100): Combina Desempenho (${Math.round(perfComponent)}), Domínio vs. Dificuldade (${Math.round(subjComponent)}), Esforço Ativo Ponderado (${Math.round(effortComponent)}) e Espaçamento Logarítmico (${distinctStudyDays} dias).`,
-    `3. Memória FSRS-4.5 (Estabilidade S = ${memoryStabilityDays} dias | -${dailyDecayPercent}%/dia): Após ${daysSinceLastStudy} dia(s) sem contato, a Retenção ativa é de ${retention}%.`,
-    `4. Agendamento FSRS-4.5 & Prioridade (ROI ${priorityROI}/100): Revisão agendada para quando a retenção atingir ${Math.round(targetRetention * 100)}%, resultando em +${nextReviewDays} dias (${nextReviewDate}).`,
+    `1. Desempenho nas Questões (${Math.round(perfComponent)}/100): Você acertou ${studyQCorrect} de ${studyQTotal} questões (${Math.round(combinedAccuracy)}% considerando histórico recente e simulados).`,
+    `2. Nota Logo Após Estudar (${baseScore}/100): Combina seus acertos nas questões (${Math.round(performanceWeight * 100)}%) com o seu nível de segurança declarado (${Math.round(subjectiveWeight * 100)}%) e constância de estudo.`,
+    `3. Frescor na Memória Hoje (${retention}%): Sua memória segura bem este assunto por cerca de ${memoryStabilityDays} dias. Como se passaram ${daysSinceLastStudy} dia(s) desde o último estudo, sua nota ajustada hoje é ${currentScore}/100.`,
+    `4. Próxima Revisão (+${nextReviewDays} dias -> ${nextReviewDate}): Calculada sob medida para você revisar antes de esquecer, levando em conta a importância deste assunto na prova.`,
   ];
 
-  // DIAGNÓSTICO TRANSPARENTE DE FATORES QUE IMPACTAM O SCORE
+  // DIAGNÓSTICO INTUITIVO (EM LINGUAGEM SIMPLES) DO QUE ESTÁ FAZENDO O SCORE SUBIR OU DESCER
   const impactFactors: ScoreImpactFactor[] = [];
 
   if (studyQTotal === 0) {
     impactFactors.push({
       type: 'negative',
-      label: 'Nenhuma questão registrada neste tópico',
+      label: 'Ainda sem questões feitas neste assunto',
       detail:
-        'Sem questões, a credibilidade estatística fica baixa e o Score ancora em 60%. Resolva ao menos 10 a 20 questões para destravar o Score.',
+        'Sem questões resolvidas, o sistema não tem como ter certeza se você fixou a matéria na prática. Faça pelo menos 10 a 15 questões para sua nota subir!',
     });
   } else if (studyQTotal < 15) {
     impactFactors.push({
       type: 'neutral',
-      label: `Amostra em construção (${studyQTotal} questões resolvidas)`,
-      detail: `Credibilidade estatística atual em ${Math.round(confidenceFactor * 100)}%. O motor suaviza extremos (Bayes/EWMA) até você acumular mais questões.`,
+      label: `Poucas questões feitas até agora (${studyQTotal} questões)`,
+      detail: `Como você ainda resolveu poucas questões aqui, o sistema calcula a nota com cautela (${Math.round(confidenceFactor * 100)}% de certeza). Quanto mais questões fizer, mais a nota reflete seu nível real.`,
     });
   } else if (rawAccuracy !== null && rawAccuracy >= 80) {
     impactFactors.push({
       type: 'positive',
-      label: `Excelente taxa de acerto (${Math.round(rawAccuracy)}% em ${studyQTotal} questões)`,
-      detail: 'Alto volume com ótimo desempenho eleva fortemente o seu Score Base e a estabilidade da memória (S).',
+      label: `Ótimo índice de acertos (${Math.round(rawAccuracy)}% em ${studyQTotal} questões)`,
+      detail: 'Você está acertando a grande maioria das questões deste assunto, o que puxa sua nota para cima e dá mais folga até a próxima revisão.',
     });
   } else if (rawAccuracy !== null && rawAccuracy < 60) {
     impactFactors.push({
       type: 'negative',
-      label: `Taxa de acerto baixa (${Math.round(rawAccuracy)}% em ${studyQTotal} questões)`,
-      detail: 'Os erros registrados indicam lacuna na base ou pegadinhas recorrentes, reduzindo o Score e antecipando a revisão.',
+      label: `Muitos erros nas questões (${Math.round(rawAccuracy)}% de acerto em ${studyQTotal} questões)`,
+      detail: 'Você errou bastante neste assunto até aqui. O sistema baixou a nota para chamar uma revisão mais cedo e evitar que você perca pontos na prova.',
     });
   }
 
@@ -680,14 +844,14 @@ export function computeTopicScore(
     if (lastSessionAccuracy < 55) {
       impactFactors.push({
         type: 'negative',
-        label: `Alerta na última bateria (${Math.round(lastSessionAccuracy)}% de acerto)`,
-        detail: 'O lapso recente ativou o encurtamento pós-erro do FSRS para você corrigir as falhas rapidamente.',
+        label: `Tropeço no último estudo (${Math.round(lastSessionAccuracy)}% de acerto)`,
+        detail: 'Como você errou bastante na última vez que estudou este tópico, a próxima revisão foi antecipada para você corrigir logo essas falhas.',
       });
     } else if (lastSessionAccuracy >= 85) {
       impactFactors.push({
         type: 'positive',
-        label: `Última sessão muito forte (${Math.round(lastSessionAccuracy)}% de acerto)`,
-        detail: 'A tendência recente (EWMA) impulsionou positivamente o seu Score e espaçou a próxima revisão.',
+        label: `Mandou muito bem no último estudo (${Math.round(lastSessionAccuracy)}% de acerto)`,
+        detail: 'Seu ótimo resultado na sessão mais recente mostrou evolução e ajudou a subir sua nota e espaçar a revisão.',
       });
     }
   }
@@ -695,72 +859,71 @@ export function computeTopicScore(
   if (difficulty >= 4 || mastery <= 2) {
     impactFactors.push({
       type: 'negative',
-      label: `Tópico desafiador (Dificuldade ${difficulty}/5 • Domínio ${mastery}/5)`,
-      detail: 'Maior dificuldade pessoal reduz a Estabilidade inicial (S), exigindo mais repetições até consolidar.',
+      label: `Assunto que você acha difícil (Dificuldade ${difficulty}/5 • Domínio ${mastery}/5)`,
+      detail: 'Como você marcou que sente dificuldade ou pouca segurança aqui, o sistema agenda revisões mais próximas até você pegar firmeza.',
     });
   } else if (mastery >= 4 && difficulty <= 2) {
     impactFactors.push({
       type: 'positive',
-      label: `Segurança declarada alta (Domínio ${mastery}/5 • Dificuldade ${difficulty}/5)`,
-      detail: 'Sua facilidade no assunto aumenta a Estabilidade da Memória (S) e desacelera a queda diária.',
+      label: `Assunto tranquilo para você (Domínio ${mastery}/5 • Dificuldade ${difficulty}/5)`,
+      detail: 'Sua facilidade neste tema faz sua memória segurar o conteúdo por mais dias sem precisar revisar toda hora.',
     });
   }
 
   if (importance >= 4) {
     impactFactors.push({
       type: 'neutral',
-      label: `Alta Relevância na Prova (${importance}/5) • Prioridade ROI: ${priorityROI}/100`,
-      detail: `Por cair muito na prova, o motor exige retenção-alvo mais alta (${Math.round(targetRetention * 100)}%) antes de você esquecer.`,
+      label: `Cai muito na prova! (Relevância ${importance}/5)`,
+      detail: `Por ser um assunto muito cobrado no seu edital, o sistema exige mais segurança (${Math.round(targetRetention * 100)}% de memória mínima) e não deixa você ficar muito tempo sem vê-lo.`,
     });
   }
 
   if (daysSinceLastStudy >= 7 && retention < 82) {
     impactFactors.push({
       type: 'negative',
-      label: `Desgaste pelo tempo (${daysSinceLastStudy} dias sem contato -> Retenção ${retention}%)`,
-      detail: `Seu Score Base é ${baseScore}, mas o tempo sem revisar reduziu o Score atual para ${currentScore}.`,
+      label: `Memória esfriando (${daysSinceLastStudy} dias sem ver este assunto)`,
+      detail: `Quando você estudou, sua nota era ${baseScore}/100, mas como já faz ${daysSinceLastStudy} dias sem revisar, sua memória ativa está em ${retention}% e a nota hoje caiu para ${currentScore}/100.`,
     });
   } else if (distinctStudyDays >= 3) {
     impactFactors.push({
       type: 'positive',
-      label: `Memória consolidada em ${distinctStudyDays} dias distintos (S = ${memoryStabilityDays}d)`,
-      detail: 'O espaçamento entre sessões multiplicou sua Força de Armazenamento.',
+      label: `Estudado em ${distinctStudyDays} dias diferentes (Memória dura ~${memoryStabilityDays} dias)`,
+      detail: 'Ver o assunto em dias separados fixa muito mais na cabeça e faz sua nota demorar bem mais para cair.',
     });
   }
 
-  // 6. ÁRVORE DE DECISÃO COMPLETA DE DICA CIENTÍFICA DE REVISÃO (Sem lacunas)
+  // 6. DICA PRÁTICA E INTUITIVA DE COMO REVISAR ESTE TÓPICO
   let scientificReviewTip: ScientificReviewTip;
 
   if (currentScore < 52 || (lastSessionAccuracy !== null && lastSessionAccuracy < 55)) {
     scientificReviewTip = {
-      badge: 'Score Baixo • Scaffolding + Recuperação Guiada',
-      title: 'Consulta Direcionada (15 min) + 15 Questões Comentadas',
+      badge: '🚨 Precisa Reforçar a Base • Teoria Rápida + Questões',
+      title: 'Olhar os pontos principais da Teoria (15 min) + 15 Questões Comentadas',
       description:
-        'Seu desempenho recente indica lacunas conceituais. Consulte os pontos críticos da teoria/lei seca por 15 min e faça 15 questões comentadas mapeando o motivo de cada erro.',
+        'Como você teve dificuldade ou errou bastante recentemente, revise por 15 minutos os pontos principais da teoria ou lei seca e depois resolva 15 questões lendo com atenção o comentário de cada erro.',
       actionType: 'theory_questions',
     };
   } else if (baseScore >= 75 && retention < 78 && hasSavedNotes) {
     scientificReviewTip = {
-      badge: 'Boa Base + Queda Temporal • Flash Scan + Prática',
-      title: 'Leitura Flash das suas Notas na Plataforma (5 min) + 15 Questões',
-      description: `Você construiu ótima base (${baseScore}/100), mas está há ${daysSinceLastStudy} dias sem ver o tópico (Retenção ${retention}%). Passe 5 min nas suas Anotações salvas aqui e resolva 15 questões.`,
+      badge: '⏱️ Faz Tempo que Não Vê • Ler Seu Resumo + Questões',
+      title: 'Ler suas Anotações salvas aqui (5 min) + 15 Questões',
+      description: `Você já aprendeu muito bem este assunto (${baseScore}/100), só está há ${daysSinceLastStudy} dias sem vê-lo. Passe o olho por 5 minutos nas suas Notas salvas aqui na plataforma para refrescar a memória e faça 15 questões.`,
       actionType: 'notes_scan_questions',
     };
   } else if (currentScore >= 75 && retention >= 78) {
     scientificReviewTip = {
-      badge: 'Tópico Consolidado • Manutenção Rápida (Testing Effect)',
-      title: 'Bateria Rápida de Manutenção (10 a 15 Questões Diretas)',
+      badge: '✅ Assunto Dominado • Manutenção Rápida',
+      title: 'Ir direto para 10 a 15 Questões Rápidas (Sem reler teoria)',
       description:
-        'Não releia a teoria passivamente (evite a ilusão de competência). Faça apenas 10 a 15 questões rápidas em ritmo de prova para manter a estabilidade elevada.',
+        'Você já manda muito bem aqui! Não perca tempo relendo teoria ou PDF. Resolva apenas 10 a 15 questões rápidas direto no caderno só para manter o ritmo de prova.',
       actionType: 'fast_maintenance',
     };
   } else {
-    // Cobre todos os casos intermediários (52 <= Score < 75, ou Score >= 75 com R < 78 sem notas próprias)
     scientificReviewTip = {
-      badge: 'Consolidação Ativa • Active Recall Puro (Dunlosky / Bjork)',
-      title: 'Resolver 15 a 25 Questões ANTES de olhar a Teoria/Notas',
+      badge: '🎯 Hora de Praticar • Questões Primeiro',
+      title: 'Fazer 15 a 20 Questões ANTES de olhar o Resumo',
       description:
-        'A ciência cognitiva prova que tentar recuperar a informação da memória antes de reler fortalece a sinapse (Desirable Difficulty). Vá direto para o Caderno de Questões e só consulte a teoria/notas nos itens que errar.',
+        'Tentar lembrar da matéria sozinho resolvendo questões fixa muito mais do que apenas ler! Vá direto para o Caderno de Questões e só consulte suas notas ou a teoria nos itens que você errar.',
       actionType: 'active_recall_questions',
     };
   }
@@ -775,6 +938,7 @@ export function computeTopicScore(
     currentScore,
     baseScore,
     retention,
+    urgencyScore,
     priorityROI,
     level,
     color,
@@ -791,7 +955,7 @@ export function computeTopicScore(
     correctQuestions: studyQCorrect,
     rawAccuracy,
     lastStudyDate: sortedRecords.length > 0 ? formatYMD(lastStudyDate) : (topic?.last_study || null),
-    smoothedAccuracy: Math.round(blendedAccuracy),
+    smoothedAccuracy: Math.round(combinedAccuracy),
     lastSessionAccuracy: lastSessionAccuracy !== null ? Math.round(lastSessionAccuracy) : null,
     totalHours,
     importance,
@@ -1021,15 +1185,15 @@ export function computeUserMemoryProfile(
   const factor = Number(computeUserRetentionMultiplier(studyRecords).toFixed(2));
   let summaryText = '';
   if (factor >= 1.15) {
-    summaryText = `Seu histórico mostra excelente taxa de retenção (+${Math.round(
+    summaryText = `Você tem lembrado muito bem das matérias nas revisões (+${Math.round(
       (factor - 1) * 100
-    )}% acima da média). O algoritmo calibrou o fator α = ${factor}x, aumentando os intervalos entre revisões para você não perder tempo.`;
+    )}% acima da média)! Por isso, o sistema está dando mais dias de folga entre uma revisão e outra para você avançar mais rápido no edital.`;
   } else if (factor <= 0.88) {
-    summaryText = `O algoritmo detectou que o esquecimento em baterias recentes ocorreu antes do previsto (-${Math.round(
+    summaryText = `O sistema notou que nas últimas revisões alguns conteúdos esfriaram rápido (-${Math.round(
       (1 - factor) * 100
-    )}%). O fator pessoal α = ${factor}x antecipa suas próximas revisões para blindar o conteúdo.`;
+    )}%). Por segurança, ele está chamando suas próximas revisões um pouco mais cedo para você não esquecer nada.`;
   } else {
-    summaryText = `Seu ritmo de fixação está em perfeito equilíbrio com o modelo cognitivo padrão (Fator α = ${factor}x). Conforme você acumula mais sessões e simulados, o sistema continuará refinando este valor.`;
+    summaryText = `Seu ritmo de memória está super equilibrado (${factor}x). Conforme você for fazendo mais questões e revisões, o sistema vai ajustando automaticamente esse tempo para o seu jeito de aprender.`;
   }
   return { personalRetentionFactor: factor, summaryText };
 }
@@ -1100,33 +1264,33 @@ export function calculateSmartSessionReview(params: {
 
   const qTotal = sessionCorrect + sessionIncorrect;
   const days = Math.max(1, res.nextReviewDays);
-  let tierLabel = 'Consolidação';
+  let tierLabel = 'Bom Ritmo';
   let tierColor: 'rose' | 'amber' | 'emerald' | 'indigo' = 'emerald';
   let reason = '';
   let sessionAccuracyPct: number | null = null;
 
   if (qTotal === 0) {
-    tierLabel = 'Fixação Teórica';
+    tierLabel = 'Só Teoria';
     tierColor = 'indigo';
-    reason = `Sessão sem questões. O intervalo de ${days} dias foi calculado pelo modelo de memória para consolidar os conceitos teóricos antes da queda acentuada da curva de esquecimento.`;
+    reason = `Como você estudou a teoria sem registrar questões hoje, agendamos a revisão para daqui a ${days} dias para você praticar antes de esquecer.`;
   } else {
     sessionAccuracyPct = Math.round((sessionCorrect / qTotal) * 100);
     if (sessionAccuracyPct >= 80) {
-      tierLabel = 'Excelente';
+      tierLabel = 'Ótimo Acerto';
       tierColor = 'emerald';
-      reason = `Excelente aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). O algoritmo FSRS expandiu a estabilidade para revisão em +${days} dias para manutenção de longo prazo.`;
+      reason = `Você mandou muito bem com ${sessionAccuracyPct}% de acerto (${sessionCorrect}/${qTotal})! Sua memória ganhou força e a próxima revisão ficou para daqui a +${days} dias.`;
     } else if (sessionAccuracyPct >= 65) {
-      tierLabel = 'Bom Rendimento';
+      tierLabel = 'Bom Resultado';
       tierColor = 'emerald';
-      reason = `Aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Retenção sólida com próxima revisão em +${days} dias para consolidação.`;
+      reason = `Bom resultado de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Próxima revisão agendada para daqui a +${days} dias para fixar bem o assunto.`;
     } else if (sessionAccuracyPct >= 50) {
-      tierLabel = 'Atenção • Reforço';
+      tierLabel = 'Pede Reforço';
       tierColor = 'amber';
-      reason = `Aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Faixa de reforço necessária: intervalo de +${days} dias para blindar contra esquecimento.`;
+      reason = `Você acertou ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal}). Para não esquecer os detalhes, vamos revisar mais cedo, daqui a +${days} dias.`;
     } else {
-      tierLabel = 'Crítico • Urgente';
+      tierLabel = 'Revisar Cedo';
       tierColor = 'rose';
-      reason = `Aproveitamento de ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal} acertos). Abaixo de 50% indica lacuna conceitual: revisão antecipada em +${days} dias para correção imediata.`;
+      reason = `Você acertou ${sessionAccuracyPct}% (${sessionCorrect}/${qTotal}). Como houve bastante erro hoje, antecipamos a revisão para daqui a +${days} dias para você corrigir logo os pontos fracos.`;
     }
   }
 

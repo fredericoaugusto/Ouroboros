@@ -40,13 +40,20 @@ export async function createUser(username: string, hashedPassword: string): Prom
   const supabase = getSupabaseAdmin();
   const newId = crypto.randomUUID();
 
+  // Se ainda não houver nenhum administrador cadastrado, aprova automaticamente o usuário
+  // para que ele possa logar imediatamente sem ficar bloqueado.
+  const { count: adminCount } = await supabase
+    .from('admin_users')
+    .select('id', { count: 'exact', head: true });
+  const initialStatus: UserStatus = (adminCount ?? 0) > 0 ? 'pending' : 'approved';
+
   const { data, error } = await supabase
     .from('users')
     .insert({
       id: newId,
       username,
       password_hash: hashedPassword,
-      status: 'pending',
+      status: initialStatus,
     })
     .select('id, username, password_hash, status')
     .single();
